@@ -7,6 +7,7 @@ import Settings from "./pages/Settings";
 import ChargeCart from "./pages/ChargeCart";
 import MonitorBuilder from "./pages/MonitorBuilder";
 import SystemLink from "./pages/SystemLink";
+import Comms from "./pages/Comms";
 
 // Get base path for GitHub Pages deployment
 const basename = import.meta.env.BASE_URL || '/';
@@ -25,6 +26,7 @@ export const router = createBrowserRouter([
       { path: "chargecart", element: <ChargeCart /> },
       { path: "monitor-builder", element: <MonitorBuilder /> },
       { path: "system-link", element: <SystemLink /> },
+      { path: "comms", element: <Comms /> },
     ],
   },
 ], { basename });

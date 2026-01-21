@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.16",
+    "@jitsi/react-sdk": "^1.4.4",
     "@tailwindcss/vite": "^4.1.13",
     "@types/plotly.js": "^3.0.8",
     "bootstrap": "^5.3.8",

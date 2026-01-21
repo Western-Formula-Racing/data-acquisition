@@ -22,8 +22,8 @@ function Sidebar({ onClose, isOpen }: Readonly<InputProps>) {
 
       <div
         className={`fixed top-0 left-0 h-full lg:w-2/9 md:w-2/5 sm:w-3/5 w-full flex flex-col z-50 transform transition-all duration-450 overflow-y-auto overscroll-contain ${isOpen
-            ? "translate-x-0 opacity-100"
-            : "-translate-x-full opacity-0 pointer-events-none"
+          ? "translate-x-0 opacity-100"
+          : "-translate-x-full opacity-0 pointer-events-none"
           }`}
       >
         <div className="bg-sidebar z-100 w-[98%] h-full flex flex-col justify-between">
@@ -60,6 +60,11 @@ function Sidebar({ onClose, isOpen }: Readonly<InputProps>) {
               <SidebarOption
                 option="SYSTEM LINK"
                 path="/system-link"
+                onClose={onClose}
+              />
+              <SidebarOption
+                option="COMMS"
+                path="/comms"
                 onClose={onClose}
               />
             </ul>

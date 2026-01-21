@@ -1,0 +1,8 @@
+return {
+	["stored_key"] = "f1d3f20bfa453c0941f02fc752831752375948be";
+	["server_key"] = "330aeac034e2d9b98da9cd3652e35f3bf86644e8";
+	["created"] = 1769036907;
+	["iteration_count"] = 10000;
+	["salt"] = "783f92ac-0a06-4349-b33d-a80ef7415535";
+	["updated"] = 1769036907;
+};

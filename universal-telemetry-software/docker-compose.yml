@@ -37,6 +37,25 @@ services:
     volumes:
       - redis_data:/data
 
+  # WebRTC video relay — ingests RTP from car, serves to browsers
+  # NOTE: ENABLE_VIDEO must be false on telemetry service to avoid port 5600 conflict
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    container_name: daq-go2rtc
+    restart: unless-stopped
+    ports:
+      - "1984:1984/tcp"   # API + WHEP endpoint
+      - "8555:8555/tcp"   # WebRTC TCP
+      - "8555:8555/udp"   # WebRTC UDP candidates
+      - "5600:5600/udp"   # RTP ingest from car
+    volumes:
+      - ./go2rtc.yaml:/config/go2rtc.yaml:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
   pecan:
     build: ../pecan
     container_name: daq-pecan
@@ -46,8 +65,36 @@ services:
     depends_on:
       - telemetry
 
+  # Voice Communication Services
+  murmur:
+    image: mumblevoip/mumble-server:latest
+    container_name: daq-murmur
+    restart: unless-stopped
+    ports:
+      - "64738:64738/tcp" # Mumble TCP
+      - "64738:64738/udp" # Mumble UDP
+    environment:
+      - MUMBLE_SUPERUSER_PASSWORD=wfr2025
+      - MUMBLE_CONFIG_WELCOMETEXT=Welcome to WFR Comms!
+      - MUMBLE_CONFIG_REGISTERPASSWORD=
+      - MUMBLE_CONFIG_ALLOWPING=true
+    volumes:
+      - murmur_data:/data
+
+  mumble-web:
+    image: rankenstein/mumble-web:latest
+    container_name: daq-mumble-web
+    restart: unless-stopped
+    ports:
+      - "8088:8080" # Web client with websockify (internal 8080)
+    environment:
+      - MUMBLE_SERVER=murmur:64738
+    depends_on:
+      - murmur
+
 volumes:
   redis_data:
+  murmur_data:
 
     # Ports exposed (via network_mode: host):
     # 5005 - UDP (CAN data streaming)

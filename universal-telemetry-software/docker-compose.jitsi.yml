@@ -1,0 +1,138 @@
+# Jitsi Meet Self-Hosted for WFR Comms
+# Based on https://github.com/jitsi/docker-jitsi-meet
+
+services:
+  # Web frontend
+  jitsi-web:
+    image: jitsi/web:stable
+    container_name: daq-jitsi-web
+    restart: unless-stopped
+    ports:
+      - "8443:443"
+      - "8000:80"
+    volumes:
+      - ./jitsi-config/web:/config:Z
+      - ./custom-jitsi-config.js:/config/config.js:ro
+      - ./jitsi-config/transcripts:/usr/share/jitsi-meet/transcripts:Z
+    environment:
+      - ENABLE_AUTH=0
+      - ENABLE_GUESTS=1
+      - ENABLE_PREJOIN_PAGE=false
+      - DISABLE_HTTPS=1
+      - PUBLIC_URL=localhost:8000
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_BOSH_URL_BASE=http://jitsi-xmpp:5280
+      - XMPP_GUEST_DOMAIN=guest.meet.jitsi
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - XMPP_RECORDER_DOMAIN=recorder.meet.jitsi
+      - ENABLE_XMPP_WEBSOCKET=1
+      - COLIBRI_WEBSOCKET_PORT=9090
+      - TZ=America/Toronto
+    networks:
+      - meet.jitsi
+    depends_on:
+      - jitsi-xmpp
+
+  # XMPP server (Prosody)
+  jitsi-xmpp:
+    image: jitsi/prosody:stable
+    container_name: daq-jitsi-xmpp
+    restart: unless-stopped
+    expose:
+      - "5222"
+      - "5347"
+      - "5280"
+    volumes:
+      - ./jitsi-config/prosody/config:/config:Z
+      - ./jitsi-config/prosody/plugins:/prosody-plugins-custom:Z
+    environment:
+      - ENABLE_AUTH=0
+      - ENABLE_GUESTS=1
+      - ENABLE_LOBBY=0
+      - ENABLE_AV_MODERATION=0
+      - ENABLE_XMPP_WEBSOCKET=1
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_GUEST_DOMAIN=guest.meet.jitsi
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - XMPP_MODULES=
+      - XMPP_MUC_MODULES=
+      - XMPP_RECORDER_DOMAIN=recorder.meet.jitsi
+      - JICOFO_AUTH_PASSWORD=jicofopass
+      - JVB_AUTH_PASSWORD=jvbpass
+      - TZ=America/Toronto
+    networks:
+      meet.jitsi:
+        aliases:
+          - xmpp.meet.jitsi
+
+  # Focus component (conference management)
+  jitsi-jicofo:
+    image: jitsi/jicofo:stable
+    container_name: daq-jitsi-jicofo
+    restart: unless-stopped
+    volumes:
+      - ./jitsi-config/jicofo:/config:Z
+    environment:
+      - ENABLE_AUTH=0
+      - XMPP_DOMAIN=meet.jitsi
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - XMPP_MUC_DOMAIN=muc.meet.jitsi
+      - XMPP_SERVER=jitsi-xmpp
+      - JICOFO_AUTH_PASSWORD=jicofopass
+      - TZ=America/Toronto
+    networks:
+      - meet.jitsi
+    depends_on:
+      - jitsi-xmpp
+
+  # Video bridge (handles media)
+  jitsi-jvb:
+    image: jitsi/jvb:stable
+    container_name: daq-jitsi-jvb
+    restart: unless-stopped
+    ports:
+      - "10000:10000/udp"
+      - "8180:8080" # JVB health (changed from 8080 to avoid conflict)
+    volumes:
+      - ./jitsi-config/jvb:/config:Z
+    environment:
+      - XMPP_AUTH_DOMAIN=auth.meet.jitsi
+      - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
+      - XMPP_SERVER=jitsi-xmpp
+      - JVB_AUTH_PASSWORD=jvbpass
+      - JVB_STUN_SERVERS=stun.l.google.com:19302,stun1.l.google.com:19302
+      - PUBLIC_URL=localhost:8000
+      - TZ=America/Toronto
+    networks:
+      - meet.jitsi
+    depends_on:
+      - jitsi-xmpp
+
+  # ===== CAR RPI ONLY - Deploy this on the car =====
+  car-jitsi-client:
+    build: ./car-jitsi-client
+    container_name: daq-car-jitsi
+    restart: unless-stopped
+    privileged: true # Access all host devices (USB camera, audio) on any port
+    profiles:
+      - car # Only starts with: docker compose --profile car up
+    environment:
+      - JITSI_URL=http://192.168.1.1:8000 # Base station IP
+      - ROOM_NAME=wfr-comms
+      - DISPLAY_NAME=Driver
+      - RETRY_INTERVAL_MS=5000
+      - MAX_RETRIES=-1 # Infinite retries
+      - ENABLE_AUDIO=true
+      - ENABLE_VIDEO=false
+    volumes:
+      - /run/user/1000/pulse:/run/user/1000/pulse # PulseAudio socket
+    networks:
+      - meet.jitsi
+
+networks:
+  meet.jitsi:
+    driver: bridge

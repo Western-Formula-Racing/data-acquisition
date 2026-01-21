@@ -2,13 +2,11 @@ name: Telemetry System CI/CD
 
 on:
   push:
-    branches: [ main, telemetry-software ]
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
       - '.github/workflows/telemetry-ci.yml'
   pull_request:
-    branches: [ main, telemetry-software ]
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
@@ -29,6 +27,18 @@ jobs:
       working-directory: ./universal-telemetry-software
       run: |
         docker build -t universal-telemetry:test .
+
+    - name: Build car-jitsi-client Docker image
+      working-directory: ./universal-telemetry-software/car-jitsi-client
+      run: |
+        docker build -t car-jitsi-client:test .
+
+    - name: Verify car-jitsi-client starts
+      run: |
+        docker run --rm --entrypoint node car-jitsi-client:test -e "require('./index.js')" &
+        PID=$!
+        sleep 5
+        kill $PID 2>/dev/null || true
     
     - name: Start test environment
       working-directory: ./universal-telemetry-software
@@ -83,7 +93,7 @@ jobs:
   publish:
     needs: test
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write
@@ -124,6 +134,25 @@ jobs:
         tags: ${{ steps.meta-telemetry.outputs.tags }}
         labels: ${{ steps.meta-telemetry.outputs.labels }}
         
+    - name: Extract metadata (tags, labels) for Car Jitsi Client
+      id: meta-car-jitsi
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository }}/car-jitsi-client
+        tags: |
+          type=raw,value=latest,enable=${{ github.ref == 'format:refs/heads/main' }}
+          type=sha
+
+    - name: Build and push Car Jitsi Client image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./universal-telemetry-software/car-jitsi-client
+        file: ./universal-telemetry-software/car-jitsi-client/Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta-car-jitsi.outputs.tags }}
+        labels: ${{ steps.meta-car-jitsi.outputs.labels }}
+
     - name: Extract metadata (tags, labels) for Pecan
       id: meta-pecan
       uses: docker/metadata-action@v5

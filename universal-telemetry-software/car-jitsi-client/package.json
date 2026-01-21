@@ -1,0 +1,12 @@
+{
+    "name": "car-jitsi-client",
+    "version": "1.0.0",
+    "description": "Headless Jitsi client for WFR car RPI",
+    "main": "index.js",
+    "scripts": {
+        "start": "node index.js"
+    },
+    "dependencies": {
+        "puppeteer": "^21.0.0"
+    }
+}
