@@ -2,7 +2,7 @@
 
 > A Western Formula Racing Open Source Project
 
-[![Website](https://img.shields.io/badge/Website-westernformularacing.com-D6AB39?style=for-the-badge)](https://www.westernformularacing.com)
+[![Website](https://img.shields.io/badge/Website-westernformularacing.org-D6AB39?style=for-the-badge)](https://westernformularacing.org)
 
 Comprehensive telemetry and data acquisition system for real-time monitoring of formula racing vehicle performance. This system captures CAN bus data from the vehicle, transmits it to a base station, and visualizes it through an interactive web dashboard.
 
