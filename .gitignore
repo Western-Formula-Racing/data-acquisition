@@ -231,3 +231,4 @@ pecan/src/assets/local.dbc
 # Test artifacts
 test-logs/
 .pytest_cache/
+*.dat

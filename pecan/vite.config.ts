@@ -24,10 +24,10 @@ const websocketPlugin = (): Plugin => ({
 function startWebSocketServer() {
   // Dynamic import to avoid build-time dependency issues
   import('ws').then(({ WebSocketServer }) => {
-    const wss = new WebSocketServer({ port: 8080 });
+    const wss = new WebSocketServer({ port: 9080 });
 
     // eslint-disable-next-line no-console
-    console.log('WebSocket server started on ws://localhost:8080');
+    console.log('WebSocket server started on ws://localhost:9080');
 
     wss.on('connection', (ws) => {
       // eslint-disable-next-line no-console
@@ -64,9 +64,9 @@ function startWebSocketServer() {
     });
 
     // eslint-disable-next-line no-console
-    console.log('WebSocket server is running on port 8080');
+    console.log('WebSocket server is running on port 9080');
     // eslint-disable-next-line no-console
-    console.log('Data Sender and Dashboard can connect to ws://localhost:8080');
+    console.log('Data Sender and Dashboard can connect to ws://localhost:9080');
   }).catch((error) => {
     // eslint-disable-next-line no-console
     console.error('Failed to start WebSocket server:', error);

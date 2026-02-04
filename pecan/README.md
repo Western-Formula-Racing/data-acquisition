@@ -24,7 +24,7 @@ npm install
 npm run dev
 ```
 
-The development server will start on `http://localhost:5173` with a WebSocket server on `ws://localhost:8080`.
+The development server will start on `http://localhost:5173` with a WebSocket server on `ws://localhost:9080`.
 
 ### Testing
 
