@@ -8,6 +8,7 @@
 
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { dataStore } from '../../lib/DataStore';
+import { useAccumulatorContext } from './AccumulatorContext';
 import {
     type ModuleId,
     CELLS_PER_MODULE,
@@ -26,12 +27,14 @@ interface CellStats {
     max: number | null;
 }
 
-// Individual cell component with 1s throttled updates
+// Individual cell component with 1s throttled updates and highlight support
 function Cell({ moduleId, cellIndex, stats }: {
     moduleId: ModuleId;
     cellIndex: number;
     stats: CellStats;
 }) {
+    const { highlightTarget } = useAccumulatorContext();
+    const cellRef = useRef<HTMLDivElement>(null);
     const { signalName } = getCellSignalInfo(moduleId, cellIndex);
 
     const { current, min, max } = stats;
@@ -47,6 +50,22 @@ function Cell({ moduleId, cellIndex, stats }: {
         current < ALERT_THRESHOLDS.nominalVoltage.min
     );
 
+    // Check if this cell is highlighted
+    const isHighlighted = highlightTarget?.type === 'cell' &&
+        highlightTarget?.moduleId === moduleId &&
+        highlightTarget?.index === cellIndex;
+
+    // Scroll into view when highlighted
+    useEffect(() => {
+        if (isHighlighted && cellRef.current) {
+            cellRef.current.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center',
+                inline: 'center'
+            });
+        }
+    }, [isHighlighted]);
+
     // Tooltip with 1s min/max range
     const range = min !== null && max !== null
         ? `${min.toFixed(3)}V - ${max.toFixed(3)}V`
@@ -54,16 +73,21 @@ function Cell({ moduleId, cellIndex, stats }: {
 
     return (
         <div
+            ref={cellRef}
             className={`
         relative flex items-center justify-center
         rounded-sm text-xs font-mono font-semibold
-        cursor-default
-        ${isCritical ? 'animate-alert-pulse' : isWarning ? 'animate-warning-pulse' : ''}
+        cursor-default transition-all duration-300
+        ${isHighlighted ? 'z-10 shadow-lg scale-105' : ''}
+        ${!isHighlighted && isCritical ? 'animate-alert-pulse' : !isHighlighted && isWarning ? 'animate-warning-pulse' : ''}
       `}
-            style={{ backgroundColor: bgColor }}
+            style={{
+                backgroundColor: isHighlighted ? '#ffffff' : bgColor,
+                color: isHighlighted ? '#000000' : '#ffffff'
+            }}
             title={`${signalName}\nCurrent: ${current !== null ? `${current.toFixed(3)}V` : '--'}\n1s range: ${range}`}
         >
-            <span className="text-white drop-shadow-md text-[10px]">
+            <span className={`drop-shadow-md text-xs ${isHighlighted ? 'text-black' : 'text-white'}`}>
                 {current !== null ? current.toFixed(2) : '---'}
             </span>
         </div>
@@ -139,7 +163,7 @@ export default function CellGrid({ moduleId }: CellGridProps) {
     const cellStats = useCellStats(moduleId);
 
     return (
-        <div className="grid grid-cols-5 grid-rows-4 gap-1 w-full aspect-[5/4]">
+        <div className="grid grid-cols-5 grid-rows-4 gap-1 w-full aspect-[5/3]">
             {cellIndices.map((cellIndex) => (
                 <Cell
                     key={cellIndex}

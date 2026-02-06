@@ -8,6 +8,7 @@
 
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { dataStore } from '../../lib/DataStore';
+import { useAccumulatorContext } from './AccumulatorContext';
 import {
     type ModuleId,
     THERMISTORS_PER_MODULE,
@@ -33,20 +34,27 @@ function ThermistorSegment({ moduleId, thermistorIndex, temp }: {
     thermistorIndex: number;
     temp: number | null;
 }) {
+    const { highlightTarget } = useAccumulatorContext();
     const { signalName } = getThermistorSignalInfo(moduleId, thermistorIndex);
 
     const bgColor = getTemperatureColor(temp);
     const isCritical = temp !== null && temp >= ALERT_THRESHOLDS.overTemp.critical;
     const isWarning = temp !== null && temp >= ALERT_THRESHOLDS.overTemp.warning;
 
+    // Check if this thermistor is highlighted
+    const isHighlighted = highlightTarget?.type === 'thermistor' &&
+        highlightTarget?.moduleId === moduleId &&
+        highlightTarget?.index === thermistorIndex;
+
     return (
         <div
             className={`
         flex-1 h-6 first:rounded-l last:rounded-r
-        cursor-default
-        ${isCritical ? 'animate-alert-pulse' : isWarning ? 'animate-warning-pulse' : ''}
+        cursor-default transition-all duration-300
+        ${isHighlighted ? 'z-10 shadow-lg scale-y-110 relative' : ''}
+        ${!isHighlighted && isCritical ? 'animate-alert-pulse' : !isHighlighted && isWarning ? 'animate-warning-pulse' : ''}
       `}
-            style={{ backgroundColor: bgColor }}
+            style={{ backgroundColor: isHighlighted ? '#ffffff' : bgColor }}
             title={`${signalName}: ${temp !== null ? `${temp.toFixed(1)}°C` : 'No data'}`}
         />
     );

@@ -5,7 +5,7 @@ services:
       - "9080:9080"
       - "9443:9443"
     volumes:
-      - ./2025-01-01-00-07-00.csv:/app/2025-01-01-00-07-00.csv:ro
+      # - ./2025-01-01-00-07-00.csv:/app/2025-01-01-00-07-00.csv:ro
       - ./ssl:/app/ssl:ro
     environment:
       - WS_PORT=9080

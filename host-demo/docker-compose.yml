@@ -12,3 +12,21 @@ services:
       - "443:443"
     environment:
       - NODE_ENV=production
+
+  broadcast-server:
+    build:
+      context: ../car-simulate/persistent-broadcast
+    container_name: broadcast-server
+    restart: unless-stopped
+    ports:
+      - "9080:9080"
+      # - "9443:9443" # WSS not needed for local demo usually, but can be enabled if certs present
+    environment:
+      - WS_PORT=9080
+      - ENABLE_CSV=true
+      - ENABLE_ACCU=true
+      # Mount CSV if needed, or rely on image copy if I were to modify Dockerfile to copy it.
+      # The persistent-broadcast/Dockerfile doesn't copy the CSV? Let me check.
+    volumes:
+      - ../car-simulate/2025-01-01-00-07-00.csv:/app/2025-01-01-00-07-00.csv:ro
+      # - ../car-simulate/persistent-broadcast/ssl:/app/ssl:ro

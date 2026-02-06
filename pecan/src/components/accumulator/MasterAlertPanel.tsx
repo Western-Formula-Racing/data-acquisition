@@ -7,6 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { dataStore } from '../../lib/DataStore';
+import { useAccumulatorContext } from './AccumulatorContext';
 import {
     MODULE_IDS,
     type ModuleId,
@@ -314,6 +315,7 @@ function useAlertStates() {
 
 export default function MasterAlertPanel() {
     const alertStates = useAlertStates();
+    const { setHighlightTarget } = useAccumulatorContext();
 
     // Overall status
     const overallLevel: AlertLevel =
@@ -358,6 +360,18 @@ export default function MasterAlertPanel() {
         </button>
     );
 
+    const handleCellClick = (stat: { moduleId: ModuleId; index: number } | null) => {
+        if (stat) {
+            setHighlightTarget({ moduleId: stat.moduleId, index: stat.index, type: 'cell' });
+        }
+    };
+
+    const handleThermClick = (stat: { moduleId: ModuleId; index: number } | null) => {
+        if (stat) {
+            setHighlightTarget({ moduleId: stat.moduleId, index: stat.index, type: 'thermistor' });
+        }
+    };
+
     return (
         <div className={`
       bg-data-module-bg rounded-lg p-3
@@ -373,6 +387,7 @@ export default function MasterAlertPanel() {
                     value={packStats.maxTemp !== null ? `${packStats.maxTemp.value.toFixed(1)}°` : '--'}
                     sublabel={packStats.maxTemp?.label}
                     color={tempColor}
+                    onClick={() => handleThermClick(packStats.maxTemp)}
                 />
 
                 {/* Cell Delta */}
@@ -383,6 +398,7 @@ export default function MasterAlertPanel() {
                         ? `${packStats.minVoltage.label}↔${packStats.maxVoltage.label}`
                         : undefined}
                     color={deltaColor}
+                    onClick={() => handleCellClick(packStats.minVoltage)}
                 />
 
                 {/* Average Voltage */}
@@ -401,24 +417,28 @@ export default function MasterAlertPanel() {
                     sublabel={packStats.minVoltage?.label}
                     color={packStats.minVoltage && packStats.minVoltage.value < ALERT_THRESHOLDS.lowVoltage.warning
                         ? '#f97316' : '#22c55e'}
+                    onClick={() => handleCellClick(packStats.minVoltage)}
                 />
                 <StatCard
                     label="MAX V"
                     value={packStats.maxVoltage !== null ? `${packStats.maxVoltage.value.toFixed(3)}` : '--'}
                     sublabel={packStats.maxVoltage?.label}
                     color="#22c55e"
+                    onClick={() => handleCellClick(packStats.maxVoltage)}
                 />
                 <StatCard
                     label="MIN T"
                     value={packStats.minTemp !== null ? `${packStats.minTemp.value.toFixed(1)}°` : '--'}
                     sublabel={packStats.minTemp?.label}
                     color="#22c55e"
+                    onClick={() => handleThermClick(packStats.minTemp)}
                 />
                 <StatCard
                     label="MAX T"
                     value={packStats.maxTemp !== null ? `${packStats.maxTemp.value.toFixed(1)}°` : '--'}
                     sublabel={packStats.maxTemp?.label}
                     color={tempColor}
+                    onClick={() => handleThermClick(packStats.maxTemp)}
                 />
             </div>
 

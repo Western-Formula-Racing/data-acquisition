@@ -150,7 +150,7 @@ export default function ModuleCard({ moduleId, initialOpen = false }: ModuleCard
                         style={{ backgroundColor: statusColor }}
                     />
 
-                    <span className="text-white font-bold text-lg">Module {moduleId.slice(1)}</span>
+                    <span className="text-white font-bold text-lg whitespace-nowrap">Module {moduleId.slice(1)}</span>
                 </div>
 
                 {/* Summary stats */}
