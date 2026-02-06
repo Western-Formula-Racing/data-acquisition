@@ -1,4 +1,4 @@
-# Western Formula Racing - DAQ Radio System
+# Project PECAN, and Western Formula Racing's Telemetry System
 
 > A Western Formula Racing Open Source Project
 
@@ -6,30 +6,53 @@
 
 Comprehensive telemetry and data acquisition system for real-time monitoring of formula racing vehicle performance. This system captures CAN bus data from the vehicle, transmits it to a base station, and visualizes it through an interactive web dashboard.
 
+![pecan dashboard](pecan/docs-assets/PECAN-Dashboard.jpg)
+
+
+
 ## 🏎️ Overview
 
-The DAQ Radio system provides end-to-end telemetry for Western Formula Racing vehicles, enabling real-time monitoring of critical vehicle systems during testing and competition. The system consists of:
+The repository contains the end-to-end telemetry software for Western Formula Racing vehicles, enabling real-time monitoring of critical vehicle systems during testing and competition. The system consists of:
 
 - **PECAN Dashboard**: Real-time web-based visualization of vehicle telemetry
-- **Base Station**: Radio receiver and WebSocket bridge for telemetry data
-- **Car Simulator**: Testing tools for development without physical hardware
-- **Deployment Tools**: Docker-based hosting and production deployment
+- **Unified Telemetry Software**: Onboard and base station software for data transmission
 
 ## 🏗️ System Architecture
 
-```
-┌──────────────┐         ┌──────────────┐         ┌──────────────┐
-│   Vehicle    │         │     Base     │         │    PECAN     │
-│   CAN Bus    │ ──RF──> │   Station    │ ──WS──> │  Dashboard   │
-│              │         │   + Redis    │         │   (Web UI)   │
-└──────────────┘         └──────────────┘         └──────────────┘
+```mermaid
+flowchart LR
+    ECU["Vehicle CAN Bus (ECU)"]
+    HAT["Raspberry Pi CAN HAT"]
+    EDGE["Raspberry Pi
+    Edge Collector"]
+    BASE["Base Station Raspberry Pi"]
+    REDIS["Redis"]
+    DASH["PECAN Dashboard
+    (Web UI)"]
+    INFLUX["InfluxDB 3"]
+
+    ECU -->|CAN| HAT
+    HAT -->|SPI / CAN| EDGE
+    EDGE -->|RF| BASE
+    BASE --> REDIS
+    REDIS -->|WebSocket| DASH
+    REDIS -->|Stream / Write| INFLUX
 ```
 
 **Data Flow:**
-1. Vehicle CAN bus messages are captured via radio transmission
-2. Base station receives RF data and publishes to Redis
-3. Redis-to-WebSocket bridge broadcasts messages to connected clients
-4. PECAN dashboard visualizes data in real-time through customizable views
+
+1. Vehicle CAN bus messages are read by Raspberry Pi
+2. Onboard Raspberry Pi packs messages in UDP/TCP for radio transmission
+3. Base station receives RF data and publishes to Redis
+4. Redis-to-WebSocket/InfluxDB bridge broadcasts messages to connected clients and InfluxDB 3
+5. PECAN dashboard visualizes data in real-time through customizable views
+
+
+
+InfluxDB 3 is implemented in a separate repository:
+https://github.com/Western-Formula-Racing/daq-server-components
+
+
 
 ## 📦 Components
 
@@ -100,7 +123,7 @@ Production deployment configuration for hosting the PECAN dashboard.
    git clone https://github.com/Western-Formula-Racing/daq-radio.git
    cd daq-radio
    ```
-Documentation WIP.
+   Documentation WIP.
 
 ### Manual Setup (Individual Components)
 
