@@ -111,10 +111,10 @@ export async function loadDBCFromCache() {
     const cache = await caches.open("dbc-files");
     const cacheKey = "cache.dbc";
     console.log("[loadDBCFromCache] Looking for cached DBC file...");
-    
+
     const res = await cache.match(cacheKey);
     console.log("[loadDBCFromCache] Cache match result:", res);
-    
+
     if (res) {
       usingCache = true;
       dbcFile = await res.text();
@@ -124,7 +124,7 @@ export async function loadDBCFromCache() {
   } catch (error) {
     console.warn("[loadDBCFromCache] Cache API not available (requires HTTPS or localhost):", error instanceof Error ? error.message : String(error));
   }
-  
+
   // Fallback to localStorage (works in non-secure contexts)
   try {
     const cachedDBC = localStorage.getItem('dbc-file-content');
@@ -137,7 +137,7 @@ export async function loadDBCFromCache() {
   } catch (error) {
     console.error("[loadDBCFromCache] Error accessing localStorage:", error);
   }
-  
+
   // No cached DBC found, use default
   console.log("[loadDBCFromCache] No cached DBC found, using default");
   usingCache = false;

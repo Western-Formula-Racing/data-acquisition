@@ -9,7 +9,7 @@ import {
 } from "./utils/canProcessor";
 import { Outlet } from "react-router";
 import { webSocketService } from "./services/WebSocketService";
-import { DefaultBanner, CacheBanner } from "./components/Banners";
+import { DefaultBanner, CacheBanner } from "./components/AppBanners";
 
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
