@@ -153,6 +153,9 @@ def load_can_data(file_path: str) -> List[dict]:
         return data
     
     print(f"Loading CAN data from {file_path}...")
+    skipped_count = 0
+    max_logged_errors = 5  # Limit individual error logging to avoid log spam
+    
     with open(file_path, 'r') as f:
         reader = csv.reader(f)
         for row in reader:
@@ -167,9 +170,13 @@ def load_can_data(file_path: str) -> List[dict]:
                 data.append(message)
             except ValueError:
                 # Skip rows with invalid numeric values but continue processing other rows
-                print(f"Warning: Skipping malformed CAN row due to ValueError: {row}")
+                skipped_count += 1
+                if skipped_count <= max_logged_errors:
+                    print(f"Warning: Skipping malformed CAN row due to ValueError: {row}")
     
     print(f"Loaded {len(data)} CAN messages")
+    if skipped_count > 0:
+        print(f"Warning: Skipped {skipped_count} malformed row(s) with ValueError during CSV loading")
     return data
 
 
