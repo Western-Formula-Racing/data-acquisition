@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import "./App.css";
 import Sidebar from "./components/Sidebar";
 import Hamburger from "./components/HamburgerMenu";
+import SettingsModal from "./components/SettingsModal";
 import {
   loadDBCFromCache,
   usingCachedDBC,
@@ -12,6 +13,7 @@ import { DefaultBanner, CacheBanner } from "./components/Banners";
 
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   const [displayCacheBanner, setDisplayCacheBanner] = useState<boolean>(false);
   const [displayDefaultBanner, setDisplayDefaultBanner] =
@@ -25,6 +27,9 @@ function App() {
     toggleDefault: () => setDisplayDefaultBanner((o) => !o),
     toggleCache: () => setDisplayCacheBanner((o) => !o),
   };
+
+  const openSettings = () => setIsSettingsOpen(true);
+  const closeSettings = () => setIsSettingsOpen(false);
 
   useEffect(() => {
     (async () => {
@@ -63,7 +68,7 @@ function App() {
     <div className="h-screen flex flex-row overflow-hidden">
       <div className={`h-screen transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'lg:w-2/9 md:w-2/5 sm:w-3/5 w-full' : 'w-[60px]'}`}>
         {!isSidebarOpen && <Hamburger trigger={() => setIsSidebarOpen(true)} />}
-        {isSidebarOpen && <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />}
+        {isSidebarOpen && <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} onOpenSettings={openSettings} />}
       </div>
 
       {/* Main content area, Outlet element is needed to display the rendered child pages received from the routes */}
@@ -71,12 +76,14 @@ function App() {
         <DefaultBanner
           open={displayDefaultBanner}
           onClose={() => setDisplayDefaultBanner(false)}
+          onOpenSettings={openSettings}
         />
         <CacheBanner
           open={displayCacheBanner}
           onClose={() => setDisplayCacheBanner(false)}
         />
-        <Outlet context={{ isSidebarOpen, ...bannerApi }} />
+        <Outlet context={{ isSidebarOpen, openSettings, ...bannerApi }} />
+        <SettingsModal isOpen={isSettingsOpen} onClose={closeSettings} bannerApi={bannerApi} />
       </main>
 
 
