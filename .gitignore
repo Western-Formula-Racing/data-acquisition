@@ -232,3 +232,4 @@ pecan/src/assets/local.dbc
 test-logs/
 .pytest_cache/
 *.dat
+*.code-workspace
