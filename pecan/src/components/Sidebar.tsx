@@ -69,11 +69,11 @@ function Sidebar({ onClose, isOpen, onOpenSettings }: Readonly<InputProps>) {
               />
             </ul>
           </div>
-          <footer className="font-footer flex flex-col space-y-8 mb-10">
+          <footer className="font-footer flex flex-col items-start pl-[10%] space-y-8 mb-10">
             {/* Should go to /account*/}
             <NavLink
               to={"/account"}
-              className="!no-underline text-md flex flex-row space-x-6 ml-4"
+              className="!no-underline text-md flex flex-row items-center gap-6"
               onClick={onClose}
             >
               <img src={avatar} alt="avatar" width={30} height={30} />
@@ -82,7 +82,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings }: Readonly<InputProps>) {
             {/* Settings - opens modal */}
             <button
               onClick={handleSettingsClick}
-              className="!no-underline flex flex-row space-x-6 text-md ml-4 cursor-pointer bg-transparent border-none text-left"
+              className="!no-underline flex flex-row items-center gap-6 text-md cursor-pointer bg-transparent border-none"
             >
               <img src={settings} alt="settings" width={30} height={30} />
               <span className="text-sidebarfg">Settings</span>
