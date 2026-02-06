@@ -19,6 +19,7 @@ import {
 
 interface CellGridProps {
     moduleId: ModuleId;
+    onCellClick?: (moduleId: ModuleId, cellIndex: number) => void;
 }
 
 interface CellStats {
@@ -28,10 +29,11 @@ interface CellStats {
 }
 
 // Individual cell component with 1s throttled updates and highlight support
-function Cell({ moduleId, cellIndex, stats }: {
+function Cell({ moduleId, cellIndex, stats, onClick }: {
     moduleId: ModuleId;
     cellIndex: number;
     stats: CellStats;
+    onClick?: () => void;
 }) {
     const { highlightTarget } = useAccumulatorContext();
     const cellRef = useRef<HTMLDivElement>(null);
@@ -77,10 +79,11 @@ function Cell({ moduleId, cellIndex, stats }: {
             className={`
         relative flex items-center justify-center
         rounded-sm text-xs font-mono font-semibold
-        cursor-default transition-all duration-300
-        ${isHighlighted ? 'z-10 shadow-lg scale-105' : ''}
+        cursor-pointer transition-all duration-300
+        ${isHighlighted ? 'z-10 shadow-lg scale-105' : 'hover:scale-105 hover:z-10 hover:shadow-md'}
         ${!isHighlighted && isCritical ? 'animate-alert-pulse' : !isHighlighted && isWarning ? 'animate-warning-pulse' : ''}
       `}
+            onClick={onClick}
             style={{
                 backgroundColor: isHighlighted ? '#ffffff' : bgColor,
                 color: isHighlighted ? '#000000' : '#ffffff'
@@ -154,7 +157,7 @@ function useCellStats(moduleId: ModuleId): Map<number, CellStats> {
     return cellStats;
 }
 
-export default function CellGrid({ moduleId }: CellGridProps) {
+export default function CellGrid({ moduleId, onCellClick }: CellGridProps) {
     const cellIndices = useMemo(() =>
         Array.from({ length: CELLS_PER_MODULE }, (_, i) => i + 1),
         []
@@ -170,6 +173,7 @@ export default function CellGrid({ moduleId }: CellGridProps) {
                     moduleId={moduleId}
                     cellIndex={cellIndex}
                     stats={cellStats.get(cellIndex) || { current: null, min: null, max: null }}
+                    onClick={() => onCellClick?.(moduleId, cellIndex)}
                 />
             ))}
         </div>

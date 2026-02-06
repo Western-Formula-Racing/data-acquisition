@@ -24,6 +24,7 @@ import {
 interface ModuleCardProps {
     moduleId: ModuleId;
     initialOpen?: boolean;
+    onCellClick?: (moduleId: ModuleId, cellIndex: number) => void;
 }
 
 interface ModuleStats {
@@ -122,7 +123,7 @@ function useModuleStats(moduleId: ModuleId): ModuleStats {
     return stats;
 }
 
-export default function ModuleCard({ moduleId, initialOpen = false }: ModuleCardProps) {
+export default function ModuleCard({ moduleId, initialOpen = false, onCellClick }: ModuleCardProps) {
     const [isOpen, setIsOpen] = useState(initialOpen);
     const { voltageStats, tempStats, alertLevel } = useModuleStats(moduleId);
 
@@ -195,7 +196,7 @@ export default function ModuleCard({ moduleId, initialOpen = false }: ModuleCard
                                 {/* Cell voltage grid */}
                                 <div>
                                     <h4 className="text-xs text-white mb-1 font-semibold">Cell Voltages</h4>
-                                    <CellGrid moduleId={moduleId} />
+                                    <CellGrid moduleId={moduleId} onCellClick={onCellClick} />
                                 </div>
 
                                 {/* Thermistor bar */}

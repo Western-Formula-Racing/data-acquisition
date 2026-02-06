@@ -12,11 +12,34 @@ import {
   ChargingCurve,
   MODULE_IDS,
   AccumulatorProvider,
+  getCellSignalInfo,
+  type ModuleId,
 } from '../components/accumulator';
+import DraggablePlot from '../components/DraggablePlot';
+import { type PlotSignal } from '../components/PlotManager';
+import { dataStore } from '../lib/DataStore';
 
 export default function Accumulator() {
   // Time window for charging curve (5 minutes default)
   const [chartTimeWindow, setChartTimeWindow] = useState(300000);
+
+  // Plot modal state
+  const [plotSignal, setPlotSignal] = useState<PlotSignal | null>(null);
+
+  const handleCellClick = (moduleId: ModuleId, cellIndex: number) => {
+    const { msgId, signalName } = getCellSignalInfo(moduleId, cellIndex);
+
+    // Try to get friendly message name from store, or construct one
+    const latest = dataStore.getLatest(msgId);
+    const messageName = latest?.messageName || `Module ${moduleId} Voltage`;
+
+    setPlotSignal({
+      msgID: msgId,
+      signalName: signalName,
+      messageName: messageName,
+      unit: 'V'
+    });
+  };
 
   return (
     <AccumulatorProvider>
@@ -63,6 +86,7 @@ export default function Accumulator() {
                 key={moduleId}
                 moduleId={moduleId}
                 initialOpen={true}
+                onCellClick={handleCellClick}
               />
             ))}
           </div>
@@ -75,6 +99,13 @@ export default function Accumulator() {
             </p>
           </div>
         </div>
+
+        {/* Cell Plot Window (Draggable) */}
+        <DraggablePlot
+          isOpen={!!plotSignal}
+          onClose={() => setPlotSignal(null)}
+          signalInfo={plotSignal}
+        />
       </div>
     </AccumulatorProvider>
   );
