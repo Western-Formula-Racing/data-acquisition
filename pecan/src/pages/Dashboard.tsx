@@ -65,7 +65,7 @@ function Dashboard() {
   const [tickUpdate, setTickUpdate] = useState(Date.now());
   const [currentSortIcon, setCurrentSortIcon] = useState(atozIcon);
   const [viewMode, setViewMode] = useState<"cards" | "list">("list");
-  
+
   const [tourOpen, setTourOpen] = useState(false);
   const [currentTourStep, setCurrentTourStep] = useState(0);
 
@@ -397,14 +397,14 @@ function Dashboard() {
   return (
     <div className="grid grid-cols-3 gap-0 w-100 h-full">
       {/* Tour Guide Overlay */}
-      <TourGuide 
-        steps={TOUR_STEPS} 
-        isOpen={tourOpen} 
+      <TourGuide
+        steps={TOUR_STEPS}
+        isOpen={tourOpen}
         onClose={handleCloseTour}
         currentStepIndex={currentTourStep}
         onStepChange={setCurrentTourStep}
       />
-      
+
       {/* Data display section */}
       <div className="col-span-2 relative flex flex-col h-full overflow-y-auto">
         <div className="flex-1 p-4 pb-16">
@@ -416,14 +416,7 @@ function Dashboard() {
             {/* View selection options */}
             <div className="col-span-1 flex items-center justify-end gap-1 p-3">
               <div className="flex flex-row">
-                {/* Help Button */}
-                <button
-                  onClick={handleStartTour}
-                  className="w-[50px] h-[50px] flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 rounded-full transition-colors text-gray-400 hover:text-white font-bold text-lg"
-                  title="Start Tour"
-                >
-                  ?
-                </button>
+
 
                 {/* Filter button and dropdown  */}
                 <div id="dash-sort-btn" className="relative">
@@ -442,9 +435,8 @@ function Dashboard() {
                             setSortingMethod("name");
                             setTickUpdate(Date.now());
                           }}
-                          className={`${
-                            sortingMethod == "name" ? "font-bold" : "font-regular"
-                          }`}
+                          className={`${sortingMethod == "name" ? "font-bold" : "font-regular"
+                            }`}
                         >
                           Name
                         </button>
@@ -453,11 +445,10 @@ function Dashboard() {
                             setSortingMethod("category");
                             setTickUpdate(Date.now());
                           }}
-                          className={`${
-                            sortingMethod == "category"
+                          className={`${sortingMethod == "category"
                               ? "font-bold"
                               : "font-regular"
-                          }`}
+                            }`}
                         >
                           Category
                         </button>
@@ -466,9 +457,8 @@ function Dashboard() {
                             setSortingMethod("id");
                             setTickUpdate(Date.now());
                           }}
-                          className={`${
-                            sortingMethod == "id" ? "font-bold" : "font-regular"
-                          }`}
+                          className={`${sortingMethod == "id" ? "font-bold" : "font-regular"
+                            }`}
                         >
                           ID
                         </button>
@@ -477,7 +467,7 @@ function Dashboard() {
                   )}
                 </div>
               </div>
-              
+
               <div id="dash-view-toggle" className="flex">
                 <button
                   onClick={() => setViewMode("list")}
@@ -498,139 +488,139 @@ function Dashboard() {
           </div>
 
           <div id="dash-data-list">
-          {viewMode === "cards" ? (
-            <>
-              <div className={`columns-2 gap-4`}>
-                {filteredMsgs.map(([canId, sample]) => {
+            {viewMode === "cards" ? (
+              <>
+                <div className={`columns-2 gap-4`}>
+                  {filteredMsgs.map(([canId, sample]) => {
+                    const data = Object.entries(sample.data).map(
+                      ([key, value]) => ({
+                        [key]: `${value.sensorReading} ${value.unit}`,
+                      })
+                    );
+
+                    return (
+                      <div key={canId} className="mb-4 avoid-break">
+                        <DataCard
+                          key={canId}
+                          msgID={canId}
+                          name={sample.messageName}
+                          data={
+                            data.length > 0
+                              ? data
+                              : [
+                                {
+                                  "No Data": "Waiting for messages...",
+                                },
+                              ]
+                          }
+                          lastUpdated={sample.timestamp}
+                          rawData={sample.rawData}
+                          compact={isSidebarOpen}
+                          onSignalClick={handleSignalClick}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              // List view box
+              <div className="w-100 h-fit rounded-sm bg-sidebar">
+                {/* Header */}
+                <div className="w-100 h-[40px] rounded-t-sm grid grid-cols-12 bg-data-module-bg text-white font-semibold text-sm shadow-md">
+                  {/* Message ID column */}
+                  <div className={`col-span-1 flex justify-left items-center ps-3 min-w-80`}>
+                    <button
+                      onClick={() => {
+                        setSortingMethod("id");
+                        setTickUpdate(Date.now());
+                      }}
+                    >
+                      Msg ID
+                    </button>
+                  </div>
+                  {/* Message name column */}
+                  <div className={`${isSidebarOpen ? "" : ""} col-span-4 flex justify-left items-center px-3`}>
+                    <button
+                      onClick={() => {
+                        setSortingMethod("name");
+                        setTickUpdate(Date.now());
+                      }}
+                    >
+                      Message Name
+                    </button>
+                  </div>
+                  {/* Category column */}
+                  <div className={`col-span-2 rounded-t-sm bg-data-textbox-bg flex justify-left items-center px-3`}>
+                    <button
+                      onClick={() => {
+                        setSortingMethod("category");
+                        setTickUpdate(Date.now());
+                      }}
+                    >
+                      Category
+                    </button>
+                  </div>
+                  {/* Data column */}
+                  <div className="col-span-3 flex justify-left items-center px-3">
+                    Data
+                  </div>
+                  {/* Time column */}
+                  <div className="col-span-2 flex justify-left items-center ps-3">
+                    Time
+                  </div>
+                </div>
+
+                {/* Rows */}
+
+                {filteredMsgs.map(([canId, sample], i) => {
                   const data = Object.entries(sample.data).map(
                     ([key, value]) => ({
                       [key]: `${value.sensorReading} ${value.unit}`,
                     })
                   );
 
+                  // Tour Targeting Logic:
+                  // Try to find message 1024 for AccelX signal (dynamic plot).
+                  // If not found, default to the first message (index 0).
+                  const targetId = "1024";
+                  const targetSignal = "AccelX";
+                  const foundIndex = filteredMsgs.findIndex(([id]) => id === targetId);
+
+                  // If found, target that index. If not, target 0.
+                  const tourTargetIndex = foundIndex !== -1 ? foundIndex : 0;
+                  const tourSignalName = foundIndex !== -1 ? targetSignal : undefined;
+
+                  // Check if THIS row is the target
+                  const isTarget = i === tourTargetIndex;
+
                   return (
-                    <div key={canId} className="mb-4 avoid-break">
-                      <DataCard
-                        key={canId}
-                        msgID={canId}
-                        name={sample.messageName}
-                        data={
-                          data.length > 0
-                            ? data
-                            : [
-                                {
-                                  "No Data": "Waiting for messages...",
-                                },
-                              ]
-                        }
-                        lastUpdated={sample.timestamp}
-                        rawData={sample.rawData}
-                        compact={isSidebarOpen}
-                        onSignalClick={handleSignalClick}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            // List view box
-            <div className="w-100 h-fit rounded-sm bg-sidebar">
-              {/* Header */}
-              <div className="w-100 h-[40px] rounded-t-sm grid grid-cols-12 bg-data-module-bg text-white font-semibold text-sm shadow-md">
-                {/* Message ID column */}
-                <div className={`col-span-1 flex justify-left items-center ps-3 min-w-80`}>
-                  <button
-                    onClick={() => {
-                      setSortingMethod("id");
-                      setTickUpdate(Date.now());
-                    }}
-                  >
-                    Msg ID
-                  </button>
-                </div>
-                {/* Message name column */}
-                <div className={`${isSidebarOpen ? "" : ""} col-span-4 flex justify-left items-center px-3`}>
-                  <button
-                    onClick={() => {
-                      setSortingMethod("name");
-                      setTickUpdate(Date.now());
-                    }}
-                  >
-                    Message Name
-                  </button>
-                </div>
-                {/* Category column */}
-                <div className={`col-span-2 rounded-t-sm bg-data-textbox-bg flex justify-left items-center px-3`}>
-                  <button
-                    onClick={() => {
-                      setSortingMethod("category");
-                      setTickUpdate(Date.now());
-                    }}
-                  >
-                    Category
-                  </button>
-                </div>
-                {/* Data column */}
-                <div className="col-span-3 flex justify-left items-center px-3">
-                  Data
-                </div>
-                {/* Time column */}
-                <div className="col-span-2 flex justify-left items-center ps-3">
-                  Time
-                </div>
-              </div>
-
-              {/* Rows */}
-
-              {filteredMsgs.map(([canId, sample], i) => {
-                const data = Object.entries(sample.data).map(
-                  ([key, value]) => ({
-                    [key]: `${value.sensorReading} ${value.unit}`,
-                  })
-                );
-
-                // Tour Targeting Logic:
-                // Try to find message 1024 for AccelX signal (dynamic plot).
-                // If not found, default to the first message (index 0).
-                const targetId = "1024";
-                const targetSignal = "AccelX";
-                const foundIndex = filteredMsgs.findIndex(([id]) => id === targetId);
-                
-                // If found, target that index. If not, target 0.
-                const tourTargetIndex = foundIndex !== -1 ? foundIndex : 0;
-                const tourSignalName = foundIndex !== -1 ? targetSignal : undefined;
-
-                // Check if THIS row is the target
-                const isTarget = i === tourTargetIndex;
-
-                return (
-                  <DataRow
-                    key={canId}
-                    msgID={canId}
-                    name={sample.messageName}
-                    data={
-                      data.length > 0
-                        ? data
-                        : [
+                    <DataRow
+                      key={canId}
+                      msgID={canId}
+                      name={sample.messageName}
+                      data={
+                        data.length > 0
+                          ? data
+                          : [
                             {
                               "No Data": "Waiting for messages...",
                             },
                           ]
-                    }
-                    lastUpdated={sample.timestamp}
-                    rawData={sample.rawData}
-                    index={i}
-                    compact={isSidebarOpen}
-                    onSignalClick={handleSignalClick}
-                    isTourRow={tourOpen && isTarget}
-                    tourSignal={tourSignalName}
-                    initialOpen={tourOpen && isTarget} 
-                  />
-                );
-              })}
-            </div>
-          )}
+                      }
+                      lastUpdated={sample.timestamp}
+                      rawData={sample.rawData}
+                      index={i}
+                      compact={isSidebarOpen}
+                      onSignalClick={handleSignalClick}
+                      isTourRow={tourOpen && isTarget}
+                      tourSignal={tourSignalName}
+                      initialOpen={tourOpen && isTarget}
+                    />
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -706,6 +696,16 @@ function Dashboard() {
           ))
         )}
       </div>
+
+      {/* Floating Tour Button */}
+      <button
+        onClick={handleStartTour}
+        className="fixed bottom-6 right-6 z-40 w-10 h-10 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center hover:bg-blue-500 hover:scale-110 transition-all"
+        title="Start Tour"
+        aria-label="Start Tour"
+      >
+        <span className="text-lg font-bold">?</span>
+      </button>
 
       {/* Plot Controls Modal */}
       {plotControls.visible && plotControls.signalInfo && (

@@ -1,4 +1,5 @@
 import { forceCache } from "../utils/canProcessor";
+import { useState } from "react";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -56,6 +57,8 @@ async function uploadFileToCache(file: File) {
 
 function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalProps>) {
     if (!isOpen) return null;
+
+    const [customWsUrl, setCustomWsUrl] = useState(() => localStorage.getItem("custom-ws-url") || "");
 
     const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -127,6 +130,34 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                             accept=".dbc"
                             onChange={handleChange}
                         />
+                    </div>
+
+                    {/* WebSocket URL Section */}
+                    <div className="flex flex-row w-full rounded-lg text-white bg-option justify-between items-center px-4 py-3">
+                        <div className="flex flex-col">
+                            <span className="text-sm font-medium">Custom WebSocket URL</span>
+                            <span className="text-xs text-gray-400">Leave empty to use auto (Local/Cloud)</span>
+                        </div>
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                placeholder="ws://localhost:9080"
+                                className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none w-64"
+                                value={customWsUrl}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    setCustomWsUrl(val);
+                                    if (val) localStorage.setItem("custom-ws-url", val);
+                                    else localStorage.removeItem("custom-ws-url");
+                                }}
+                            />
+                            <button
+                                onClick={() => globalThis.location.reload()}
+                                className="bg-banner-button hover:bg-blue-600 px-3 py-1 text-sm rounded text-white transition-colors"
+                            >
+                                Apply
+                            </button>
+                        </div>
                     </div>
 
                     {/* Future settings will go here */}
