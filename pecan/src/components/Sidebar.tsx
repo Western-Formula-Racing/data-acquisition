@@ -85,7 +85,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings }: Readonly<InputProps>) {
               className="!no-underline flex flex-row space-x-6 text-md ml-4 cursor-pointer bg-transparent border-none text-left"
             >
               <img src={settings} alt="settings" width={30} height={30} />
-              <span className="text-sidebarfg">Settings and Preferences</span>
+              <span className="text-sidebarfg">Settings</span>
             </button>
           </footer>
         </div>
