@@ -50,7 +50,6 @@ function Sidebar({ onClose, isOpen, onOpenSettings }: Readonly<InputProps>) {
                 option="ACCUMULATOR"
                 path="/accumulator"
                 onClose={onClose}
-                isPending={true}
               />
               <SidebarOption
                 option="CHARGECART"
