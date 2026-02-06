@@ -194,6 +194,7 @@ export default function ChargingCurve({
                         strokeWidth={2}
                         dot={false}
                         connectNulls
+                        isAnimationActive={false}
                     />
                     <Line
                         yAxisId="temp"
@@ -203,6 +204,7 @@ export default function ChargingCurve({
                         strokeWidth={2}
                         dot={false}
                         connectNulls
+                        isAnimationActive={false}
                     />
                 </LineChart>
             </ResponsiveContainer>

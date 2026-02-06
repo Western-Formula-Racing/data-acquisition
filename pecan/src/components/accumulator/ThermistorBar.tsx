@@ -34,7 +34,7 @@ function ThermistorSegment({ moduleId, thermistorIndex, temp }: {
     thermistorIndex: number;
     temp: number | null;
 }) {
-    const { highlightTarget } = useAccumulatorContext();
+    const { highlightTargets } = useAccumulatorContext();
     const { signalName } = getThermistorSignalInfo(moduleId, thermistorIndex);
 
     const bgColor = getTemperatureColor(temp);
@@ -42,9 +42,9 @@ function ThermistorSegment({ moduleId, thermistorIndex, temp }: {
     const isWarning = temp !== null && temp >= ALERT_THRESHOLDS.overTemp.warning;
 
     // Check if this thermistor is highlighted
-    const isHighlighted = highlightTarget?.type === 'thermistor' &&
-        highlightTarget?.moduleId === moduleId &&
-        highlightTarget?.index === thermistorIndex;
+    const isHighlighted = highlightTargets.some(t =>
+        t.type === 'thermistor' && t.moduleId === moduleId && t.index === thermistorIndex
+    );
 
     return (
         <div

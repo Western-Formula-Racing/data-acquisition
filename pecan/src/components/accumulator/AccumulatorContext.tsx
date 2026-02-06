@@ -8,14 +8,16 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import type { ModuleId } from './AccumulatorTypes';
 
-export type HighlightTarget = {
+export type SingleHighlightTarget = {
     moduleId: ModuleId;
     type: 'cell' | 'thermistor';
     index: number;
-} | null;
+};
+
+export type HighlightTarget = SingleHighlightTarget | SingleHighlightTarget[] | null;
 
 interface AccumulatorContextType {
-    highlightTarget: HighlightTarget;
+    highlightTargets: SingleHighlightTarget[];
     setHighlightTarget: (target: HighlightTarget) => void;
     clearHighlight: () => void;
 }
@@ -23,25 +25,26 @@ interface AccumulatorContextType {
 const AccumulatorContext = createContext<AccumulatorContextType | null>(null);
 
 export function AccumulatorProvider({ children }: { children: ReactNode }) {
-    const [highlightTarget, setHighlightTargetState] = useState<HighlightTarget>(null);
+    const [highlightTargets, setHighlightTargets] = useState<SingleHighlightTarget[]>([]);
 
     const setHighlightTarget = useCallback((target: HighlightTarget) => {
-        setHighlightTargetState(target);
+        const targets = Array.isArray(target) ? target : target ? [target] : [];
+        setHighlightTargets(targets);
 
         // Auto-clear highlight after 2 seconds (after blink animation)
         if (target) {
             setTimeout(() => {
-                setHighlightTargetState(null);
+                setHighlightTargets([]);
             }, 2000);
         }
     }, []);
 
     const clearHighlight = useCallback(() => {
-        setHighlightTargetState(null);
+        setHighlightTargets([]);
     }, []);
 
     return (
-        <AccumulatorContext.Provider value={{ highlightTarget, setHighlightTarget, clearHighlight }}>
+        <AccumulatorContext.Provider value={{ highlightTargets, setHighlightTarget, clearHighlight }}>
             {children}
         </AccumulatorContext.Provider>
     );

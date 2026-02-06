@@ -35,7 +35,7 @@ function Cell({ moduleId, cellIndex, stats, onClick }: {
     stats: CellStats;
     onClick?: () => void;
 }) {
-    const { highlightTarget } = useAccumulatorContext();
+    const { highlightTargets } = useAccumulatorContext();
     const cellRef = useRef<HTMLDivElement>(null);
     const { signalName } = getCellSignalInfo(moduleId, cellIndex);
 
@@ -53,9 +53,9 @@ function Cell({ moduleId, cellIndex, stats, onClick }: {
     );
 
     // Check if this cell is highlighted
-    const isHighlighted = highlightTarget?.type === 'cell' &&
-        highlightTarget?.moduleId === moduleId &&
-        highlightTarget?.index === cellIndex;
+    const isHighlighted = highlightTargets.some(t =>
+        t.type === 'cell' && t.moduleId === moduleId && t.index === cellIndex
+    );
 
     // Scroll into view when highlighted
     useEffect(() => {

@@ -18,6 +18,28 @@ import {
 import DraggablePlot from '../components/DraggablePlot';
 import { type PlotSignal } from '../components/PlotManager';
 import { dataStore } from '../lib/DataStore';
+import TourGuide, { type TourStep } from '../components/TourGuide';
+
+const TOUR_STEPS: TourStep[] = [
+  {
+    targetId: "accu-module-cards",
+    title: "Module Grid",
+    content: "Cells are clickable! Click any cell to open a detailed voltage plot in a floating window.",
+    position: "right"
+  },
+  {
+    targetId: "accu-chart-window",
+    title: "Charging Curve",
+    content: "This chart shows pack-wide trends. You can adjust the time window using the dropdown in the top right.",
+    position: "left"
+  },
+  {
+    targetId: "accu-delta-stat",
+    title: "Cell Delta",
+    content: "Clicking the Delta stat will highlight the two cells with the largest voltage difference in the grid below.",
+    position: "right"
+  }
+];
 
 export default function Accumulator() {
   // Time window for charging curve (5 minutes default)
@@ -25,6 +47,10 @@ export default function Accumulator() {
 
   // Plot modal state
   const [plotSignal, setPlotSignal] = useState<PlotSignal | null>(null);
+
+  // Tour state
+  const [tourOpen, setTourOpen] = useState(false);
+  const [currentTourStep, setCurrentTourStep] = useState(0);
 
   const handleCellClick = (moduleId: ModuleId, cellIndex: number) => {
     const { msgId, signalName } = getCellSignalInfo(moduleId, cellIndex);
@@ -63,7 +89,10 @@ export default function Accumulator() {
               <ChargingCurve timeWindowMs={chartTimeWindow} />
 
               {/* Time window selector */}
-              <div className="absolute top-3 right-3 flex items-center gap-2">
+              <div
+                id="accu-chart-window"
+                className="absolute top-3 right-3 flex items-center gap-2"
+              >
                 <span className="text-xs text-gray-400">Window:</span>
                 <select
                   value={chartTimeWindow}
@@ -81,9 +110,10 @@ export default function Accumulator() {
 
           {/* Module Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {MODULE_IDS.map((moduleId) => (
+            {MODULE_IDS.map((moduleId, index) => (
               <ModuleCard
                 key={moduleId}
+                id={index === 0 ? "accu-module-cards" : undefined}
                 moduleId={moduleId}
                 initialOpen={true}
                 onCellClick={handleCellClick}
@@ -100,11 +130,29 @@ export default function Accumulator() {
           </div>
         </div>
 
+        {/* Floating Tour Button */}
+        <button
+          onClick={() => setTourOpen(true)}
+          className="fixed bottom-6 right-6 z-40 w-10 h-10 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center hover:bg-blue-500 hover:scale-110 transition-all"
+          title="Start Tour"
+          aria-label="Start Tour"
+        >
+          <span className="text-lg font-bold">?</span>
+        </button>
+
         {/* Cell Plot Window (Draggable) */}
         <DraggablePlot
           isOpen={!!plotSignal}
           onClose={() => setPlotSignal(null)}
           signalInfo={plotSignal}
+        />
+
+        <TourGuide
+          steps={TOUR_STEPS}
+          isOpen={tourOpen}
+          onClose={() => setTourOpen(false)}
+          currentStepIndex={currentTourStep}
+          onStepChange={setCurrentTourStep}
         />
       </div>
     </AccumulatorProvider>

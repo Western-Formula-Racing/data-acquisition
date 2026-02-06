@@ -25,6 +25,7 @@ interface ModuleCardProps {
     moduleId: ModuleId;
     initialOpen?: boolean;
     onCellClick?: (moduleId: ModuleId, cellIndex: number) => void;
+    id?: string;
 }
 
 interface ModuleStats {
@@ -123,7 +124,7 @@ function useModuleStats(moduleId: ModuleId): ModuleStats {
     return stats;
 }
 
-export default function ModuleCard({ moduleId, initialOpen = false, onCellClick }: ModuleCardProps) {
+export default function ModuleCard({ moduleId, initialOpen = false, onCellClick, id }: ModuleCardProps) {
     const [isOpen, setIsOpen] = useState(initialOpen);
     const { voltageStats, tempStats, alertLevel } = useModuleStats(moduleId);
 
@@ -132,6 +133,7 @@ export default function ModuleCard({ moduleId, initialOpen = false, onCellClick 
 
     return (
         <div
+            id={id}
             className={`
         bg-data-module-bg rounded-lg overflow-hidden
         border-2 transition-all duration-300

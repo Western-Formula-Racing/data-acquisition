@@ -335,14 +335,16 @@ export default function MasterAlertPanel() {
             ? '#f97316' : '#22c55e';
 
     // Stat card component for mobile-friendly touch targets
-    const StatCard = ({ label, value, sublabel, color, onClick }: {
+    const StatCard = ({ label, value, sublabel, color, onClick, id }: {
         label: string;
         value: string;
         sublabel?: string;
         color: string;
         onClick?: () => void;
+        id?: string;
     }) => (
         <button
+            id={id}
             onClick={onClick}
             disabled={!onClick}
             className={`
@@ -360,9 +362,10 @@ export default function MasterAlertPanel() {
         </button>
     );
 
-    const handleCellClick = (stat: { moduleId: ModuleId; index: number } | null) => {
-        if (stat) {
-            setHighlightTarget({ moduleId: stat.moduleId, index: stat.index, type: 'cell' });
+    const handleCellClick = (stats: { moduleId: ModuleId; index: number }[] | { moduleId: ModuleId; index: number } | null) => {
+        if (stats) {
+            const targets = Array.isArray(stats) ? stats : [stats];
+            setHighlightTarget(targets.map(s => ({ moduleId: s.moduleId, index: s.index, type: 'cell' })));
         }
     };
 
@@ -392,13 +395,14 @@ export default function MasterAlertPanel() {
 
                 {/* Cell Delta */}
                 <StatCard
+                    id="accu-delta-stat"
                     label="CELL Δ"
                     value={packStats.cellDelta !== null ? `${(packStats.cellDelta * 1000).toFixed(0)}mV` : '--'}
                     sublabel={packStats.minVoltage && packStats.maxVoltage
                         ? `${packStats.minVoltage.label}↔${packStats.maxVoltage.label}`
                         : undefined}
                     color={deltaColor}
-                    onClick={() => handleCellClick(packStats.minVoltage)}
+                    onClick={() => handleCellClick([packStats.minVoltage, packStats.maxVoltage].filter((x): x is NonNullable<typeof x> => x !== null))}
                 />
 
                 {/* Average Voltage */}
