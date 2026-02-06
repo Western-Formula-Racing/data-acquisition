@@ -166,7 +166,8 @@ def load_can_data(file_path: str) -> List[dict]:
                 }
                 data.append(message)
             except ValueError:
-                pass
+                # Skip rows with invalid numeric values but continue processing other rows
+                print(f"Warning: Skipping malformed CAN row due to ValueError: {row}")
     
     print(f"Loaded {len(data)} CAN messages")
     return data
@@ -181,7 +182,8 @@ async def handle_client(websocket: WebSocketServerProtocol):
         async for message in websocket:
             print(f"Received from {client_info}: {message[:100]}")
     except websockets.exceptions.ConnectionClosed:
-        pass
+        # Connection closed by client; ignore and proceed to cleanup in finally block
+        print(f"Connection closed by client: {client_info}")
     finally:
         connected_clients.discard(websocket)
         print(f"Client disconnected: {client_info} (Total: {len(connected_clients)})")
