@@ -48,11 +48,19 @@ export default function ChargingCurve({
             const voltageBuckets = new Map<number, number[]>();
             const tempBuckets = new Map<number, number[]>();
 
+            // Cache histories per msgId to avoid redundant getHistory calls
+            const historyCache = new Map<string, ReturnType<typeof dataStore.getHistory>>();
+
             // Collect data from all modules
             for (const moduleId of MODULE_IDS) {
                 for (let i = 1; i <= CELLS_PER_MODULE; i++) {
                     const { msgId, signalName } = getCellSignalInfo(moduleId, i);
-                    const history = dataStore.getHistory(msgId, timeWindowMs);
+                    
+                    // Get history from cache or fetch and cache it
+                    if (!historyCache.has(msgId)) {
+                        historyCache.set(msgId, dataStore.getHistory(msgId, timeWindowMs));
+                    }
+                    const history = historyCache.get(msgId)!;
 
                     for (const sample of history) {
                         const bucket = Math.floor(sample.timestamp / bucketMs) * bucketMs;
@@ -66,7 +74,12 @@ export default function ChargingCurve({
 
                 for (let i = 1; i <= THERMISTORS_PER_MODULE; i++) {
                     const { msgId, signalName } = getThermistorSignalInfo(moduleId, i);
-                    const history = dataStore.getHistory(msgId, timeWindowMs);
+                    
+                    // Get history from cache or fetch and cache it
+                    if (!historyCache.has(msgId)) {
+                        historyCache.set(msgId, dataStore.getHistory(msgId, timeWindowMs));
+                    }
+                    const history = historyCache.get(msgId)!;
 
                     for (const sample of history) {
                         const bucket = Math.floor(sample.timestamp / bucketMs) * bucketMs;
