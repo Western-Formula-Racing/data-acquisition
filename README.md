@@ -58,9 +58,12 @@ https://github.com/Western-Formula-Racing/daq-server-components
 
 ### PECAN Dashboard (`/pecan`)
 
+**Demo:** https://western-formula-racing.github.io/daq-radio/dashboard
+
 A modern React + TypeScript web application for real-time telemetry visualization.
 
 **Features:**
+
 - Real-time CAN message visualization with WebSocket connection
 - Customizable category-based filtering and color-coding
 - Multiple view modes (cards, list, flow diagrams)
@@ -103,7 +106,6 @@ Production deployment configuration for hosting the PECAN dashboard.
 **Features:**
 - Dockerized Nginx setup for static file serving
 - SSL/HTTPS configuration support
-- Domain hosting configuration (`pecan-demo.0001200.xyz`)
 
 [📖 Deployment Guide](./host-demo/README.md)
 
