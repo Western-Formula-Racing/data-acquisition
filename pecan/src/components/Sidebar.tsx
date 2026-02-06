@@ -7,9 +7,15 @@ import { NavLink } from "react-router";
 interface InputProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenSettings: () => void;
 }
 
-function Sidebar({ onClose, isOpen }: Readonly<InputProps>) {
+function Sidebar({ onClose, isOpen, onOpenSettings }: Readonly<InputProps>) {
+  const handleSettingsClick = () => {
+    onClose();
+    onOpenSettings();
+  };
+
   return (
     <div>
       {/* Listener for outside of sidebar clicks */}
@@ -22,8 +28,8 @@ function Sidebar({ onClose, isOpen }: Readonly<InputProps>) {
 
       <div
         className={`fixed top-0 left-0 h-full lg:w-2/9 md:w-2/5 sm:w-3/5 w-full flex flex-col z-50 transform transition-all duration-450 overflow-y-auto overscroll-contain ${isOpen
-            ? "translate-x-0 opacity-100"
-            : "-translate-x-full opacity-0 pointer-events-none"
+          ? "translate-x-0 opacity-100"
+          : "-translate-x-full opacity-0 pointer-events-none"
           }`}
       >
         <div className="bg-sidebar z-100 w-[98%] h-full flex flex-col justify-between">
@@ -74,15 +80,14 @@ function Sidebar({ onClose, isOpen }: Readonly<InputProps>) {
               <img src={avatar} alt="avatar" width={30} height={30} />
               <span className="text-sidebarfg">Account</span>
             </NavLink>
-            {/* Should go to /settings*/}
-            <NavLink
-              to={"/settings"}
-              className="!no-underline flex flex-row space-x-6 text-md ml-4"
-              onClick={onClose}
+            {/* Settings - opens modal */}
+            <button
+              onClick={handleSettingsClick}
+              className="!no-underline flex flex-row space-x-6 text-md ml-4 cursor-pointer bg-transparent border-none text-left"
             >
               <img src={settings} alt="settings" width={30} height={30} />
               <span className="text-sidebarfg">Settings and Preferences</span>
-            </NavLink>
+            </button>
           </footer>
         </div>
       </div>
