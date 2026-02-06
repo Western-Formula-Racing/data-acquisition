@@ -3,10 +3,11 @@
  * 
  * Combines CellGrid and ThermistorBar for a single accumulator module.
  * Expandable design with summary stats in collapsed state.
+ * Updates at 1Hz for consistent page refresh rate.
  */
 
-import { useState, useMemo } from 'react';
-import { useSignal } from '../../lib/useDataStore';
+import { useState, useEffect } from 'react';
+import { dataStore } from '../../lib/DataStore';
 import CellGrid from './CellGrid';
 import ThermistorBar from './ThermistorBar';
 import {
@@ -25,68 +26,100 @@ interface ModuleCardProps {
     initialOpen?: boolean;
 }
 
-// Hook to calculate module stats from all signals
-function useModuleStats(moduleId: ModuleId) {
-    // Collect all cell voltages
-    const cellReadings: (number | null)[] = [];
-    for (let i = 1; i <= CELLS_PER_MODULE; i++) {
-        const { msgId, signalName } = getCellSignalInfo(moduleId, i);
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        const signalData = useSignal(msgId, signalName);
-        cellReadings.push(signalData?.sensorReading ?? null);
-    }
+interface ModuleStats {
+    voltageStats: {
+        min: number;
+        max: number;
+        avg: number;
+        diff: number;
+        count: number;
+    } | null;
+    tempStats: {
+        min: number;
+        max: number;
+        avg: number;
+        count: number;
+    } | null;
+    alertLevel: AlertLevel;
+}
 
-    // Collect all thermistor readings
-    const tempReadings: (number | null)[] = [];
-    for (let i = 1; i <= THERMISTORS_PER_MODULE; i++) {
-        const { msgId, signalName } = getThermistorSignalInfo(moduleId, i);
-        // eslint-disable-next-line react-hooks/rules-of-hooks
-        const signalData = useSignal(msgId, signalName);
-        tempReadings.push(signalData?.sensorReading ?? null);
-    }
+// Hook to calculate module stats at 1Hz
+function useModuleStats(moduleId: ModuleId): ModuleStats {
+    const [stats, setStats] = useState<ModuleStats>({
+        voltageStats: null,
+        tempStats: null,
+        alertLevel: 'normal',
+    });
 
-    return useMemo(() => {
-        const validVoltages = cellReadings.filter((r): r is number => r !== null);
-        const validTemps = tempReadings.filter((r): r is number => r !== null);
-
-        const voltageStats = validVoltages.length > 0 ? {
-            min: Math.min(...validVoltages),
-            max: Math.max(...validVoltages),
-            avg: validVoltages.reduce((a, b) => a + b, 0) / validVoltages.length,
-            diff: Math.max(...validVoltages) - Math.min(...validVoltages),
-            count: validVoltages.length,
-        } : null;
-
-        const tempStats = validTemps.length > 0 ? {
-            min: Math.min(...validTemps),
-            max: Math.max(...validTemps),
-            avg: validTemps.reduce((a, b) => a + b, 0) / validTemps.length,
-            count: validTemps.length,
-        } : null;
-
-        // Determine alert level
-        let alertLevel: AlertLevel = 'normal';
-
-        if (voltageStats) {
-            if (voltageStats.diff >= ALERT_THRESHOLDS.voltageDiff.critical ||
-                voltageStats.min < ALERT_THRESHOLDS.lowVoltage.critical) {
-                alertLevel = 'critical';
-            } else if (voltageStats.diff >= ALERT_THRESHOLDS.voltageDiff.warning ||
-                voltageStats.min < ALERT_THRESHOLDS.lowVoltage.warning) {
-                alertLevel = 'warning';
+    useEffect(() => {
+        const computeStats = () => {
+            // Collect all cell voltages
+            const cellReadings: number[] = [];
+            for (let i = 1; i <= CELLS_PER_MODULE; i++) {
+                const { msgId, signalName } = getCellSignalInfo(moduleId, i);
+                const latest = dataStore.getLatest(msgId);
+                const value = latest?.data[signalName]?.sensorReading;
+                if (value !== undefined) cellReadings.push(value);
             }
-        }
 
-        if (tempStats && alertLevel !== 'critical') {
-            if (tempStats.max >= ALERT_THRESHOLDS.overTemp.critical) {
-                alertLevel = 'critical';
-            } else if (tempStats.max >= ALERT_THRESHOLDS.overTemp.warning && alertLevel !== 'warning') {
-                alertLevel = 'warning';
+            // Collect all thermistor readings
+            const tempReadings: number[] = [];
+            for (let i = 1; i <= THERMISTORS_PER_MODULE; i++) {
+                const { msgId, signalName } = getThermistorSignalInfo(moduleId, i);
+                const latest = dataStore.getLatest(msgId);
+                const value = latest?.data[signalName]?.sensorReading;
+                if (value !== undefined) tempReadings.push(value);
             }
-        }
 
-        return { voltageStats, tempStats, alertLevel };
-    }, [cellReadings, tempReadings]);
+            const voltageStats = cellReadings.length > 0 ? {
+                min: Math.min(...cellReadings),
+                max: Math.max(...cellReadings),
+                avg: cellReadings.reduce((a, b) => a + b, 0) / cellReadings.length,
+                diff: Math.max(...cellReadings) - Math.min(...cellReadings),
+                count: cellReadings.length,
+            } : null;
+
+            const tempStats = tempReadings.length > 0 ? {
+                min: Math.min(...tempReadings),
+                max: Math.max(...tempReadings),
+                avg: tempReadings.reduce((a, b) => a + b, 0) / tempReadings.length,
+                count: tempReadings.length,
+            } : null;
+
+            // Determine alert level
+            let alertLevel: AlertLevel = 'normal';
+
+            if (voltageStats) {
+                if (voltageStats.diff >= ALERT_THRESHOLDS.voltageDiff.critical ||
+                    voltageStats.min < ALERT_THRESHOLDS.lowVoltage.critical) {
+                    alertLevel = 'critical';
+                } else if (voltageStats.diff >= ALERT_THRESHOLDS.voltageDiff.warning ||
+                    voltageStats.min < ALERT_THRESHOLDS.lowVoltage.warning) {
+                    alertLevel = 'warning';
+                }
+            }
+
+            if (tempStats && alertLevel !== 'critical') {
+                if (tempStats.max >= ALERT_THRESHOLDS.overTemp.critical) {
+                    alertLevel = 'critical';
+                } else if (tempStats.max >= ALERT_THRESHOLDS.overTemp.warning && alertLevel !== 'warning') {
+                    alertLevel = 'warning';
+                }
+            }
+
+            setStats({ voltageStats, tempStats, alertLevel });
+        };
+
+        // Initial compute
+        computeStats();
+
+        // Update every 1 second
+        const interval = setInterval(computeStats, 1000);
+
+        return () => clearInterval(interval);
+    }, [moduleId]);
+
+    return stats;
 }
 
 export default function ModuleCard({ moduleId, initialOpen = false }: ModuleCardProps) {
