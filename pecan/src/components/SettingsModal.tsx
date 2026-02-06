@@ -1,5 +1,6 @@
-import { forceCache } from "../utils/canProcessor";
+import { forceCache, clearDbcCache } from "../utils/canProcessor";
 import { useState } from "react";
+import { Button } from "./Button";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -117,19 +118,29 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                     {/* DBC Upload Section - compact single row */}
                     <div className="flex flex-row w-full rounded-lg text-white bg-option justify-between items-center px-4 py-3">
                         <span className="text-sm font-medium">Custom DBC File</span>
-                        <label
-                            htmlFor="dbc-upload-modal"
-                            className="bg-banner-button hover:bg-banner-button-hover px-4 py-1.5 cursor-pointer text-center text-sm font-semibold text-white rounded-md transition-colors shadow-sm"
-                        >
-                            Upload DBC
-                        </label>
-                        <input
-                            className="sr-only"
-                            id="dbc-upload-modal"
-                            type="file"
-                            accept=".dbc"
-                            onChange={handleChange}
-                        />
+                        <div className="flex gap-2 items-center">
+                            <input
+                                className="sr-only"
+                                id="dbc-upload-modal"
+                                type="file"
+                                accept=".dbc"
+                                onChange={handleChange}
+                            />
+                            <Button
+                                onClick={clearDbcCache}
+                                variant="danger"
+                            >
+                                Clear Cache
+                            </Button>
+                            <Button
+                                as="label"
+                                htmlFor="dbc-upload-modal"
+                                variant="primary"
+                            >
+                                Upload DBC
+                            </Button>
+
+                        </div>
                     </div>
 
                     {/* WebSocket URL Section */}
@@ -138,11 +149,11 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                             <span className="text-sm font-medium">Custom WebSocket URL</span>
                             <span className="text-xs text-gray-400">Leave empty to use auto (Local/Cloud)</span>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 items-center">
                             <input
                                 type="text"
                                 placeholder="ws://localhost:9080"
-                                className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none w-64"
+                                className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none w-64 h-9"
                                 value={customWsUrl}
                                 onChange={(e) => {
                                     const val = e.target.value;
@@ -151,12 +162,12 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                     else localStorage.removeItem("custom-ws-url");
                                 }}
                             />
-                            <button
+                            <Button
                                 onClick={() => globalThis.location.reload()}
-                                className="bg-banner-button hover:bg-blue-600 px-3 py-1 text-sm rounded text-white transition-colors"
+                                variant="primary"
                             >
                                 Apply
-                            </button>
+                            </Button>
                         </div>
                     </div>
 

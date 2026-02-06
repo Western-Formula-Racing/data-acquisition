@@ -1,4 +1,4 @@
-import { forceCache } from "../utils/canProcessor";
+import { clearDbcCache } from "../utils/canProcessor";
 import { useState, useEffect } from "react";
 import { Banner, BannerButton } from "./Banner";
 
@@ -38,26 +38,7 @@ function useAutoClose(open: boolean, onClose: () => void, duration: number = 5) 
 }
 
 const handleRevert = async () => {
-  // Clear Cache API if available
-  try {
-    const cache = await caches.open("dbc-files");
-    const deleted = await cache.delete("cache.dbc");
-    console.log("[handleRevert] Cache API delete result:", deleted);
-  } catch (error) {
-    console.warn("[handleRevert] Cache API not available:", error instanceof Error ? error.message : String(error));
-  }
-
-  // Clear localStorage
-  try {
-    localStorage.removeItem('dbc-file-content');
-    localStorage.removeItem('dbc-cache-active');
-    console.log("[handleRevert] Cleared localStorage");
-  } catch (error) {
-    console.error("[handleRevert] Error clearing localStorage:", error);
-  }
-
-  forceCache(false);
-  globalThis.location.reload();
+  await clearDbcCache();
 };
 
 function DefaultBanner({ open, onClose, onOpenSettings }: Readonly<InputProps>) {

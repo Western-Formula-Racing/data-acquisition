@@ -15,6 +15,7 @@ import {
   getCellSignalInfo,
   type ModuleId,
 } from '../components/accumulator';
+import { BatteryStatus } from '../components/accumulator/BatteryStatus';
 import DraggablePlot from '../components/DraggablePlot';
 import { type PlotSignal } from '../components/PlotManager';
 import { dataStore } from '../lib/DataStore';
@@ -72,11 +73,12 @@ export default function Accumulator() {
       <div className="h-full overflow-y-auto bg-sidebar">
         <div className="p-4 space-y-4 max-w-7xl mx-auto">
           {/* Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
             <h1 className="text-white text-2xl font-bold flex items-center gap-2">
               <span className="text-3xl">🔋</span>
               Accumulator Monitor
             </h1>
+            <BatteryStatus />
           </div>
 
           {/* Alert Panel + Charging Curve in 2-column layout */}
@@ -155,6 +157,6 @@ export default function Accumulator() {
           onStepChange={setCurrentTourStep}
         />
       </div>
-    </AccumulatorProvider>
+    </AccumulatorProvider >
   );
 }

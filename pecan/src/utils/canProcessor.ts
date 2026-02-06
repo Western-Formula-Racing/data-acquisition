@@ -158,6 +158,29 @@ export function forceCache(force: boolean) {
   usingCache = force;
 }
 
+export async function clearDbcCache() {
+  // Clear Cache API if available
+  try {
+    const cache = await caches.open("dbc-files");
+    const deleted = await cache.delete("cache.dbc");
+    console.log("[clearDbcCache] Cache API delete result:", deleted);
+  } catch (error) {
+    console.warn("[clearDbcCache] Cache API not available:", error instanceof Error ? error.message : String(error));
+  }
+
+  // Clear localStorage
+  try {
+    localStorage.removeItem('dbc-file-content');
+    localStorage.removeItem('dbc-cache-active');
+    console.log("[clearDbcCache] Cleared localStorage");
+  } catch (error) {
+    console.error("[clearDbcCache] Error clearing localStorage:", error);
+  }
+
+  forceCache(false);
+  globalThis.location.reload();
+}
+
 /**
  * Process test CAN messages using the DBC file
  */
