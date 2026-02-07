@@ -3,9 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn('Supabase URL or Anon Key missing. syncing will be disabled.');
-}
+// Cloud sync is disabled if credentials are missing (graceful degradation)
 
 export const supabase = createClient(
     supabaseUrl || '',
@@ -13,14 +11,21 @@ export const supabase = createClient(
 );
 
 // Types for our config table
+export interface MonitorPreset {
+    name: string;
+    nodes: any[];
+    edges: any[];
+}
+
 export interface UserConfig {
     id?: string;
     user_id: string;
     config_data: {
-        plots: any[];
-        viewMode: string;
-        sortingMethod: string;
-        // Add other settings here as needed
+        plots?: any[];
+        viewMode?: string;
+        sortingMethod?: string;
+        monitorPresets?: MonitorPreset[];
+        activeMonitorPreset?: string | null;
     };
     updated_at: string;
 }

@@ -15,7 +15,24 @@ on:
       - '.github/workflows/telemetry-ci.yml'
 
 jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      telemetry: ${{ steps.filter.outputs.telemetry }}
+      pecan: ${{ steps.filter.outputs.pecan }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            telemetry:
+              - 'universal-telemetry-software/**'
+            pecan:
+              - 'pecan/**'
+
   test:
+
     runs-on: ubuntu-latest
     
     steps:
@@ -81,9 +98,9 @@ jobs:
         docker compose -f docker-compose.test.yml down -v
 
   publish-telemetry:
-    needs: test
+    needs: [test, detect-changes]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.telemetry == 'true'
     permissions:
       contents: read
       packages: write
@@ -127,9 +144,9 @@ jobs:
         cache-to: type=gha,mode=max
 
   publish-pecan:
-    needs: test
+    needs: [test, detect-changes]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.pecan == 'true'
     permissions:
       contents: read
       packages: write
