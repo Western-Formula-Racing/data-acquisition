@@ -7,6 +7,7 @@ import ChargeCart from "./pages/ChargeCart";
 import MonitorBuilder from "./pages/MonitorBuilder";
 import SystemLink from "./pages/SystemLink";
 import Landing from "./pages/Landing";
+import AuthCallback from "./pages/AuthCallback";
 
 // Get base path for GitHub Pages deployment
 const basename = import.meta.env.BASE_URL || '/';
@@ -27,4 +28,6 @@ export const router = createBrowserRouter([
       { path: "system-link", element: <SystemLink /> },
     ],
   },
+  // Supabase PKCE auth callback - must be outside the App layout
+  { path: "auth/callback", element: <AuthCallback /> },
 ], { basename });
