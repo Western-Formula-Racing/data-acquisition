@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { supabase, type UserConfig } from '../lib/supabase';
-import type { Session } from '@supabase/supabase-js';
+import { auth, db, type UserConfig } from '../lib/firebase';
+import { onAuthStateChanged, type User } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 // Debounce helper
 function debounce<T extends (...args: any[]) => void>(func: T, wait: number): T {
@@ -12,77 +13,65 @@ function debounce<T extends (...args: any[]) => void>(func: T, wait: number): T 
 }
 
 export function useRemoteConfig() {
-    const [session, setSession] = useState<Session | null>(null);
+    const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        // Skip if Supabase is not configured
-        if (!supabase) return;
+        // Skip if Firebase is not configured
+        if (!auth) return;
 
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSession(session);
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            setUser(user);
         });
 
-        const {
-            data: { subscription },
-        } = supabase.auth.onAuthStateChange((_event, session) => {
-            setSession(session);
-        });
-
-        return () => subscription.unsubscribe();
+        return () => unsubscribe();
     }, []);
 
     const saveConfig = useCallback(
         debounce(async (config: UserConfig['config_data']) => {
-            if (!supabase || !session?.user) return;
+            if (!db || !user) return;
 
             console.log('[Sync] Saving config to cloud...', config);
 
-            const { error } = await supabase
-                .from('user_configs')
-                .upsert({
-                    user_id: session.user.id,
+            try {
+                await setDoc(doc(db, 'user_configs', user.uid), {
+                    user_id: user.uid,
                     config_data: config,
                     updated_at: new Date().toISOString(),
-                }, { onConflict: 'user_id' });
-
-            if (error) {
-                console.error('[Sync] Error saving config:', error);
-            } else {
+                });
                 console.log('[Sync] Config saved successfully.');
+            } catch (error) {
+                console.error('[Sync] Error saving config:', error);
             }
         }, 2000),
-        [session]
+        [user]
     );
 
     const loadConfig = async (): Promise<UserConfig['config_data'] | null> => {
-        if (!supabase || !session?.user) return null;
+        if (!db || !user) return null;
         setLoading(true);
 
-        const { data, error } = await supabase
-            .from('user_configs')
-            .select('config_data')
-            .eq('user_id', session.user.id)
-            .single();
+        try {
+            const docRef = doc(db, 'user_configs', user.uid);
+            const docSnap = await getDoc(docRef);
 
-        setLoading(false);
+            setLoading(false);
 
-        if (error) {
-            if (error.code !== 'PGRST116') {
-                console.error('[Sync] Error loading config:', error);
+            if (docSnap.exists()) {
+                console.log('[Sync] Config loaded from cloud.');
+                return docSnap.data().config_data;
             }
             return null;
+        } catch (error) {
+            console.error('[Sync] Error loading config:', error);
+            setLoading(false);
+            return null;
         }
-
-        if (data) {
-            console.log('[Sync] Config loaded from cloud.');
-            return data.config_data;
-        }
-        return null;
     };
 
     return {
-        session,
+        user,
+        session: user ? { user: { id: user.uid, email: user.email } } : null, // Compatibility shim
         saveConfig,
         loadConfig,
         loading

@@ -18,7 +18,7 @@ import 'reactflow/dist/style.css';
 
 import { useSignal, useAllSignals } from '../lib/useDataStore';
 import { useRemoteConfig } from '../lib/useRemoteConfig';
-import type { MonitorPreset } from '../lib/supabase';
+import type { MonitorPreset } from '../lib/firebase';
 
 // Custom Node Component
 const SensorNode = ({ data }: { data: { msgID: string; signalName: string } }) => {
