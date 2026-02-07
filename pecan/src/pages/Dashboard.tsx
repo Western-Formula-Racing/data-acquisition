@@ -537,7 +537,7 @@ function Dashboard() {
           <div id="dash-data-list">
             {/* Force list view on mobile, respect viewMode on desktop */}
             {viewMode === "cards" ? (
-              <div className="hidden md:block">
+              <div className="block">
                 <div className="columns-2 gap-4">
                   {filteredMsgs.map(([canId, sample]) => {
                     const data = Object.entries(sample.data).map(
