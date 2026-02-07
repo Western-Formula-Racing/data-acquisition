@@ -125,7 +125,7 @@ export default function Accumulator() {
 
           {/* Info footer */}
           <div className="text-center text-gray-500 text-xs py-4">
-            <p>Monitoring 5 modules × 20 cells × 18 thermistors = 190 sensors</p>
+            <p>Monitoring 5 modules × (20 series-cell voltage measurements + 18 thermistors per module) = 190 sensors</p>
             <p className="mt-1">
               Alert thresholds: Voltage diff &gt;0.2V | Temp &gt;55°C | Module imbalance &gt;0.5V | Low cell &lt;3.0V
             </p>

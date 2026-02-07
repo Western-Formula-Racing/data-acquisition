@@ -139,6 +139,13 @@ export class WebSocketService {
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
+
+  public reconnect() {
+    console.log('Forcing WebSocket reconnection...');
+    this.disconnect();
+    this.reconnectAttempts = 0;
+    this.connect();
+  }
 }
 
 export const webSocketService = new WebSocketService();

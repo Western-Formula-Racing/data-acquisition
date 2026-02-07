@@ -91,7 +91,7 @@ function Cell({ moduleId, cellIndex, stats, onClick }: {
             title={`${signalName}\nCurrent: ${current !== null ? `${current.toFixed(3)}V` : '--'}\n1s range: ${range}`}
         >
             <span className={`drop-shadow-md text-xs ${isHighlighted ? 'text-black' : 'text-white'}`}>
-                {current !== null ? current.toFixed(2) : '---'}
+                {current !== null ? current.toFixed(3) : '---'}
             </span>
         </div>
     );

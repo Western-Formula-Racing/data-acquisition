@@ -1,3 +1,4 @@
+import { webSocketService } from "../services/WebSocketService";
 import { forceCache, clearDbcCache } from "../utils/canProcessor";
 import { useState } from "react";
 import { Button } from "./Button";
@@ -155,15 +156,18 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                 placeholder="ws://localhost:9080"
                                 className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none w-64 h-9"
                                 value={customWsUrl}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    setCustomWsUrl(val);
-                                    if (val) localStorage.setItem("custom-ws-url", val);
-                                    else localStorage.removeItem("custom-ws-url");
-                                }}
+                                onChange={(e) => setCustomWsUrl(e.target.value)}
                             />
                             <Button
-                                onClick={() => globalThis.location.reload()}
+                                onClick={() => {
+                                    if (customWsUrl) {
+                                        localStorage.setItem("custom-ws-url", customWsUrl);
+                                    } else {
+                                        localStorage.removeItem("custom-ws-url");
+                                    }
+                                    webSocketService.reconnect();
+                                    onClose();
+                                }}
                                 variant="primary"
                             >
                                 Apply
