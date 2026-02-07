@@ -4,9 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import type { Plugin } from "vite";
 import { VitePWA } from 'vite-plugin-pwa';
 
-// GitHub Pages deployment - repository name (change if different)
-const isGitHubPages = process.env.GITHUB_ACTIONS === 'true';
-const repoName = 'daq-radio';
+// Custom domain: pecan.westernformularacing.org (no base path needed)
 
 // WebSocket server plugin - runs in both development and production
 const websocketPlugin = (): Plugin => ({
@@ -76,7 +74,7 @@ function startWebSocketServer() {
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: isGitHubPages ? `/${repoName}/` : '/',
+  base: '/',
   plugins: [
     react(),
     tailwindcss(),
