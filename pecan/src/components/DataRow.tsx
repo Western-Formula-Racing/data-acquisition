@@ -9,7 +9,6 @@ interface DataRowProps {
     rawData: string;
     lastUpdated: number;
     index: number; // for alternating row colors
-    compact?: boolean;
     initialOpen?: boolean;
     isTourRow?: boolean;
     tourSignal?: string;
@@ -22,7 +21,7 @@ interface DataRowProps {
     ) => void;
 }
 
-export default function DataRow({ msgID, name, category, data, rawData, lastUpdated, index, compact = false, initialOpen = false, isTourRow = false, tourSignal, onSignalClick }: Readonly<DataRowProps>) {
+export default function DataRow({ msgID, name, category, data, rawData, lastUpdated, index, initialOpen = false, isTourRow = false, tourSignal, onSignalClick }: Readonly<DataRowProps>) {
 
     const [currentTime, setCurrentTime] = useState(Date.now());
 
@@ -71,16 +70,16 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
                 aria-expanded={open}
                 onClick={toggle}
                 id={isTourRow ? "tour-row-header" : undefined}
-                className={`grid grid-cols-12 text-white text-sm h-[50px] ${rowBg} cursor-pointer transition hover:bg-data-textbox-bg/50`}
+                className={`grid grid-cols-10 md:grid-cols-12 text-white text-sm h-[50px] ${rowBg} cursor-pointer transition hover:bg-data-textbox-bg/50`}
             >
 
                 {/* Msg ID column */}
-                <div className={`col-span-1 flex justify-left items-center ps-3 min-w-80`}>
+                <div className="col-span-2 md:col-span-1 flex justify-left items-center ps-3">
                     {msgID}
                 </div>
 
                 {/* Message name column */}
-                <div className={`${compact ? "" : ""} col-span-4 flex justify-left items-center px-3 truncate`}>
+                <div className="col-span-4 md:col-span-4 flex justify-left items-center px-3 truncate">
                     {name}
                 </div>
 
@@ -89,10 +88,10 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
                     {computedCategory}
                 </div>
 
-                {/* Data column - Hidden in compact mode */}
-                    <div className="col-span-3 flex justify-left items-center px-3 truncate">
-                        {rawData}
-                    </div>
+                {/* Data column - Hidden on mobile */}
+                <div className="hidden md:flex col-span-3 justify-left items-center px-3 truncate">
+                    {rawData}
+                </div>
 
                 {/* Time column */}
                 <div className="col-span-2 flex justify-left items-center ps-3">
@@ -136,15 +135,15 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
                                             }
                                         }}
                                     >
-                                        <div 
+                                        <div
                                             id={isTourRow && (tourSignal ? label === tourSignal : idx === 0) ? "tour-signal-label" : undefined}
-                                            className="w-full text-white text-sm font-semibold py-2 px-3 text-left"
+                                            className="w-full text-white text-sm font-semibold py-2 px-3 text-left break-words"
                                         >
                                             {label}
                                         </div>
                                     </div>
-                                    <div className="col-span-3 border-l-3 border-data-textbox-bg">
-                                        <div className="w-full text-white text-sm font-semibold py-2 px-3 text-left">
+                                    <div className="col-span-3 border-l-3 border-data-textbox-bg overflow-hidden">
+                                        <div className="w-full text-white text-sm font-semibold py-2 px-3 text-left truncate">
                                             {value}
                                         </div>
                                     </div>
