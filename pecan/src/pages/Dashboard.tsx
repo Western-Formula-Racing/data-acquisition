@@ -69,7 +69,8 @@ function Dashboard() {
 
   const [tourOpen, setTourOpen] = useState(false);
   const [currentTourStep, setCurrentTourStep] = useState(0);
-  const [plotPanelOpen, setPplotPanelOpen] = useState(true);
+  const [plotPanelOpen, setPlotPanelOpen] = useState(true);
+  const setPplotPanelOpen = setPlotPanelOpen;
   const [showPerfOverlay, setShowPerfOverlay] = useState(() =>
     localStorage.getItem("perf-overlay-enabled") === "true"
   );
