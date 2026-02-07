@@ -414,7 +414,7 @@ export default function MasterAlertPanel() {
             </div>
 
             {/* Min/Max Values Row */}
-            <div className="grid grid-cols-4 gap-2 mb-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
                 <StatCard
                     label="MIN V"
                     value={packStats.minVoltage !== null ? `${packStats.minVoltage.value.toFixed(3)}` : '--'}
@@ -446,24 +446,12 @@ export default function MasterAlertPanel() {
                 />
             </div>
 
-            {/* Status badge + Alert indicators row */}
-            <div className="flex items-center justify-between">
-                <div className="flex flex-wrap gap-2">
-                    <AlertIndicator label="VOLT Δ" state={alertStates.voltageDiff} />
-                    <AlertIndicator label="TEMP" state={alertStates.overTemp} />
-                    <AlertIndicator label="BAL" state={alertStates.imbalance} />
-                    <AlertIndicator label="LOW" state={alertStates.lowVoltage} />
-                </div>
-
-                <span
-                    className={`text-xs font-bold px-2 py-1 rounded ${overallLevel !== 'normal' ? 'animate-pulse' : ''}`}
-                    style={{
-                        backgroundColor: `${getAlertLevelColor(overallLevel)}20`,
-                        color: getAlertLevelColor(overallLevel),
-                    }}
-                >
-                    {overallLevel === 'critical' ? 'CRITICAL' : overallLevel === 'warning' ? 'WARNING' : 'OK'}
-                </span>
+            {/* Alert indicators row */}
+            <div className="flex flex-wrap gap-2">
+                <AlertIndicator label="VOLT Δ" state={alertStates.voltageDiff} />
+                <AlertIndicator label="TEMP" state={alertStates.overTemp} />
+                <AlertIndicator label="BAL" state={alertStates.imbalance} />
+                <AlertIndicator label="LOW" state={alertStates.lowVoltage} />
             </div>
         </div>
     );

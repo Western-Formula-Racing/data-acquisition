@@ -58,9 +58,12 @@ async function uploadFileToCache(file: File) {
 }
 
 function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalProps>) {
-    if (!isOpen) return null;
-
     const [customWsUrl, setCustomWsUrl] = useState(() => localStorage.getItem("custom-ws-url") || "");
+    const [perfOverlayEnabled, setPerfOverlayEnabled] = useState(() =>
+        localStorage.getItem("perf-overlay-enabled") === "true"
+    );
+
+    if (!isOpen) return null;
 
     const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -85,10 +88,10 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
 
     return (
         <div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             onClick={handleBackdropClick}
         >
-            <div className="relative bg-sidebar rounded-xl shadow-2xl border border-gray-600 w-[66%] h-[80%] p-6 flex flex-col animate-in fade-in zoom-in-95 duration-200">
+            <div className="relative bg-sidebar rounded-xl shadow-2xl border border-gray-600 w-full max-w-2xl h-[80%] md:w-[66%] p-4 md:p-6 flex flex-col animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
                 {/* Close button */}
                 <button
                     onClick={onClose}
@@ -117,7 +120,7 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                 {/* Settings content area - scrollable for future settings */}
                 <div className="flex-1 overflow-y-auto space-y-4">
                     {/* DBC Upload Section - compact single row */}
-                    <div className="flex flex-row w-full rounded-lg text-white bg-option justify-between items-center px-4 py-3">
+                    <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
                         <span className="text-sm font-medium">Custom DBC File</span>
                         <div className="flex gap-2 items-center">
                             <input
@@ -145,7 +148,7 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                     </div>
 
                     {/* WebSocket URL Section */}
-                    <div className="flex flex-row w-full rounded-lg text-white bg-option justify-between items-center px-4 py-3">
+                    <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
                         <div className="flex flex-col">
                             <span className="text-sm font-medium">Custom WebSocket URL</span>
                             <span className="text-xs text-gray-400">Leave empty to use auto (Local/Cloud)</span>
@@ -154,7 +157,7 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                             <input
                                 type="text"
                                 placeholder="ws://localhost:9080"
-                                className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none w-64 h-9"
+                                className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none flex-1 min-w-0 md:w-48 h-9"
                                 value={customWsUrl}
                                 onChange={(e) => setCustomWsUrl(e.target.value)}
                             />
@@ -173,6 +176,29 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                 Apply
                             </Button>
                         </div>
+                    </div>
+
+                    {/* Performance Overlay Toggle */}
+                    <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
+                        <div className="flex flex-col">
+                            <span className="text-sm font-medium">Performance Overlay</span>
+                            <span className="text-xs text-gray-400">Show FPS and memory stats at bottom of dashboard</span>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={perfOverlayEnabled}
+                                onChange={(e) => {
+                                    const newValue = e.target.checked;
+                                    setPerfOverlayEnabled(newValue);
+                                    localStorage.setItem("perf-overlay-enabled", newValue ? "true" : "false");
+                                    // Dispatch event so Dashboard can react
+                                    window.dispatchEvent(new CustomEvent("perf-overlay-changed"));
+                                }}
+                            />
+                            <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
                     </div>
 
                     {/* Future settings will go here */}
