@@ -3,6 +3,7 @@ import "./App.css";
 import Sidebar from "./components/Sidebar";
 import Hamburger from "./components/HamburgerMenu";
 import SettingsModal from "./components/SettingsModal";
+import { AuthModal } from "./components/AuthModal";
 import {
   loadDBCFromCache,
   usingCachedDBC,
@@ -14,6 +15,7 @@ import { DefaultBanner, CacheBanner } from "./components/AppBanners";
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
 
   const [displayCacheBanner, setDisplayCacheBanner] = useState<boolean>(false);
   const [displayDefaultBanner, setDisplayDefaultBanner] =
@@ -30,6 +32,8 @@ function App() {
 
   const openSettings = () => setIsSettingsOpen(true);
   const closeSettings = () => setIsSettingsOpen(false);
+  const openAuth = () => setIsAuthOpen(true);
+  const closeAuth = () => setIsAuthOpen(false);
 
   useEffect(() => {
     (async () => {
@@ -68,7 +72,7 @@ function App() {
     <div className="h-screen flex flex-row overflow-hidden">
       <div className={`h-screen transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'lg:w-2/9 md:w-2/5 sm:w-3/5 w-full' : 'w-[60px]'}`}>
         {!isSidebarOpen && <Hamburger trigger={() => setIsSidebarOpen(true)} />}
-        {isSidebarOpen && <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} onOpenSettings={openSettings} />}
+        {isSidebarOpen && <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} onOpenSettings={openSettings} onOpenAuth={openAuth} />}
       </div>
 
       {/* Main content area, Outlet element is needed to display the rendered child pages received from the routes */}
@@ -84,6 +88,7 @@ function App() {
         />
         <Outlet context={{ isSidebarOpen, openSettings, ...bannerApi }} />
         <SettingsModal isOpen={isSettingsOpen} onClose={closeSettings} bannerApi={bannerApi} />
+        <AuthModal isOpen={isAuthOpen} onClose={closeAuth} />
       </main>
 
 

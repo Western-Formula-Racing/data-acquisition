@@ -8,12 +8,19 @@ interface InputProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenSettings: () => void;
+  onOpenAuth: () => void;
 }
 
-function Sidebar({ onClose, isOpen, onOpenSettings }: Readonly<InputProps>) {
+function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<InputProps>) {
   const handleSettingsClick = () => {
     onClose();
     onOpenSettings();
+  };
+
+  const handleAuthClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    onClose();
+    onOpenAuth();
   };
 
   return (
@@ -69,16 +76,16 @@ function Sidebar({ onClose, isOpen, onOpenSettings }: Readonly<InputProps>) {
               />
             </ul>
           </div>
-          <footer className="font-footer flex flex-col items-start pl-[10%] space-y-8 mb-10">
+          <footer className="font-footer flex flex-col items-start pl-[10%] gap-10 mb-10">
             {/* Should go to /account*/}
-            <NavLink
-              to={"/account"}
-              className="!no-underline text-md flex flex-row items-center gap-6"
-              onClick={onClose}
+            {/* Should go to /account*/}
+            <button
+              onClick={handleAuthClick}
+              className="!no-underline text-md flex flex-row items-center gap-6 bg-transparent border-none cursor-pointer"
             >
               <img src={avatar} alt="avatar" width={30} height={30} />
               <span className="text-sidebarfg">Account</span>
-            </NavLink>
+            </button>
             {/* Settings - opens modal */}
             <button
               onClick={handleSettingsClick}

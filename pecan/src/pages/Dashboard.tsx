@@ -16,6 +16,7 @@ import gridViewIcon from "../assets/grid-view.png";
 import { useOutletContext } from "react-router";
 import TourGuide from "../components/TourGuide";
 import type { TourStep } from "../components/TourGuide";
+import { useRemoteConfig } from "../lib/useRemoteConfig";
 
 interface Plot {
   id: string;
@@ -71,6 +72,7 @@ function Dashboard() {
 
   const { isSidebarOpen } = useOutletContext<{ isSidebarOpen: boolean }>();
 
+
   // Plotting State
   // =====================================================================
   const [plots, setPlots] = useState<Plot[]>([]);
@@ -97,6 +99,35 @@ function Dashboard() {
     id: 1,
     prev: "",
   });
+
+  // Cloud Sync
+  // =====================================================================
+  const { session, saveConfig, loadConfig } = useRemoteConfig();
+
+  // Load config on login
+  useEffect(() => {
+    if (session) {
+      loadConfig().then((config) => {
+        if (config) {
+          console.log("Applying remote config...");
+          if (config.plots) setPlots(config.plots);
+          if (config.viewMode) setViewMode(config.viewMode as "cards" | "list");
+          if (config.sortingMethod) setSortingMethod(config.sortingMethod);
+        }
+      });
+    }
+  }, [session]); // Only run when session changes (login)
+
+  // Save config on changes
+  useEffect(() => {
+    if (session) {
+      saveConfig({
+        plots,
+        viewMode,
+        sortingMethod,
+      });
+    }
+  }, [plots, viewMode, sortingMethod, session, saveConfig]);
 
   // Data
   // =====================================================================
@@ -446,8 +477,8 @@ function Dashboard() {
                             setTickUpdate(Date.now());
                           }}
                           className={`${sortingMethod == "category"
-                              ? "font-bold"
-                              : "font-regular"
+                            ? "font-bold"
+                            : "font-regular"
                             }`}
                         >
                           Category
