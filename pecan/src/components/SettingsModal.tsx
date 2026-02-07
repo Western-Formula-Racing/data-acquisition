@@ -61,6 +61,9 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
     if (!isOpen) return null;
 
     const [customWsUrl, setCustomWsUrl] = useState(() => localStorage.getItem("custom-ws-url") || "");
+    const [perfOverlayEnabled, setPerfOverlayEnabled] = useState(() =>
+        localStorage.getItem("perf-overlay-enabled") === "true"
+    );
 
     const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -173,6 +176,29 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                 Apply
                             </Button>
                         </div>
+                    </div>
+
+                    {/* Performance Overlay Toggle */}
+                    <div className="flex flex-row w-full rounded-lg text-white bg-option justify-between items-center px-4 py-3">
+                        <div className="flex flex-col">
+                            <span className="text-sm font-medium">Performance Overlay</span>
+                            <span className="text-xs text-gray-400">Show FPS and memory stats at bottom of dashboard</span>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                className="sr-only peer"
+                                checked={perfOverlayEnabled}
+                                onChange={(e) => {
+                                    const newValue = e.target.checked;
+                                    setPerfOverlayEnabled(newValue);
+                                    localStorage.setItem("perf-overlay-enabled", newValue ? "true" : "false");
+                                    // Dispatch event so Dashboard can react
+                                    window.dispatchEvent(new CustomEvent("perf-overlay-changed"));
+                                }}
+                            />
+                            <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
                     </div>
 
                     {/* Future settings will go here */}

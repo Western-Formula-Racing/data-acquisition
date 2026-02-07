@@ -70,6 +70,18 @@ function Dashboard() {
   const [tourOpen, setTourOpen] = useState(false);
   const [currentTourStep, setCurrentTourStep] = useState(0);
   const [plotPanelOpen, setPplotPanelOpen] = useState(true);
+  const [showPerfOverlay, setShowPerfOverlay] = useState(() =>
+    localStorage.getItem("perf-overlay-enabled") === "true"
+  );
+
+  // Listen for perf overlay setting changes
+  useEffect(() => {
+    const handlePerfChange = () => {
+      setShowPerfOverlay(localStorage.getItem("perf-overlay-enabled") === "true");
+    };
+    window.addEventListener("perf-overlay-changed", handlePerfChange);
+    return () => window.removeEventListener("perf-overlay-changed", handlePerfChange);
+  }, []);
 
   const { isSidebarOpen: _isSidebarOpen } = useOutletContext<{ isSidebarOpen: boolean }>();
 
@@ -663,8 +675,8 @@ function Dashboard() {
       <div
         id="dash-plot-sidebar"
         className={`md:col-span-1 bg-sidebar overflow-hidden flex flex-col transition-all duration-300 ${plotPanelOpen
-          ? 'flex-1 md:h-full p-4'
-          : 'fixed bottom-8 left-0 right-0 h-12 z-20 md:relative md:h-full md:p-4'
+            ? 'flex-1 md:h-full p-4'
+            : `fixed ${showPerfOverlay ? 'bottom-8' : 'bottom-0'} left-0 right-0 h-12 z-20 md:relative md:h-full md:p-4`
           }`}
       >
         {/* Collapsible header - shows on mobile */}
@@ -752,25 +764,27 @@ function Dashboard() {
         )
       }
 
-      {/* Performance Tab - Fixed at bottom */}
-      <div className="fixed bottom-0 left-0 right-0 z-30">
-        <div className="w-full py-2 px-4 bg-data-textbox-bg/95 backdrop-blur text-gray-300 text-xs border-t border-white/10">
-          <div className="flex justify-between items-center max-w-6xl mx-auto flex-wrap gap-1">
-            <span>FPS: {performanceStats.fps}</span>
-            <span className="hidden sm:inline">
-              CAN: {dataStoreStats.totalMessages > 0 ? "Live" : "0"}
-            </span>
-            <span className="hidden md:inline">
-              Mem: {performanceStats.memoryUsage}
-              {typeof performanceStats.memoryUsage === "number" ? "MB" : ""}
-            </span>
-            <span className="hidden lg:inline">
-              Store: {dataStoreStats.totalMessages} msgs, {dataStoreStats.totalSamples} samples
-            </span>
-            <span className="hidden lg:inline">Store Mem: {dataStoreStats.memoryEstimateMB}MB</span>
+      {/* Performance Tab - Fixed at bottom (controlled by settings) */}
+      {showPerfOverlay && (
+        <div className="fixed bottom-0 left-0 right-0 z-30">
+          <div className="w-full py-2 px-4 bg-data-textbox-bg/95 backdrop-blur text-gray-300 text-xs border-t border-white/10">
+            <div className="flex justify-between items-center max-w-6xl mx-auto flex-wrap gap-1">
+              <span>FPS: {performanceStats.fps}</span>
+              <span className="hidden sm:inline">
+                CAN: {dataStoreStats.totalMessages > 0 ? "Live" : "0"}
+              </span>
+              <span className="hidden md:inline">
+                Mem: {performanceStats.memoryUsage}
+                {typeof performanceStats.memoryUsage === "number" ? "MB" : ""}
+              </span>
+              <span className="hidden lg:inline">
+                Store: {dataStoreStats.totalMessages} msgs, {dataStoreStats.totalSamples} samples
+              </span>
+              <span className="hidden lg:inline">Store Mem: {dataStoreStats.memoryEstimateMB}MB</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
