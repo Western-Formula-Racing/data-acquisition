@@ -16,6 +16,9 @@ export function useRemoteConfig() {
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
+        // Skip if Supabase is not configured
+        if (!supabase) return;
+
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
         });
@@ -31,7 +34,7 @@ export function useRemoteConfig() {
 
     const saveConfig = useCallback(
         debounce(async (config: UserConfig['config_data']) => {
-            if (!session?.user) return;
+            if (!supabase || !session?.user) return;
 
             console.log('[Sync] Saving config to cloud...', config);
 
@@ -53,7 +56,7 @@ export function useRemoteConfig() {
     );
 
     const loadConfig = async (): Promise<UserConfig['config_data'] | null> => {
-        if (!session?.user) return null;
+        if (!supabase || !session?.user) return null;
         setLoading(true);
 
         const { data, error } = await supabase

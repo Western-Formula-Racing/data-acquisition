@@ -91,7 +91,11 @@ services:
       retries: 3
 
   pecan:
-    build: ../pecan
+    build:
+      context: ../pecan
+      args:
+        # Use production WebSocket for CI testing
+        VITE_WS_URL: wss://ws-wfr.0001200.xyz:9443
     container_name: daq-pecan-test
     restart: unless-stopped
     ports:

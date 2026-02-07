@@ -15,6 +15,9 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
     const [session, setSession] = useState<Session | null>(null);
 
     useEffect(() => {
+        // Skip if Supabase is not configured
+        if (!supabase) return;
+
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
         });
@@ -29,6 +32,8 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
 
     const handleMagicLink = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!supabase) return;
+
         setLoading(true);
         const { error } = await supabase.auth.signInWithOtp({
             email,
@@ -45,11 +50,25 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
     };
 
     const handleSignOut = async () => {
+        if (!supabase) return;
         await supabase.auth.signOut();
         onClose();
     };
 
     if (!isOpen) return null;
+
+    // Show message if Supabase is not configured
+    if (!supabase) {
+        return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
+                <div className="bg-sidebar rounded-xl border border-gray-600 w-[90%] max-w-md p-6 relative animate-in fade-in zoom-in-95 duration-200">
+                    <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white">✕</button>
+                    <h2 className="text-2xl font-semibold text-white mb-6">Cloud Sync</h2>
+                    <p className="text-gray-400">Cloud sync is not available in this environment.</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>

@@ -1,14 +1,15 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Cloud sync is disabled if credentials are missing (graceful degradation)
+// This prevents crashes in Docker/CI environments without Supabase config
+export const supabase: SupabaseClient | null = (supabaseUrl && supabaseAnonKey)
+    ? createClient(supabaseUrl, supabaseAnonKey)
+    : null;
 
-export const supabase = createClient(
-    supabaseUrl || '',
-    supabaseAnonKey || ''
-);
+export const isSupabaseConfigured = supabase !== null;
 
 // Types for our config table
 export interface MonitorPreset {

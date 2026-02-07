@@ -272,27 +272,45 @@ class TestPecanDashboard:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
             
-            # Collect console messages
+            # Collect console messages and errors
             console_messages = []
-            page.on("console", lambda msg: console_messages.append(msg.text))
+            page_errors = []
+            
+            def handle_console(msg):
+                console_messages.append(f"[{msg.type}] {msg.text}")
+            
+            def handle_error(error):
+                page_errors.append(str(error))
+            
+            page.on("console", handle_console)
+            page.on("pageerror", handle_error)
             
             try:
-                # Navigate to Pecan dashboard
-                await page.goto(PECAN_URL, timeout=15000)
+                # Navigate to Pecan dashboard and wait for network to settle
+                await page.goto(PECAN_URL, timeout=30000, wait_until="networkidle")
                 
-                # Wait for WebSocket connection and data (first 3 messages should appear quickly)
-                await asyncio.sleep(8)
+                # Log any page errors
+                if page_errors:
+                    logger.warning(f"Page errors: {page_errors}")
+                
+                # Wait for React app to initialize and WebSocket to connect
+                await asyncio.sleep(10)
+                
+                # Log all console messages for debugging
+                logger.info(f"Console messages captured: {len(console_messages)}")
+                for msg in console_messages[:15]:
+                    logger.info(f"  {msg}")
                 
                 # Check for WebSocket connection
                 connection_logs = [msg for msg in console_messages if "WebSocket connected" in msg]
                 assert len(connection_logs) > 0, \
-                    f"WebSocket connection not established. Console: {console_messages[:10]}"
+                    f"WebSocket connection not established. Errors: {page_errors}. Console: {console_messages[:15]}"
                 logger.info("✓ Pecan established WebSocket connection")
                 
                 # Check for data reception (should see at least first message)
                 data_logs = [msg for msg in console_messages if "Received WebSocket message #" in msg]
                 assert len(data_logs) > 0, \
-                    f"No WebSocket messages received. Console: {console_messages[:10]}"
+                    f"No WebSocket messages received. Console: {console_messages[:15]}"
                 logger.info(f"✓ Pecan received {len(data_logs)} WebSocket messages")
                 
                 # Check for decoded messages
