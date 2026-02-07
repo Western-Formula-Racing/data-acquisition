@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { auth, db, type UserConfig } from '../lib/firebase';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
@@ -38,7 +38,7 @@ export function useRemoteConfig() {
                     user_id: user.uid,
                     config_data: config,
                     updated_at: new Date().toISOString(),
-                });
+                }, { merge: true });
                 console.log('[Sync] Config saved successfully.');
             } catch (error) {
                 console.error('[Sync] Error saving config:', error);
@@ -69,9 +69,13 @@ export function useRemoteConfig() {
         }
     };
 
+    const session = useMemo(() =>
+        user ? { user: { id: user.uid, email: user.email } } : null
+        , [user]);
+
     return {
         user,
-        session: user ? { user: { id: user.uid, email: user.email } } : null, // Compatibility shim
+        session, // Compatibility shim
         saveConfig,
         loadConfig,
         loading
