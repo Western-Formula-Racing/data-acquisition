@@ -58,12 +58,12 @@ async function uploadFileToCache(file: File) {
 }
 
 function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalProps>) {
-    if (!isOpen) return null;
-
     const [customWsUrl, setCustomWsUrl] = useState(() => localStorage.getItem("custom-ws-url") || "");
     const [perfOverlayEnabled, setPerfOverlayEnabled] = useState(() =>
         localStorage.getItem("perf-overlay-enabled") === "true"
     );
+
+    if (!isOpen) return null;
 
     const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
