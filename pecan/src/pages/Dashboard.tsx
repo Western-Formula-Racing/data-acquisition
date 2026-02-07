@@ -13,7 +13,6 @@ import idAscendingIcon from "../assets/id_ascending.png";
 import idDescendingIcon from "../assets/id_descending.png";
 import listViewIcon from "../assets/list-view.png";
 import gridViewIcon from "../assets/grid-view.png";
-import { useOutletContext } from "react-router";
 import TourGuide from "../components/TourGuide";
 import type { TourStep } from "../components/TourGuide";
 import { useRemoteConfig } from "../lib/useRemoteConfig";
@@ -83,9 +82,6 @@ function Dashboard() {
     window.addEventListener("perf-overlay-changed", handlePerfChange);
     return () => window.removeEventListener("perf-overlay-changed", handlePerfChange);
   }, []);
-
-  const { isSidebarOpen: _isSidebarOpen } = useOutletContext<{ isSidebarOpen: boolean }>();
-
 
   // Plotting State
   // =====================================================================
