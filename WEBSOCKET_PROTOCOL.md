@@ -435,12 +435,12 @@ The current system does not authenticate WebSocket clients. For uplink functiona
 - [x] Gate uplink behind `ENABLE_UPLINK` env var
 
 ### Base Station (`data.py`)
-- [ ] Subscribe to Redis `can_uplink` channel
-- [ ] Relay uplink messages to car via UDP (with `0xCAFE` header)
+- [x] Subscribe to Redis `can_uplink` channel
+- [x] Relay uplink messages to car via UDP (with `0xCAFE` header)
 
 ### Car (`data.py`)
-- [ ] Listen for inbound UDP uplink packets (detect `0xCAFE` magic)
-- [ ] Write received CAN frames to `can0`
+- [x] Listen for inbound UDP uplink packets (detect `0xCAFE` magic)
+- [x] Write received CAN frames to `can0`
 
 ### Pecan Client (`WebSocketService.ts`)
 - [x] Add `sendCanMessage()` method for uplink messages

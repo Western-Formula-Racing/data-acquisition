@@ -2,7 +2,7 @@ name: Telemetry System CI/CD
 
 on:
   push:
-    branches: [ main, telemetry-software ]
+    branches: [ main, telemetry-software, ws-bidirectional ]
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'

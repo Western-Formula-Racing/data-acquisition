@@ -69,8 +69,8 @@ docker logs daq-base --tail 20 2>&1 || true
 echo -e "\n${YELLOW}Step 6: Running integration tests...${NC}"
 python3 -m pytest tests/test_integration.py -v -s || {
     TEST_EXIT_CODE=$?
-    echo -e "\n${RED}✗ Tests failed${NC}"
-    
+    echo -e "\n${RED}✗ Integration tests failed${NC}"
+
     # Collect logs for debugging
     echo -e "\n${YELLOW}Collecting logs for debugging...${NC}"
     mkdir -p test-logs
@@ -80,7 +80,24 @@ python3 -m pytest tests/test_integration.py -v -s || {
     docker logs daq-car-redis > test-logs/car-redis.log 2>&1 || true
     docker logs daq-base-redis > test-logs/base-redis.log 2>&1 || true
     docker logs daq-pecan-test > test-logs/pecan.log 2>&1 || true
-    
+
+    echo -e "${YELLOW}Logs saved to test-logs/ directory${NC}"
+    exit $TEST_EXIT_CODE
+}
+
+# Step 7: Run WebSocket v2 protocol tests
+echo -e "\n${YELLOW}Step 7: Running WebSocket v2 protocol tests...${NC}"
+python3 -m pytest tests/test_websocket_v2.py -v -s || {
+    TEST_EXIT_CODE=$?
+    echo -e "\n${RED}✗ WebSocket v2 tests failed${NC}"
+
+    # Collect logs for debugging
+    echo -e "\n${YELLOW}Collecting logs for debugging...${NC}"
+    mkdir -p test-logs
+    docker compose -f docker-compose.test.yml logs --no-color > test-logs/docker-compose.log 2>&1
+    docker logs daq-car > test-logs/car.log 2>&1 || true
+    docker logs daq-base > test-logs/base.log 2>&1 || true
+
     echo -e "${YELLOW}Logs saved to test-logs/ directory${NC}"
     exit $TEST_EXIT_CODE
 }
