@@ -233,3 +233,4 @@ test-logs/
 .pytest_cache/
 *.dat
 *.code-workspace
+/.claude
