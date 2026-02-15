@@ -1,6 +1,22 @@
 import { dataStore } from '../lib/DataStore';
 import { createCanProcessor } from '../utils/canProcessor';
 
+// Uplink response types (Protocol v2)
+export interface UplinkAck {
+  type: 'uplink_ack';
+  ref: string;
+  status: 'queued' | 'delivered' | 'rejected';
+  reason: string | null;
+}
+
+export interface UplinkError {
+  type: 'error';
+  code: string;
+  message: string;
+}
+
+export type UplinkCallback = (response: UplinkAck | UplinkError) => void;
+
 export class WebSocketService {
   private ws: WebSocket | null = null;
   private processor: any = null;
@@ -8,6 +24,8 @@ export class WebSocketService {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 2000; // Start with 2 seconds
   private messageCount = 0; // Track message count for logging
+  private pendingUplinks = new Map<string, UplinkCallback>(); // ref -> callback
+  private refCounter = 0;
 
   async initialize() {
     // Initialize CAN processor
@@ -73,6 +91,21 @@ export class WebSocketService {
           }
 
           const messageData = JSON.parse(event.data);
+
+          // Handle protocol v2 server responses (uplink_ack, error, pong)
+          if (messageData?.type === 'uplink_ack' || messageData?.type === 'error') {
+            const ref = messageData.ref;
+            if (ref && this.pendingUplinks.has(ref)) {
+              const cb = this.pendingUplinks.get(ref)!;
+              this.pendingUplinks.delete(ref);
+              cb(messageData);
+            }
+            return;
+          }
+          if (messageData?.type === 'pong') {
+            return; // Handled silently; latency consumers can be added later
+          }
+
           const decoded = this.processor.processWebSocketMessage(messageData);
 
           // Only log first 3 decoded messages
@@ -127,6 +160,70 @@ export class WebSocketService {
     } catch (error) {
       console.error('WebSocket error:', error);
     }
+  }
+
+  /** Generate a unique reference ID for uplink messages */
+  private generateRef(): string {
+    return `pecan-${Date.now()}-${++this.refCounter}`;
+  }
+
+  /**
+   * Send a single CAN message to the car (uplink).
+   * @param canId - CAN arbitration ID
+   * @param data - Data bytes (1-8 values, each 0-255)
+   * @param callback - Optional callback for the server's ack/error response
+   * @returns The reference ID for this message
+   */
+  sendCanMessage(canId: number, data: number[], callback?: UplinkCallback): string {
+    const ref = this.generateRef();
+    if (!this.isConnected()) {
+      if (callback) callback({ type: 'error', code: 'NOT_CONNECTED', message: 'WebSocket is not connected' });
+      return ref;
+    }
+
+    if (callback) this.pendingUplinks.set(ref, callback);
+
+    this.ws!.send(JSON.stringify({
+      type: 'can_send',
+      ref,
+      canId,
+      data,
+    }));
+
+    return ref;
+  }
+
+  /**
+   * Send multiple CAN messages to the car in a single batch.
+   * @param messages - Array of { canId, data } objects (max 20)
+   * @param callback - Optional callback for the server's ack/error response
+   * @returns The reference ID for this batch
+   */
+  sendCanBatch(messages: { canId: number; data: number[] }[], callback?: UplinkCallback): string {
+    const ref = this.generateRef();
+    if (!this.isConnected()) {
+      if (callback) callback({ type: 'error', code: 'NOT_CONNECTED', message: 'WebSocket is not connected' });
+      return ref;
+    }
+
+    if (callback) this.pendingUplinks.set(ref, callback);
+
+    this.ws!.send(JSON.stringify({
+      type: 'can_send_batch',
+      ref,
+      messages,
+    }));
+
+    return ref;
+  }
+
+  /** Send a ping to measure round-trip latency */
+  sendPing() {
+    if (!this.isConnected()) return;
+    this.ws!.send(JSON.stringify({
+      type: 'ping',
+      timestamp: Date.now(),
+    }));
   }
 
   disconnect() {
