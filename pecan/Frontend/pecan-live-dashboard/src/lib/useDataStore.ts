@@ -211,6 +211,7 @@ export function useDataStoreControls() {
     };
     rawData: string;
     timestamp?: number;
+    direction?: "rx" | "tx";
   }) => {
     dataStore.ingestMessage(message);
   }, []);

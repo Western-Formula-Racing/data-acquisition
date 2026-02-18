@@ -4,7 +4,7 @@ import DataRow from "../components/DataRow";
 import { dataStore } from "../lib/DataStore";
 import { useAllLatestMessages, useDataStoreStats } from "../lib/useDataStore";
 
-function Dashboard() {
+function TxDashboard() {
   // Sorting and View State
   // =====================================================================
   const [sortingMethod, setSortingMethod] = useState("name");
@@ -23,9 +23,7 @@ function Dashboard() {
   // Data
   // =====================================================================
 
-  // Use the DataStore hooks to get all latest messages
   const allLatestMessages = useAllLatestMessages();
-
   const dataStoreStats = useDataStoreStats();
 
   const [performanceStats, setPerformanceStats] = useState({
@@ -41,9 +39,8 @@ function Dashboard() {
     (window as any).dataStore = dataStore;
   }, []);
 
-  // Performance monitoring
+  // Performance monitoring (same as Dashboard)
   useEffect(() => {
-    // FPS monitoring
     const updateFPS = () => {
       frameCountRef.current++;
       const now = Date.now();
@@ -52,11 +49,6 @@ function Dashboard() {
           (frameCountRef.current * 1000) / (now - lastFpsUpdateRef.current)
         );
         setPerformanceStats((prev) => ({ ...prev, fps }));
-
-        if (fps < 30) {
-          console.warn(`Low FPS: ${fps}`);
-        }
-
         frameCountRef.current = 0;
         lastFpsUpdateRef.current = now;
       }
@@ -64,7 +56,6 @@ function Dashboard() {
     };
     requestAnimationFrame(updateFPS);
 
-    // Memory monitoring
     const updateMemory = () => {
       if ("memory" in performance) {
         const memInfo = (performance as any).memory;
@@ -73,30 +64,23 @@ function Dashboard() {
           ...prev,
           memoryUsage: memoryMB,
         }));
-
-        if (memoryMB > 100) {
-          console.warn(`High memory usage: ${memoryMB}MB`);
-        }
       }
     };
     const memoryInterval = setInterval(updateMemory, 2000);
 
-    return () => {
-      clearInterval(memoryInterval);
-    };
+    return () => clearInterval(memoryInterval);
   }, []);
 
-  // Convert Map to array for rendering
-  // const canMessagesArray = Array.from(allLatestMessages.entries());
-  // Convert Map to array for rendering (RX only)
-  const canMessagesArray = Array.from(allLatestMessages.entries()).filter(
-    ([, sample]) => (sample.direction ?? "rx") === "rx"
-  );
+  // ✅ Filter to TX only
+  const txMessagesArray = useMemo(() => {
+    return Array.from(allLatestMessages.entries()).filter(([, sample]) => {
+      return (sample.direction ?? "rx") === "tx";
+    });
+  }, [allLatestMessages]);
 
   // Sorting Logic
   // =====================================================================
 
-  // Update sort icon and close menu when sorting method changes
   useEffect(() => {
     setSortMenuOpen(false);
 
@@ -112,6 +96,7 @@ function Dashboard() {
             : "../src/assets/ztoa.png"
         );
         break;
+
       case "category":
         if (sortingFilter.current.prev == "category") {
           sortingFilter.current.category = 1 - sortingFilter.current.category;
@@ -119,6 +104,7 @@ function Dashboard() {
         sortingFilter.current.prev = "category";
         setSortIcon("../src/assets/sort.png");
         break;
+
       case "id":
         if (sortingFilter.current.prev == "id") {
           sortingFilter.current.id = 1 - sortingFilter.current.id;
@@ -133,9 +119,9 @@ function Dashboard() {
     }
   }, [sortingMethod, tickUpdate]);
 
-  // Sorts the filtered messages
   const filteredMsgs = useMemo(() => {
-    const base = [...canMessagesArray];
+    const base = [...txMessagesArray];
+
     switch (sortingMethod) {
       case "name": {
         if (sortingFilter.current.name == 0) {
@@ -148,8 +134,8 @@ function Dashboard() {
           );
         }
       }
+
       case "category": {
-        // Sort by computed category matching DataRow logic
         const sorted = [...base].sort((a, b) => {
           const getCat = (entry: any) => {
             const [, sample] = entry;
@@ -171,37 +157,33 @@ function Dashboard() {
         });
         return sortingFilter.current.category == 0 ? sorted : sorted.reverse();
       }
+
       case "id": {
         if (sortingFilter.current.id == 0) {
           return base.sort((a, b) =>
-            a[0].localeCompare(b[0], undefined, {
-              numeric: true,
-            })
+            a[0].localeCompare(b[0], undefined, { numeric: true })
           );
         } else {
           return base.sort((a, b) =>
-            b[0].localeCompare(a[0], undefined, {
-              numeric: true,
-            })
+            b[0].localeCompare(a[0], undefined, { numeric: true })
           );
         }
       }
+
       default:
         return base;
     }
-  }, [canMessagesArray, sortingMethod, tickUpdate]);
+  }, [txMessagesArray, sortingMethod, tickUpdate]);
 
-  // View Mode
+  // View Mode (separate key from main dashboard so you don’t fight settings)
   // =====================================================================
-
-  // Persisting user view mode choice
   useEffect(() => {
-    const saved = localStorage.getItem("dash:viewMode");
+    const saved = localStorage.getItem("txdash:viewMode");
     if (saved == "cards" || saved == "list") setViewMode(saved);
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("dash:viewMode", viewMode);
+    localStorage.setItem("txdash:viewMode", viewMode);
   }, [viewMode]);
 
   return (
@@ -209,21 +191,21 @@ function Dashboard() {
       {/* Data display section */}
       <div className="col-span-2 relative flex flex-col h-full overflow-y-auto">
         <div className="flex-1 p-4 pb-16">
-          {/* Data filter / view selection menu */}
+          {/* Header-ish module (reuse your existing top bar style) */}
           <div className="bg-data-module-bg w-full h-[100px] grid grid-cols-4 gap-1 rounded-md mb-[15px]">
-            {/* Data category filters */}
-            <div className="col-span-3">{/* WIP */}</div>
+            <div className="col-span-3 flex items-center px-4 text-white font-semibold">
+              Outgoing CAN (TX)
+            </div>
 
-            {/* View selection options */}
             <div className="col-span-1 flex items-center justify-end gap-1 p-3">
               <div className="flex flex-row">
-                {/* Filter button and dropdown  */}
                 <button
                   onClick={() => setSortMenuOpen((o) => !o)}
                   className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
                 >
                   <img src={sortIcon} />
                 </button>
+
                 {sortMenuOpen && (
                   <div className="flex flex-col block fixed top-30 z-100 rounded-md bg-dropdown-menu-bg w-30 h-20 text-center text-white">
                     <span className="font-bold">Sort By</span>
@@ -233,8 +215,9 @@ function Dashboard() {
                           setSortingMethod("name");
                           setTickUpdate(Date.now());
                         }}
-                        className={`${sortingMethod == "name" ? "font-bold" : "font-regular"
-                          }`}
+                        className={`${
+                          sortingMethod == "name" ? "font-bold" : "font-regular"
+                        }`}
                       >
                         Name
                       </button>
@@ -243,10 +226,11 @@ function Dashboard() {
                           setSortingMethod("category");
                           setTickUpdate(Date.now());
                         }}
-                        className={`${sortingMethod == "category"
+                        className={`${
+                          sortingMethod == "category"
                             ? "font-bold"
                             : "font-regular"
-                          }`}
+                        }`}
                       >
                         Category
                       </button>
@@ -255,8 +239,9 @@ function Dashboard() {
                           setSortingMethod("id");
                           setTickUpdate(Date.now());
                         }}
-                        className={`${sortingMethod == "id" ? "font-bold" : "font-regular"
-                          }`}
+                        className={`${
+                          sortingMethod == "id" ? "font-bold" : "font-regular"
+                        }`}
                       >
                         ID
                       </button>
@@ -264,6 +249,7 @@ function Dashboard() {
                   </div>
                 )}
               </div>
+
               <button
                 onClick={() => setViewMode("list")}
                 className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
@@ -271,6 +257,7 @@ function Dashboard() {
               >
                 <img src="../src/assets/list-view.png" />
               </button>
+
               <button
                 onClick={() => setViewMode("cards")}
                 className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
@@ -282,53 +269,33 @@ function Dashboard() {
           </div>
 
           {viewMode === "cards" ? (
-            <>
-              <div className="columns-2 gap-4">
-                {filteredMsgs.map(([canId, sample]) => {
-                  const data = Object.entries(sample.data).map(
-                    ([key, value]) => ({
-                      [key]: `${value.sensorReading} ${value.unit}`,
-                    })
-                  );
+            <div className="columns-2 gap-4">
+              {filteredMsgs.map(([canId, sample]) => {
+                const data = Object.entries(sample.data).map(([key, value]) => ({
+                  [key]: `${value.sensorReading} ${value.unit}`,
+                }));
 
-                  return (
-                    <div key={canId} className="mb-4 avoid-break">
-                      <DataCard
-                        key={canId}
-                        msgID={canId}
-                        name={sample.messageName}
-                        data={
-                          data.length > 0
-                            ? data
-                            : [
-                              {
-                                "No Data": "Waiting for messages...",
-                              },
-                            ]
-                        }
-                        lastUpdated={sample.timestamp}
-                        rawData={sample.rawData}
-                      />
-                    </div>
-                  );
-                })}
-
-                {/* Static card for comparison */}
-                {/* <DataCard
-                  msgID="1006"
-                  name="TORCH_M1_V1"
-                  category="BMS/TORCH"
-                  lastUpdated={Date.now()}
-                  rawData="00 01 02 03 04 05 06 07"
-                /> */}
-              </div>
-            </>
+                return (
+                  <div key={canId} className="mb-4 avoid-break">
+                    <DataCard
+                      key={canId}
+                      msgID={canId}
+                      name={sample.messageName}
+                      data={
+                        data.length > 0
+                          ? data
+                          : [{ "No Data": "Waiting for TX messages..." }]
+                      }
+                      lastUpdated={sample.timestamp}
+                      rawData={sample.rawData}
+                    />
+                  </div>
+                );
+              })}
+            </div>
           ) : (
-            // List view box
             <div className="w-100 h-fit rounded-sm bg-sidebar">
-              {/* Header */}
               <div className="w-100 h-[40px] rounded-t-sm grid grid-cols-12 bg-data-module-bg text-white font-semibold text-sm shadow-md">
-                {/* Message ID column */}
                 <div className="col-span-1 flex justify-left items-center ps-3">
                   <button
                     onClick={() => {
@@ -339,7 +306,7 @@ function Dashboard() {
                     Msg ID
                   </button>
                 </div>
-                {/* Message name column */}
+
                 <div className="col-span-4 flex justify-left items-center px-3">
                   <button
                     onClick={() => {
@@ -350,7 +317,7 @@ function Dashboard() {
                     Message Name
                   </button>
                 </div>
-                {/* Category column */}
+
                 <div className="col-span-2 rounded-t-sm bg-data-textbox-bg flex justify-left items-center px-3">
                   <button
                     onClick={() => {
@@ -361,24 +328,20 @@ function Dashboard() {
                     Category
                   </button>
                 </div>
-                {/* Data column */}
+
                 <div className="col-span-4 flex justify-left items-center px-3">
                   Data
                 </div>
-                {/* Time column */}
+
                 <div className="col-span-1 flex justify-left items-center ps-3">
                   Time
                 </div>
               </div>
 
-              {/* Rows */}
-
               {filteredMsgs.map(([canId, sample], i) => {
-                const data = Object.entries(sample.data).map(
-                  ([key, value]) => ({
-                    [key]: `${value.sensorReading} ${value.unit}`,
-                  })
-                );
+                const data = Object.entries(sample.data).map(([key, value]) => ({
+                  [key]: `${value.sensorReading} ${value.unit}`,
+                }));
 
                 return (
                   <DataRow
@@ -388,11 +351,7 @@ function Dashboard() {
                     data={
                       data.length > 0
                         ? data
-                        : [
-                          {
-                            "No Data": "Waiting for messages...",
-                          },
-                        ]
+                        : [{ "No Data": "Waiting for TX messages..." }]
                     }
                     lastUpdated={sample.timestamp}
                     rawData={sample.rawData}
@@ -410,8 +369,7 @@ function Dashboard() {
             <div className="flex justify-between items-center max-w-6xl mx-auto">
               <span>FPS: {performanceStats.fps}</span>
               <span>
-                CAN frames/sec:{" "}
-                {dataStoreStats.totalMessages > 0 ? "Live" : "0"}
+                TX frames/sec: {filteredMsgs.length > 0 ? "Live" : "0"}
               </span>
               <span>
                 Mem: {performanceStats.memoryUsage}
@@ -433,4 +391,4 @@ function Dashboard() {
   );
 }
 
-export default Dashboard;
+export default TxDashboard;

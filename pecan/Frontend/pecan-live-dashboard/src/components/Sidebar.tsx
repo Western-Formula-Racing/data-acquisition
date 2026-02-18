@@ -55,6 +55,11 @@ function Sidebar({ isOpen, onClose }: Readonly<InputProps>) {
                 path="/throttle-mapper"
                 onClose={onClose}
               />
+              <SidebarOption 
+              option="TX Messages" 
+              path="/tx" 
+              onClose={onClose} 
+              />
             </ul>
           </div>
           <footer className="font-footer flex flex-col space-y-8 mb-10">

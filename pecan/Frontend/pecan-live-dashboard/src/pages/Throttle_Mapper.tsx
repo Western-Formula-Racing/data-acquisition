@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createCanProcessor } from "../utils/canProcessor"; // <-- adjust if needed
+import { createCanProcessor } from "../utils/canProcessor";
+import { dataStore } from "../lib/DataStore";
+
 import {
     Settings,
     Activity,
@@ -20,12 +22,14 @@ type DecodedMessage = {
 };
 
 type CanProcessor = {
+    dbc: unknown;
+    data: unknown;
+    can: unknown;
     decode: (canId: number, messageData: number[], time: number) => DecodedMessage | null;
     processWebSocketMessage: (wsMessage: unknown) => DecodedMessage | DecodedMessage[] | null;
     getMessages: () => unknown[];
     getMessageById: (canId: number) => unknown;
 };
-
 
 type CodeMode = "math" | "table";
 
@@ -90,6 +94,9 @@ const Throttle_Mapper: React.FC = () => {
     const [canProcessor, setCanProcessor] = useState<CanProcessor | null>(null);
     const [decodedCan, setDecodedCan] = useState<DecodedMessage | null>(null);
 
+    const lastIngestRef = useRef<number>(0);
+    const lastRawRef = useRef<string>("");
+
     // Curve params
     const [dzLow, setDzLow] = useState<number>(0.05);
     const [dzHigh, setDzHigh] = useState<number>(0.05);
@@ -132,11 +139,35 @@ const Throttle_Mapper: React.FC = () => {
     useEffect(() => {
         if (!canProcessor) return;
 
-        const idNum = parseCanId(canId);
+        const time = Date.now();
+        const canIdNum = parseCanId(canId);
         const bytes = [canData.high, canData.low].map((h) => parseInt(h, 16));
 
-        const decoded = canProcessor.decode(idNum, bytes, Date.now());
+        const decoded = canProcessor.decode(canIdNum, bytes, time);
         setDecodedCan(decoded);
+
+        const rawData = bytes
+            .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+            .join(" ");
+
+        const now = Date.now();
+        const tooSoon = now - lastIngestRef.current < 50; // 20 Hz limit
+        const sameFrame = rawData === lastRawRef.current;
+
+        if (!tooSoon && !sameFrame) {
+            lastIngestRef.current = now;
+            lastRawRef.current = rawData;
+
+            dataStore.ingestMessage({
+                msgID: canIdNum.toString(),
+                messageName: decoded?.messageName ?? `CAN_${canIdNum}`,
+                data: decoded?.signals ?? {},
+                rawData,
+                timestamp: time,
+                direction: "tx",
+            });
+        }
+
     }, [canProcessor, canId, canData.high, canData.low]);
 
     // Draw graph
