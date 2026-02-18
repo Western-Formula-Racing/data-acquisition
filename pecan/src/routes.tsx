@@ -8,7 +8,7 @@ import MonitorBuilder from "./pages/MonitorBuilder";
 import SystemLink from "./pages/SystemLink";
 import Landing from "./pages/Landing";
 import ThrottleMapper from "./pages/Throttle_Mapper";
-import TxDashboard from "./pages/TxDashboard";
+// import TxDashboard from "./pages/TxDashboard";
 import DataTransmitter from "./pages/Transmitter";
 
 
@@ -31,7 +31,7 @@ export const router = createBrowserRouter([
       { path: "monitor-builder", element: <MonitorBuilder /> },
       { path: "system-link", element: <SystemLink /> },
       { path: "throttle-mapper", element: <ThrottleMapper /> },
-      { path: "tx", element: <TxDashboard /> },
+      // { path: "tx", element: <TxDashboard /> },
       { path: "can-transmitter", element: <DataTransmitter /> },
     ],
   },

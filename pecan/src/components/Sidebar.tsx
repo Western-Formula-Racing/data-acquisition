@@ -79,6 +79,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 path="/throttle-mapper"
                 onClose={onClose}
               />
+<<<<<<< HEAD:pecan/src/components/Sidebar.tsx
               <SidebarOption
                 option="CAN Transmitter"
                 path="/can-transmitter"
@@ -88,6 +89,12 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 option="TX Messages"
                 path="/tx"
                 onClose={onClose}
+=======
+              <SidebarOption 
+              option="TX Messages" 
+              path="/tx" 
+              onClose={onClose} 
+>>>>>>> 534c6d3 (making a different page to see outgoing can bus messages from throttle mapper):pecan/Frontend/pecan-live-dashboard/src/components/Sidebar.tsx
               />
             </ul>
           </div>

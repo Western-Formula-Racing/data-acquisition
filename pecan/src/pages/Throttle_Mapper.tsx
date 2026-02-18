@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createCanProcessor } from "../utils/canProcessor";
+<<<<<<< HEAD:pecan/src/pages/Throttle_Mapper.tsx
 import { packMessage } from "../utils/packMessage";
+=======
+>>>>>>> 534c6d3 (making a different page to see outgoing can bus messages from throttle mapper):pecan/Frontend/pecan-live-dashboard/src/pages/Throttle_Mapper.tsx
 import { dataStore } from "../lib/DataStore";
 
 import {

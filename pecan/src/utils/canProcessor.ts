@@ -6,6 +6,77 @@ import { dataStore } from "../lib/DataStore";
 import localDbc from "../assets/dbc.dbc?raw";
 import exampleDbc from "../assets/example.dbc?raw";
 
+export function ingestCanFrameToStore(params: {
+  time: number;
+  canId: number;
+  data: number[];
+  messageNameHint?: string;
+}) {
+  const { time, canId, data, messageNameHint } = params;
+
+  const rawData = data
+    .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+    .join(" ");
+
+  dataStore.ingestMessage({
+    msgID: canId.toString(),
+    messageName: messageNameHint ?? `CAN_${canId}`,
+    data: {}, // filled by decode step if you have it
+    rawData,
+    timestamp: time,
+  });
+}
+
+export function decodeAndIngestCanFrame(params: {
+  canInstance: Can;
+  time: number;
+  canId: number;
+  data: number[];
+}) {
+  const { canInstance, time, canId, data } = params;
+
+  const decoded = decodeCanMessage(canInstance, canId, data, time);
+
+  const rawData = data
+    .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+    .join(" ");
+
+  dataStore.ingestMessage({
+    msgID: canId.toString(),
+    messageName: decoded?.messageName ?? `CAN_${canId}`,
+    data: decoded?.signals ?? {},
+    rawData,
+    timestamp: time,
+  });
+
+  return decoded;
+}
+
+export async function decodeAndIngestUsingDbc(params: {
+  time: number;
+  canId: number;
+  data: number[];
+}) {
+  const { time, canId, data } = params;
+
+  const processor = await createCanProcessor();
+  const decoded = processor.decode(canId, data, time);
+
+  const rawData = data
+    .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+    .join(" ");
+
+  dataStore.ingestMessage({
+    msgID: canId.toString(),
+    messageName: decoded?.messageName ?? `CAN_${canId}`,
+    data: decoded?.signals ?? {},
+    rawData,
+    timestamp: time,
+  });
+
+  return decoded;
+}
+
 // Use local.dbc for development, example.dbc for production
 let dbcFile = import.meta.env.DEV ? localDbc : exampleDbc;
 let usingCache = false;
