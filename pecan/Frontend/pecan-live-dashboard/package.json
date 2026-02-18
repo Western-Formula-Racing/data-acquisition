@@ -16,6 +16,7 @@
     "@tailwindcss/vite": "^4.1.13",
     "bootstrap": "^5.3.8",
     "candied": "^2.2.0",
+    "lucide-react": "^0.574.0",
     "react": "^19.1.1",
     "react-bootstrap": "^2.10.10",
     "react-dom": "^19.1.1",
