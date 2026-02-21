@@ -1,6 +1,18 @@
 # PECAN Live Dashboard
 
+![PECAN-Dashboard](docs-assets/PECAN-Dashboard.jpg)
+
 Real-time CAN bus telemetry visualization dashboard for Western Formula Racing vehicles.
+
+![PECAN-Accu](docs-assets/PECAN-Accu.jpg)
+
+Focused Accumulator Monitor for charge cart display.
+
+![PECAN-Monitor](docs-assets/PECAN-Monitor.jpg) 
+
+Drag-and-drop signal monitoring canvas.
+
+
 
 ## Features
 
@@ -24,7 +36,7 @@ npm install
 npm run dev
 ```
 
-The development server will start on `http://localhost:5173` with a WebSocket server on `ws://localhost:8080`.
+The development server will start on `http://localhost:5173` with a WebSocket server on `ws://localhost:9080`.
 
 ### Testing
 

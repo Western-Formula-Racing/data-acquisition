@@ -2,10 +2,9 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import type { Plugin } from "vite";
+import { VitePWA } from 'vite-plugin-pwa';
 
-// GitHub Pages deployment - repository name (change if different)
-const isGitHubPages = process.env.GITHUB_ACTIONS === 'true';
-const repoName = 'daq-radio';
+// Custom domain: pecan.westernformularacing.org (no base path needed)
 
 // WebSocket server plugin - runs in both development and production
 const websocketPlugin = (): Plugin => ({
@@ -24,10 +23,10 @@ const websocketPlugin = (): Plugin => ({
 function startWebSocketServer() {
   // Dynamic import to avoid build-time dependency issues
   import('ws').then(({ WebSocketServer }) => {
-    const wss = new WebSocketServer({ port: 8080 });
+    const wss = new WebSocketServer({ port: 9080 });
 
     // eslint-disable-next-line no-console
-    console.log('WebSocket server started on ws://localhost:8080');
+    console.log('WebSocket server started on ws://localhost:9080');
 
     wss.on('connection', (ws) => {
       // eslint-disable-next-line no-console
@@ -64,9 +63,9 @@ function startWebSocketServer() {
     });
 
     // eslint-disable-next-line no-console
-    console.log('WebSocket server is running on port 8080');
+    console.log('WebSocket server is running on port 9080');
     // eslint-disable-next-line no-console
-    console.log('Data Sender and Dashboard can connect to ws://localhost:8080');
+    console.log('Data Sender and Dashboard can connect to ws://localhost:9080');
   }).catch((error) => {
     // eslint-disable-next-line no-console
     console.error('Failed to start WebSocket server:', error);
@@ -75,11 +74,42 @@ function startWebSocketServer() {
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: isGitHubPages ? `/${repoName}/` : '/',
+  base: '/',
   plugins: [
     react(),
     tailwindcss(),
-    websocketPlugin()
+    websocketPlugin(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      devOptions: {
+        enabled: true
+      },
+      manifest: {
+        name: 'PECAN Dashboard',
+        short_name: 'PECAN',
+        description: 'Western Formula Racing Live Telemetry Dashboard',
+        theme_color: '#4F2683',
+        background_color: '#18181b',
+        display: 'standalone',
+        icons: [
+          {
+            src: 'pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png'
+          }
+        ]
+      },
+      workbox: {
+        // Increase limit to 10MB to accommodate large visualization libraries
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,dbc}']
+      }
+    })
   ],
   test: {
     globals: true,

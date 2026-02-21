@@ -32,24 +32,26 @@ export class WebSocketService {
     // Determine WebSocket URL based on deployment scenario
     let wsUrl: string;
 
-    // Check if this is a GitHub Pages deployment (or other external hosting)
-    const hostname = window.location.hostname;
-    const isGitHubPages = hostname.includes('github.io');
-    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-    const isPrivateIP = /^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(hostname);
-
-    if (isGitHubPages) {
-      // GitHub Pages demo: use the production backend
-      wsUrl = `${protocol}://ws-wfr.0001200.xyz:${port}`;
-    } else if (isLocalhost || isPrivateIP) {
-      // Docker deployment or local development: use same hostname
-      // - Car hotspot: http://192.168.x.x:3000 → ws://192.168.x.x:9080
-      // - Base station: http://192.168.y.y:3000 → ws://192.168.y.y:9080
-      // - Development: http://localhost:3000 → ws://localhost:9080
-      wsUrl = `${protocol}://${hostname}:${port}`;
+    // Check availability of environment override or user setting first
+    const customUrl = localStorage.getItem('custom-ws-url');
+    if (customUrl) {
+      wsUrl = customUrl;
+    } else if (import.meta.env.VITE_WS_URL) {
+      wsUrl = import.meta.env.VITE_WS_URL;
     } else {
-      // Custom domain or other deployment: use same hostname
-      wsUrl = `${protocol}://${hostname}:${port}`;
+      const hostname = window.location.hostname;
+      const isGitHubPages = hostname.includes('github.io');
+      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+      // User request: 192.168.x.x is the Car Hotspot (Local), but other IPs (172.x, etc) are for testing against Cloud
+      const isCarNetwork = hostname.startsWith('192.168.');
+
+      if (isGitHubPages || (!isLocalhost && !isCarNetwork)) {
+        // GitHub Pages OR non-local/non-car network (e.g. 172.x): use the production backend
+        wsUrl = `wss://ws-wfr.0001200.xyz:9443`;
+      } else {
+        // Localhost or Car Network: use same hostname (local docker/car)
+        wsUrl = `${protocol}://${hostname}:${port}`;
+      }
     }
 
     console.log(`Connecting to WebSocket: ${wsUrl}`);
@@ -136,6 +138,13 @@ export class WebSocketService {
 
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  public reconnect() {
+    console.log('Forcing WebSocket reconnection...');
+    this.disconnect();
+    this.reconnectAttempts = 0;
+    this.connect();
   }
 }
 

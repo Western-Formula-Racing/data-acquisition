@@ -35,17 +35,17 @@ type Listener = (msgID?: string) => void;
 class DataStore {
   // Internal storage: msgID -> array of samples (chronological order)
   private buffer: Map<string, MessageBuffer>;
-  
+
   // Retention window in milliseconds (default: 30 seconds)
   private retentionWindowMs: number;
-  
+
   // Pub/sub listeners
   private listeners: Set<Listener>;
-  
+
   // Singleton instance
   private static instance: DataStore | null = null;
 
-  private constructor(retentionWindowMs: number = 30000) {
+  private constructor(retentionWindowMs: number = 300000) { // 5 minutes
     this.buffer = new Map();
     this.retentionWindowMs = retentionWindowMs;
     this.listeners = new Set();
@@ -86,7 +86,7 @@ class DataStore {
     if (timestamp < oneHourAgo) {
       timestamp = Date.now();
     }
-    
+
     const msgID = message.msgID;
 
     // Round sensor readings to 3 decimal places for cleaner display
@@ -119,7 +119,7 @@ class DataStore {
     }
 
     const messageBuffer = this.buffer.get(msgID)!;
-    
+
     // Add new sample
     messageBuffer.samples.push(sample);
     messageBuffer.lastUpdated = timestamp;
@@ -140,7 +140,7 @@ class DataStore {
     if (!messageBuffer) return;
 
     const cutoffTime = Date.now() - this.retentionWindowMs;
-    
+
     // Filter out samples older than cutoff
     messageBuffer.samples = messageBuffer.samples.filter(
       (sample) => sample.timestamp >= cutoffTime
@@ -221,13 +221,13 @@ class DataStore {
    */
   public getAllLatest(): Map<string, TelemetrySample> {
     const result = new Map<string, TelemetrySample>();
-    
+
     for (const [msgID, messageBuffer] of this.buffer.entries()) {
       if (messageBuffer.samples.length > 0) {
         result.set(msgID, messageBuffer.samples[messageBuffer.samples.length - 1]);
       }
     }
-    
+
     return result;
   }
 
@@ -238,7 +238,7 @@ class DataStore {
    */
   public subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
-    
+
     // Return unsubscribe function
     return () => {
       this.listeners.delete(listener);
@@ -321,15 +321,15 @@ class DataStore {
 
     for (const messageBuffer of this.buffer.values()) {
       totalSamples += messageBuffer.samples.length;
-      
+
       if (messageBuffer.samples.length > 0) {
         const firstTimestamp = messageBuffer.samples[0].timestamp;
         const lastTimestamp = messageBuffer.samples[messageBuffer.samples.length - 1].timestamp;
-        
+
         if (oldestSample === null || firstTimestamp < oldestSample) {
           oldestSample = firstTimestamp;
         }
-        
+
         if (newestSample === null || lastTimestamp > newestSample) {
           newestSample = lastTimestamp;
         }

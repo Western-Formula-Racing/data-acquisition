@@ -13,7 +13,24 @@ on:
       - '.github/workflows/telemetry-ci.yml'
 
 jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      telemetry: ${{ steps.filter.outputs.telemetry }}
+      pecan: ${{ steps.filter.outputs.pecan }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            telemetry:
+              - 'universal-telemetry-software/**'
+            pecan:
+              - 'pecan/**'
+
   test:
+
     runs-on: ubuntu-latest
     
     steps:
@@ -103,10 +120,10 @@ jobs:
       run: |
         docker compose -f docker-compose.test.yml down -v
 
-  publish:
-    needs: test
+  publish-telemetry:
+    needs: [test, detect-changes]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.telemetry == 'true'
     permissions:
       contents: read
       packages: write
@@ -146,7 +163,9 @@ jobs:
         push: true
         tags: ${{ steps.meta-telemetry.outputs.tags }}
         labels: ${{ steps.meta-telemetry.outputs.labels }}
-        
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
     - name: Extract metadata (tags, labels) for Car Jitsi Client
       id: meta-car-jitsi
       uses: docker/metadata-action@v5
@@ -165,6 +184,33 @@ jobs:
         push: true
         tags: ${{ steps.meta-car-jitsi.outputs.tags }}
         labels: ${{ steps.meta-car-jitsi.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  publish-pecan:
+    needs: [test, detect-changes]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.pecan == 'true'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Extract metadata (tags, labels) for Pecan
       id: meta-pecan
@@ -184,3 +230,56 @@ jobs:
         push: true
         tags: ${{ steps.meta-pecan.outputs.tags }}
         labels: ${{ steps.meta-pecan.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy-pecan-pages:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: pecan/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: ./pecan
+        run: npm ci
+      
+      - name: Run tests
+        working-directory: ./pecan
+        run: npm run test:ci
+      
+      - name: Build
+        working-directory: ./pecan
+        run: npm run build
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+      
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./pecan/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

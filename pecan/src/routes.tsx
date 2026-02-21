@@ -1,12 +1,14 @@
-import { createBrowserRouter, Navigate } from "react-router";
+import { createBrowserRouter } from "react-router";
 import App from "./App";
 import Dashboard from "./pages/Dashboard";
 import Accumulator from "./pages/Accumulator";
 import Account from "./pages/Account";
-import Settings from "./pages/Settings";
 import ChargeCart from "./pages/ChargeCart";
 import MonitorBuilder from "./pages/MonitorBuilder";
 import Comms from "./pages/Comms";
+import SystemLink from "./pages/SystemLink";
+import Landing from "./pages/Landing";
+
 
 // Get base path for GitHub Pages deployment
 const basename = import.meta.env.BASE_URL || '/';
@@ -17,14 +19,16 @@ export const router = createBrowserRouter([
     element: <App />,
     //Pages are separate components, to add a route that is related to '/' just add a child, path is the relative path
     children: [
-      { index: true, element: <Navigate to="dashboard" replace /> },
+      { index: true, element: <Landing /> },
       { path: "dashboard", element: <Dashboard /> },
       { path: "accumulator", element: <Accumulator /> },
       { path: "account", element: <Account /> },
-      { path: "settings", element: <Settings /> },
+      // Settings managed via modal now
       { path: "chargecart", element: <ChargeCart /> },
       { path: "monitor-builder", element: <MonitorBuilder /> },
       { path: "comms", element: <Comms /> },
+      { path: "system-link", element: <SystemLink /> },
     ],
   },
+
 ], { basename });
