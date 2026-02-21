@@ -58,11 +58,6 @@ function Sidebar({ onClose, isOpen }: Readonly<InputProps>) {
                 onClose={onClose}
               />
               <SidebarOption
-                option="SYSTEM LINK"
-                path="/system-link"
-                onClose={onClose}
-              />
-              <SidebarOption
                 option="COMMS"
                 path="/comms"
                 onClose={onClose}

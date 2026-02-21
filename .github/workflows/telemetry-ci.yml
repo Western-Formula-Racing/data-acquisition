@@ -39,7 +39,20 @@ jobs:
         PID=$!
         sleep 5
         kill $PID 2>/dev/null || true
-    
+
+    - name: Verify go2rtc config
+      run: |
+        docker run --rm -v ${{ github.workspace }}/universal-telemetry-software/go2rtc.yaml:/config/go2rtc.yaml:ro alexxit/go2rtc:latest -c /config/go2rtc.yaml &
+        PID=$!
+        sleep 3
+        kill $PID 2>/dev/null || true
+
+    - name: Build and typecheck PECAN
+      working-directory: ./pecan
+      run: |
+        npm ci
+        npx tsc --noEmit
+
     - name: Start test environment
       working-directory: ./universal-telemetry-software
       run: |
