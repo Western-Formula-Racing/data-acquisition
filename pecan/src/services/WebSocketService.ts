@@ -40,17 +40,15 @@ export class WebSocketService {
       wsUrl = import.meta.env.VITE_WS_URL;
     } else {
       const hostname = window.location.hostname;
-      const isGitHubPages = hostname.includes('github.io');
-      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-      // User request: 192.168.x.x is the Car Hotspot (Local), but other IPs (172.x, etc) are for testing against Cloud
-      const isCarNetwork = hostname.startsWith('192.168.');
+      // Only 192.x IPs connect directly to the RPi; everything else uses the production backend
+      const isRpiNetwork = hostname.startsWith('192.');
 
-      if (isGitHubPages || (!isLocalhost && !isCarNetwork)) {
-        // GitHub Pages OR non-local/non-car network (e.g. 172.x): use the production backend
-        wsUrl = `wss://ws-wfr.0001200.xyz:9443`;
-      } else {
-        // Localhost or Car Network: use same hostname (local docker/car)
+      if (isRpiNetwork) {
+        // 192.x.x.x: connect directly to the RPi
         wsUrl = `${protocol}://${hostname}:${port}`;
+      } else {
+        // Localhost, GitHub Pages, other IPs: always use production backend
+        wsUrl = `wss://ws-wfr.0001200.xyz:9443`;
       }
     }
 
