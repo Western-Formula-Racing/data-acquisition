@@ -17,7 +17,7 @@ export default function CarVideoFeed({ go2rtcHost }: CarVideoFeedProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const pcRef = useRef<RTCPeerConnection | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
-    const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+    const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
     const [status, setStatus] = useState<'connecting' | 'live' | 'error' | 'offline'>('connecting');
     const [quality, setQuality] = useState<VideoQuality>('auto');
 
@@ -36,11 +36,9 @@ export default function CarVideoFeed({ go2rtcHost }: CarVideoFeedProps) {
             return;
         }
 
-        const maxBitrate = QUALITY_BITRATES[q] * 1000; // convert kbps to bps
-        pc.getSenders().forEach(sender => {
-            // For receive-only, we modify via REMB (receiver estimated max bitrate)
-            // which WebRTC handles automatically based on the SDP b= line
-        });
+        const _maxBitrate = QUALITY_BITRATES[q] * 1000; // convert kbps to bps
+        // For receive-only, bandwidth is controlled via SDP b= line during renegotiation
+        void _maxBitrate;
 
         // The most reliable approach: modify the remote description's bandwidth
         // This is applied during the next renegotiation

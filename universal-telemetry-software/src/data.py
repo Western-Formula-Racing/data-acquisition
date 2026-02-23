@@ -39,12 +39,14 @@ class CANMessage:
         return cls(timestamp, can_id, data)
 
 class TelemetryNode:
-    def __init__(self):
+    def __init__(self, can_event=None, telemetry_event=None):
         self.buffer = deque()
         self.seq_num = 0
         self.received_messages = {} # seq_num -> message_batch
         self.role = os.getenv("ROLE", "auto")
         self.has_can = False
+        self.can_event = can_event  # multiprocessing.Event signalled on each CAN RX
+        self.telemetry_event = telemetry_event  # heartbeat for LED status
         try:
             self.redis_client = redis.from_url(REDIS_URL)
             self.redis_client.ping()
@@ -92,6 +94,8 @@ class TelemetryNode:
                 while True:
                     msg = bus.recv(0.1)
                     if msg:
+                        if self.can_event is not None:
+                            self.can_event.set()
                         telemetry_msg = CANMessage(msg.timestamp, msg.arbitration_id, msg.data)
                         await queue.put(telemetry_msg)
             except Exception as e:
@@ -113,6 +117,8 @@ class TelemetryNode:
                         # specific byte manipulation if needed, else random is fine for "alive" check
                         pass
                         
+                    if self.can_event is not None:
+                        self.can_event.set()
                     telemetry_msg = CANMessage(time.time(), can_id, data)
                     await queue.put(telemetry_msg)
 
@@ -183,7 +189,23 @@ class TelemetryNode:
                 await writer.wait_closed()
 
         resend_server = await asyncio.start_server(handle_resend, '0.0.0.0', TCP_PORT)
-        await asyncio.gather(can_reader(), udp_sender(), resend_server.serve_forever())
+
+        # Throughput listener for link diagnostics burst test
+        from src.throughput_listener import throughput_listener_task
+
+        async def heartbeat():
+            while True:
+                if self.telemetry_event is not None:
+                    self.telemetry_event.set()
+                await asyncio.sleep(1)
+
+        await asyncio.gather(
+            can_reader(),
+            udp_sender(),
+            resend_server.serve_forever(),
+            throughput_listener_task(),
+            heartbeat(),
+        )
 
     async def run_base(self):
         logger.info("Starting Base Station Mode...")
@@ -290,7 +312,13 @@ class TelemetryNode:
                 stats["missing"] = 0
                 stats["recovered"] = 0
 
-        await asyncio.gather(udp_receiver(), missing_reporter(), stats_publisher())
+        async def heartbeat():
+            while True:
+                if self.telemetry_event is not None:
+                    self.telemetry_event.set()
+                await asyncio.sleep(1)
+
+        await asyncio.gather(udp_receiver(), missing_reporter(), stats_publisher(), heartbeat())
 
     async def start(self):
         role = self.detect_role()

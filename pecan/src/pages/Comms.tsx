@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import CarVideoFeed from '../components/CarVideoFeed';
 import CommsSensorStrip, { loadPinnedSensors, type CommsSensorConfig } from '../components/CommsSensorStrip';
+import LinkHealthPanel from '../components/comms/LinkHealthPanel';
 
 const jitsiBaseUrl = import.meta.env.VITE_JITSI_URL || `http://${window.location.hostname}:8000`;
 
@@ -178,6 +179,11 @@ export default function Comms() {
                     <CommsSensorStrip sensors={pinnedSensors} />
                 </div>
             )}
+
+            {/* LINK HEALTH */}
+            <div className="mb-4 flex-shrink-0">
+                <LinkHealthPanel />
+            </div>
 
             {/* MAIN CONTENT — Split: Video + Jitsi Audio */}
             <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0">

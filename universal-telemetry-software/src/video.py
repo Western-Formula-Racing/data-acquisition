@@ -211,6 +211,15 @@ class VideoStream:
             logger.error(f"Error: {err}, {debug}")
             self.stop()
 
-def run_video(role, remote_ip):
+def run_video(role, remote_ip, heartbeat_event=None):
+    # Heartbeat thread for LED status
+    if heartbeat_event is not None:
+        def _heartbeat():
+            while True:
+                heartbeat_event.set()
+                time.sleep(1)
+        t = threading.Thread(target=_heartbeat, daemon=True)
+        t.start()
+
     stream = VideoStream(role, remote_ip)
     stream.start()
