@@ -70,6 +70,17 @@ jobs:
         npm ci
         npx tsc --noEmit
 
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Run unit tests
+      working-directory: ./universal-telemetry-software
+      run: |
+        pip install pytest
+        python -m pytest tests/test_leds.py -v
+
     - name: Start test environment
       working-directory: ./universal-telemetry-software
       run: |

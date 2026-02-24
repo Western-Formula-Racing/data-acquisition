@@ -17,6 +17,10 @@ Status LEDs (telemetry, websocket, audio, video):
   Solid     Service process is alive and has checked in recently
   Off       Service not running or not responding
 
+PoE error override:
+  When the PoE switch is off (poe_ok_event cleared), ALL LEDs flash in
+  unison (~0.5 s on / 0.5 s off), overriding normal behaviour.
+
 The controller runs in its own process; call run_leds() from main.py.
 """
 
@@ -52,6 +56,10 @@ CAN_IDLE_CYCLE   = [
     (True,  CAN_FLASH_ON),    # flash 2 on
     (False, CAN_FLASH_PAUSE), # pause
 ]
+
+# PoE error: all LEDs flash in unison
+POE_FLASH_ON     = 0.5
+POE_FLASH_OFF    = 0.5
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -90,11 +98,126 @@ class _GPIOBackend:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# LED state machine
+# ─────────────────────────────────────────────────────────────────────────────
+
+class LEDStateMachine:
+    """
+    Pure state-machine logic for LED control.  Call tick() once per loop
+    iteration; it returns a dict {pin: bool} of GPIO changes to apply.
+    """
+
+    def __init__(self, is_car):
+        self.is_car = is_car
+
+        # CAN LED state
+        self.last_can_rx    = 0.0
+        self.can_active     = False
+        self.can_led_on     = False
+        self.idle_step      = 0
+        self.idle_step_time = 0.0
+
+        # PoE error flash state
+        self.poe_flash_on   = False
+        self.poe_flash_time = 0.0
+
+        # Status LED state: {pin: {"last": float, "on": bool}}
+        self.status_leds = {}
+        for pin in (PIN_TELEMETRY, PIN_WEBSOCKET, PIN_AUDIO, PIN_VIDEO):
+            self.status_leds[pin] = {"last": 0.0, "on": False}
+
+    def tick(self, now, poe_ok, can_rx, status_heartbeats):
+        """
+        Advance one tick and return GPIO changes.
+
+        Parameters
+        ----------
+        now : float
+            Current monotonic time.
+        poe_ok : bool
+            True if PoE switch is ON.
+        can_rx : bool
+            True if a CAN frame was received since last tick.
+        status_heartbeats : dict[int, bool]
+            {pin: True} for each status LED that received a heartbeat this tick.
+
+        Returns
+        -------
+        dict[int, bool]
+            Pin changes to apply: {pin_number: on/off}.
+        """
+        changes = {}
+
+        # ── PoE error override ───────────────────────────────────────────
+        if not poe_ok:
+            duration = POE_FLASH_ON if self.poe_flash_on else POE_FLASH_OFF
+            if now - self.poe_flash_time >= duration:
+                self.poe_flash_on = not self.poe_flash_on
+                self.poe_flash_time = now
+                for pin in ALL_PINS:
+                    changes[pin] = self.poe_flash_on
+            return changes
+
+        # Exiting PoE error — reset
+        if self.poe_flash_on:
+            self.poe_flash_on = False
+            self.can_led_on = False
+            for pin in ALL_PINS:
+                changes[pin] = False
+
+        # ── CAN LED ──────────────────────────────────────────────────────
+        if not self.is_car:
+            if self.can_led_on:
+                self.can_led_on = False
+                changes[PIN_CAN_BLUE] = False
+        else:
+            if can_rx:
+                self.last_can_rx = now
+
+            was_active = self.can_active
+            self.can_active = (self.last_can_rx > 0 and
+                               now - self.last_can_rx <= CAN_TIMEOUT)
+
+            if self.can_active:
+                if not self.can_led_on:
+                    self.can_led_on = True
+                    changes[PIN_CAN_BLUE] = True
+            else:
+                # Idle: double-flash pattern
+                if was_active:
+                    self.idle_step = 0
+                    self.idle_step_time = now
+
+                desired, duration = CAN_IDLE_CYCLE[self.idle_step]
+                if now - self.idle_step_time >= duration:
+                    self.idle_step = (self.idle_step + 1) % len(CAN_IDLE_CYCLE)
+                    self.idle_step_time = now
+                    desired = CAN_IDLE_CYCLE[self.idle_step][0]
+
+                if desired != self.can_led_on:
+                    self.can_led_on = desired
+                    changes[PIN_CAN_BLUE] = desired
+
+        # ── Status LEDs ──────────────────────────────────────────────────
+        for pin, state in self.status_leds.items():
+            if status_heartbeats.get(pin, False):
+                state["last"] = now
+                if not state["on"]:
+                    state["on"] = True
+                    changes[pin] = True
+            elif state["on"] and now - state["last"] > STATUS_TIMEOUT:
+                state["on"] = False
+                changes[pin] = False
+
+        return changes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main LED controller loop
 # ─────────────────────────────────────────────────────────────────────────────
 
-def led_controller(role, can_event, telemetry_event, websocket_event,
-                   audio_event, video_event):
+def led_controller(role, poe_ok_event, can_event, telemetry_event,
+                   websocket_event, audio_event, video_event):
     """
     Long-running loop that drives the LEDs.
 
@@ -102,6 +225,8 @@ def led_controller(role, can_event, telemetry_event, websocket_event,
     ----------
     role:
         "car" or "base".  CAN blue LED is only active in car mode.
+    poe_ok_event:
+        Set when PoE switch is ON.  When cleared, all LEDs flash as error.
     can_event:
         Set by the CAN reader on every received frame.
     telemetry_event, websocket_event, audio_event, video_event:
@@ -114,22 +239,15 @@ def led_controller(role, can_event, telemetry_event, websocket_event,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    is_car = (role == "car")
     gpio = _GPIOBackend()
+    sm = LEDStateMachine(is_car=(role == "car"))
 
-    # CAN LED state
-    last_can_rx    = 0.0
-    can_active     = False   # True while CAN data is flowing
-    can_led_on     = False
-    idle_step      = 0       # index into CAN_IDLE_CYCLE
-    idle_step_time = 0.0     # when current idle step started
-
-    # Track last heartbeat time for each status LED
-    status_leds = {
-        PIN_TELEMETRY: {"event": telemetry_event, "last": 0.0, "on": False},
-        PIN_WEBSOCKET: {"event": websocket_event, "last": 0.0, "on": False},
-        PIN_AUDIO:     {"event": audio_event,     "last": 0.0, "on": False},
-        PIN_VIDEO:     {"event": video_event,     "last": 0.0, "on": False},
+    # Map heartbeat events to their status LED pins
+    heartbeat_events = {
+        PIN_TELEMETRY: telemetry_event,
+        PIN_WEBSOCKET: websocket_event,
+        PIN_AUDIO:     audio_event,
+        PIN_VIDEO:     video_event,
     }
 
     logger.info(f"LED controller started (role={role})")
@@ -138,55 +256,23 @@ def led_controller(role, can_event, telemetry_event, websocket_event,
         while True:
             now = time.monotonic()
 
-            # ── CAN LED ──────────────────────────────────────────────────
-            if not is_car:
-                # Base mode: LED always off
-                if can_led_on:
-                    can_led_on = False
-                    gpio.set(PIN_CAN_BLUE, False)
-            else:
-                # Consume any CAN event
-                if can_event.is_set():
-                    can_event.clear()
-                    last_can_rx = now
+            # Read and clear events
+            can_rx = can_event.is_set()
+            if can_rx:
+                can_event.clear()
 
-                was_active = can_active
-                can_active = (last_can_rx > 0 and
-                              now - last_can_rx <= CAN_TIMEOUT)
+            status_hb = {}
+            for pin, evt in heartbeat_events.items():
+                if evt.is_set():
+                    evt.clear()
+                    status_hb[pin] = True
 
-                if can_active:
-                    # Data flowing: solid on
-                    if not can_led_on:
-                        can_led_on = True
-                        gpio.set(PIN_CAN_BLUE, True)
-                else:
-                    # Idle: double-flash pattern
-                    if was_active:
-                        # Just went idle — reset pattern
-                        idle_step = 0
-                        idle_step_time = now
+            # Advance state machine
+            changes = sm.tick(now, poe_ok_event.is_set(), can_rx, status_hb)
 
-                    desired, duration = CAN_IDLE_CYCLE[idle_step]
-                    if now - idle_step_time >= duration:
-                        idle_step = (idle_step + 1) % len(CAN_IDLE_CYCLE)
-                        idle_step_time = now
-                        desired = CAN_IDLE_CYCLE[idle_step][0]
-
-                    if desired != can_led_on:
-                        can_led_on = desired
-                        gpio.set(PIN_CAN_BLUE, desired)
-
-            # ── Status LEDs (solid when service is alive) ────────────────
-            for pin, state in status_leds.items():
-                if state["event"].is_set():
-                    state["event"].clear()
-                    state["last"] = now
-                    if not state["on"]:
-                        state["on"] = True
-                        gpio.set(pin, True)
-                elif state["on"] and now - state["last"] > STATUS_TIMEOUT:
-                    state["on"] = False
-                    gpio.set(pin, False)
+            # Apply GPIO changes
+            for pin, high in changes.items():
+                gpio.set(pin, high)
 
             time.sleep(POLL_INTERVAL)
 
@@ -199,8 +285,8 @@ def led_controller(role, can_event, telemetry_event, websocket_event,
         logger.info("LED controller stopped")
 
 
-def run_leds(role, can_event, telemetry_event, websocket_event,
+def run_leds(role, poe_ok_event, can_event, telemetry_event, websocket_event,
              audio_event, video_event):
     """Entry point called from main.py."""
-    led_controller(role, can_event, telemetry_event, websocket_event,
-                   audio_event, video_event)
+    led_controller(role, poe_ok_event, can_event, telemetry_event,
+                   websocket_event, audio_event, video_event)

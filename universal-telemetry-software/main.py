@@ -8,6 +8,7 @@ from src.audio import run_audio
 from src.websocket_bridge import run_websocket_bridge
 from src.status_server import run_status_server
 from src.leds import run_leds
+from src.poe import run_poe
 from src.link_diagnostics import run_link_diagnostics
 import asyncio
 
@@ -27,8 +28,11 @@ def start_telemetry(can_event=None, telemetry_event=None):
     asyncio.run(node.start())
 
 
-def start_leds(role, can_event, telemetry_event, websocket_event, audio_event, video_event):
-    run_leds(role, can_event, telemetry_event, websocket_event, audio_event, video_event)
+def start_leds(role, poe_ok_event, can_event, telemetry_event, websocket_event, audio_event, video_event):
+    run_leds(role, poe_ok_event, can_event, telemetry_event, websocket_event, audio_event, video_event)
+
+def start_poe(poe_ok_event):
+    run_poe(poe_ok_event)
 
 def start_video(role, remote_ip, video_event=None):
     # Set Lower Priority (Video can drop frames if needed)
@@ -88,16 +92,23 @@ if __name__ == "__main__":
     processes = []
 
     # Shared events for LED controller
+    poe_ok_event     = multiprocessing.Event()
+    poe_ok_event.set()  # assume OK until PoE monitor says otherwise
     can_event        = multiprocessing.Event()
     telemetry_event  = multiprocessing.Event()
     websocket_event  = multiprocessing.Event()
     audio_event      = multiprocessing.Event()
     video_event      = multiprocessing.Event()
 
-    # 0. LED controller (always on when hardware is present)
+    # 0a. PoE enable & switch monitor
+    p_poe = multiprocessing.Process(target=start_poe, args=(poe_ok_event,), name="PoE")
+    p_poe.start()
+    processes.append(p_poe)
+
+    # 0b. LED controller (always on when hardware is present)
     p_leds = multiprocessing.Process(
         target=start_leds,
-        args=(role, can_event, telemetry_event, websocket_event, audio_event, video_event),
+        args=(role, poe_ok_event, can_event, telemetry_event, websocket_event, audio_event, video_event),
         name="LEDs"
     )
     p_leds.start()
