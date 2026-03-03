@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "baseline-browser-mapping": "^2.9.19",
+    "vite": "^7.1.7"
+  },
+  "dependencies": {
+    "candied": "^2.2.0",
+    "lucide-react": "^0.575.0"
+  }
+}

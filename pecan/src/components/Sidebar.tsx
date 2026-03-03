@@ -74,6 +74,21 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 path="/system-link"
                 onClose={onClose}
               />
+              <SidebarOption
+                option="Throttle Mapper"
+                path="/throttle-mapper"
+                onClose={onClose}
+              />
+              <SidebarOption
+                option="CAN Transmitter"
+                path="/can-transmitter"
+                onClose={onClose}
+              />
+              <SidebarOption
+                option="TX Messages"
+                path="/tx"
+                onClose={onClose}
+              />
             </ul>
           </div>
           <footer className="font-footer flex flex-col items-start pl-[10%] gap-10 mb-10">

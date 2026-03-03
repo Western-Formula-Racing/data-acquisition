@@ -7,10 +7,14 @@ import ChargeCart from "./pages/ChargeCart";
 import MonitorBuilder from "./pages/MonitorBuilder";
 import SystemLink from "./pages/SystemLink";
 import Landing from "./pages/Landing";
+import ThrottleMapper from "./pages/Throttle_Mapper";
+import TxDashboard from "./pages/TxDashboard";
+import DataTransmitter from "./pages/Transmitter";
 
 
 // Get base path for GitHub Pages deployment
 const basename = import.meta.env.BASE_URL || '/';
+
 
 export const router = createBrowserRouter([
   {
@@ -26,6 +30,9 @@ export const router = createBrowserRouter([
       { path: "chargecart", element: <ChargeCart /> },
       { path: "monitor-builder", element: <MonitorBuilder /> },
       { path: "system-link", element: <SystemLink /> },
+      { path: "throttle-mapper", element: <ThrottleMapper /> },
+      { path: "tx", element: <TxDashboard /> },
+      { path: "can-transmitter", element: <DataTransmitter /> },
     ],
   },
 
