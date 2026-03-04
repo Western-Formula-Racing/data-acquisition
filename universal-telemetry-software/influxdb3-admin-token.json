@@ -1,0 +1,5 @@
+{
+    "token": "apiv3_local-telemetry-token",
+    "name": "local-admin",
+    "_comment": "Admin token for the local InfluxDB3 instance. Override via LOCAL_INFLUX_TOKEN env var in .env."
+}

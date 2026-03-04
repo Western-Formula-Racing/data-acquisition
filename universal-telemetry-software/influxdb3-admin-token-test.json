@@ -1,0 +1,5 @@
+{
+    "token": "apiv3_test-token",
+    "name": "test-admin",
+    "_comment": "Admin token for test InfluxDB3 instance in CI"
+}

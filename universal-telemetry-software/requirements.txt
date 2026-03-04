@@ -3,6 +3,8 @@ redis==5.2.1
 websockets==14.1
 aiohttp==3.11.11
 redis[hiredis]
+influxdb-client>=1.38.0
+cantools>=39.4.0
 
 # Test dependencies
 pytest>=7.4.0

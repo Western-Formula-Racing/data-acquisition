@@ -37,6 +37,7 @@ COPY src/ /app/src/
 COPY status/ /app/status/
 COPY web-tester/ /app/web-tester/
 COPY main.py /app/.
+COPY example.dbc /app/example.dbc
 
 # Use environment variables for configuration
 ENV ROLE=auto

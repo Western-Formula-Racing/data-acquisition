@@ -10,6 +10,8 @@ from src.status_server import run_status_server
 from src.leds import run_leds
 from src.poe import run_poe
 from src.link_diagnostics import run_link_diagnostics
+from src.influx_bridge import run_influx_bridge
+from src.cloud_sync import run_cloud_sync
 import asyncio
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -66,6 +68,16 @@ def start_link_diagnostics():
     logger.info("Starting link diagnostics service")
     asyncio.run(run_link_diagnostics())
 
+def start_influx_bridge():
+    # Redis → Local InfluxDB3 bridge (decodes CAN and writes to InfluxDB)
+    logger.info("Starting InfluxDB bridge (Redis → local InfluxDB3)")
+    asyncio.run(run_influx_bridge())
+
+def start_cloud_sync():
+    # Local InfluxDB3 → Cloud InfluxDB3 sync
+    logger.info("Starting cloud sync (local → cloud InfluxDB3)")
+    asyncio.run(run_cloud_sync())
+
 if __name__ == "__main__":
     logger.info("Universal Telemetry Software Starting...")
     
@@ -74,6 +86,7 @@ if __name__ == "__main__":
     remote_ip = os.getenv("REMOTE_IP", "127.0.0.1")
     enable_video = os.getenv("ENABLE_VIDEO", "true").lower() == "true"
     enable_audio = os.getenv("ENABLE_AUDIO", "true").lower() == "true"
+    enable_influx = os.getenv("ENABLE_INFLUX_LOGGING", "false").lower() == "true"
 
     # Note: Telemetry needs to run first or alone to detect role if "auto"
     # But for simplicity, if "auto", we might need logic in main to detect first?
@@ -139,6 +152,18 @@ if __name__ == "__main__":
         p_link_diag.start()
         processes.append(p_link_diag)
         logger.info("Link diagnostics service started")
+
+    # 5. InfluxDB Bridge + Cloud Sync (Base Station Only, opt-in)
+    if role == "base" and enable_influx:
+        p_influx = multiprocessing.Process(target=start_influx_bridge, name="InfluxBridge")
+        p_influx.start()
+        processes.append(p_influx)
+        logger.info(f"InfluxDB bridge started (table={os.getenv('INFLUX_TABLE', 'WFR26_base')})")
+
+        p_cloud = multiprocessing.Process(target=start_cloud_sync, name="CloudSync")
+        p_cloud.start()
+        processes.append(p_cloud)
+        logger.info("Cloud sync service started")
 
     # 5. Video (Optional)
     if enable_video:

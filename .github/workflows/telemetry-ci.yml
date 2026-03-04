@@ -75,47 +75,87 @@ jobs:
       with:
         python-version: '3.12'
 
+    # ── Install all Python deps in one shot ──────────────────────────────
+    - name: Install Python dependencies
+      run: |
+        pip install \
+          pytest pytest-asyncio \
+          cantools influxdb-client \
+          websockets redis requests \
+          playwright
+
+    # ── Unit tests (no containers needed) ───────────────────────────────
     - name: Run unit tests
       working-directory: ./universal-telemetry-software
       run: |
-        pip install pytest
-        python -m pytest tests/test_leds.py -v
+        python -m pytest tests/test_leds.py tests/test_influx_bridge.py -v
 
+    # ── Validate all compose configs ─────────────────────────────────────
+    - name: Validate compose configurations
+      working-directory: ./universal-telemetry-software
+      run: |
+        docker compose -f docker-compose.yml config --quiet
+        docker compose -f docker-compose.test.yml config --quiet
+        docker compose -f docker-compose.prod.yml config --quiet
+        echo "✓ All compose configs valid"
+
+    # ── Pull heavy images so compose up is fast ──────────────────────────
+    - name: Pull base images
+      run: |
+        docker pull influxdb:3.5.0-core &
+        docker pull redis:8.2 &
+        wait
+        echo "✓ Images pulled"
+
+    # ── Start full test stack ────────────────────────────────────────────
     - name: Start test environment
       working-directory: ./universal-telemetry-software
       run: |
-        docker compose -f docker-compose.test.yml up -d
-        echo "Waiting for services to be ready..."
-        sleep 10
-    
+        docker compose -f docker-compose.test.yml up -d --build
+        echo "Waiting for all services (InfluxDB3 needs ~15s)..."
+        sleep 20
+
     - name: Check container health
       working-directory: ./universal-telemetry-software
       run: |
         docker compose -f docker-compose.test.yml ps
-        docker compose -f docker-compose.test.yml logs
-    
-    - name: Install test dependencies
+        docker compose -f docker-compose.test.yml logs --tail 30
+
+    # ── Verify all expected containers running ───────────────────────────
+    - name: Verify containers
       run: |
-        pip install pytest pytest-asyncio websockets redis requests playwright
-        playwright install chromium --with-deps
-    
+        for container in daq-car daq-base daq-car-redis daq-base-redis daq-pecan-test daq-test-influxdb3; do
+          if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+            echo "✓ ${container} running"
+          else
+            echo "✗ ${container} NOT running"
+            docker logs ${container} 2>&1 || true
+            exit 1
+          fi
+        done
+
+    # ── Install Playwright browsers ──────────────────────────────────────
+    - name: Install Playwright browsers
+      run: playwright install chromium --with-deps
+
+    # ── Integration tests (pytest directly, stack already up) ────────────
     - name: Run integration tests
       working-directory: ./universal-telemetry-software
       run: |
-        chmod +x run_ci_tests.sh
-        ./run_ci_tests.sh
-    
+        python -m pytest tests/test_integration.py -v -s --timeout=120
+
     - name: Collect logs on failure
       if: failure()
       working-directory: ./universal-telemetry-software
       run: |
         mkdir -p test-logs
-        docker compose -f docker-compose.test.yml logs --no-color > test-logs/docker-compose.log
-        docker logs daq-car > test-logs/car.log 2>&1 || true
-        docker logs daq-base > test-logs/base.log 2>&1 || true
-        docker logs daq-car-redis > test-logs/car-redis.log 2>&1 || true
-        docker logs daq-base-redis > test-logs/base-redis.log 2>&1 || true
-        docker logs daq-pecan-test > test-logs/pecan.log 2>&1 || true
+        docker compose -f docker-compose.test.yml logs --no-color > test-logs/docker-compose.log 2>&1
+        docker logs daq-car              > test-logs/car.log 2>&1 || true
+        docker logs daq-base             > test-logs/base.log 2>&1 || true
+        docker logs daq-car-redis        > test-logs/car-redis.log 2>&1 || true
+        docker logs daq-base-redis       > test-logs/base-redis.log 2>&1 || true
+        docker logs daq-pecan-test       > test-logs/pecan.log 2>&1 || true
+        docker logs daq-test-influxdb3   > test-logs/influxdb3.log 2>&1 || true
     
     - name: Upload test logs
       if: failure()
