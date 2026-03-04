@@ -79,7 +79,7 @@ jobs:
     - name: Install Python dependencies
       run: |
         pip install \
-          pytest pytest-asyncio \
+          pytest pytest-asyncio pytest-timeout \
           cantools influxdb-client \
           websockets redis requests \
           playwright
