@@ -1,6 +1,7 @@
 name: Telemetry System CI/CD
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - 'universal-telemetry-software/**'
@@ -174,7 +175,7 @@ jobs:
   publish-telemetry:
     needs: [test, detect-changes]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.telemetry == 'true'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name != 'pull_request' && needs.detect-changes.outputs.telemetry == 'true')
     permissions:
       contents: read
       packages: write
