@@ -6,20 +6,24 @@ Complete DAQ telemetry system for Formula Racing vehicles. Runs on both the car 
 
 ## Architecture
 
-```
-CAR (Raspberry Pi)                        BASE (Raspberry Pi)
-------------------                        -------------------
-CAN Reader (can0)
-       |
-UDP Sender (batch 20/50ms) ------------>  UDP Receiver
-       |                                         |
-Ring Buffer (60 sec)                      Redis Publisher
-       |                                         |
-TCP Resend Server (5006) <-----------     TCP Client (recovery)
-                                                 |
-                                          WebSocket Bridge (9080) --> PECAN (3000)
-                                                 |
-                                          Status HTTP Server (8080)
+```mermaid
+graph LR
+  subgraph CAR["CAR — Raspberry Pi"]
+    CAN["CAN Reader\n(can0)"] --> UDP["UDP Sender\n(batch 20msg/50ms)"]
+    CAN --> RB["Ring Buffer\n(60 sec)"]
+    RB --> TCP_S["TCP Resend Server\n(:5006)"]
+  end
+
+  subgraph BASE["BASE — Raspberry Pi"]
+    UDP_R["UDP Receiver"] --> Redis["Redis Publisher"]
+    Redis --> WS["WebSocket Bridge\n(:9080)"]
+    Redis --> STATUS["Status HTTP Server\n(:8080)"]
+    TCP_C["TCP Client\n(recovery)"] --> Redis
+  end
+
+  UDP -- "UDP :5005" --> UDP_R
+  TCP_S -- "TCP :5006" --> TCP_C
+  WS --> PECAN["PECAN Dashboard\n(:3000)"]
 ```
 
 **Car mode** is auto-detected when `can0` is present. Otherwise the software runs in **base station mode**.
@@ -37,24 +41,22 @@ Install the SocketCAN tools:
 sudo apt update && sudo apt install -y can-utils
 ```
 
-Load the CAN module at boot:
+Load the CAN modules at boot:
 ```bash
 echo "can" | sudo tee -a /etc/modules
 echo "can_raw" | sudo tee -a /etc/modules
-echo "mcp251x" | sudo tee -a /etc/modules
+echo "mcp251xfd" | sudo tee -a /etc/modules
 ```
-
-If your HAT uses a different chip (e.g. MCP2518FD), replace `mcp251x` with the appropriate module name.
 
 ### 2. Configure the HAT overlay
 
 Edit `/boot/firmware/config.txt` (Ubuntu on RPi uses `/boot/firmware/`, not `/boot/`):
 ```ini
-dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=25
+dtoverlay=mcp251xfd,oscillator=20000000,interrupt=25
 dtoverlay=spi-bcm2835
 ```
 
-> The `oscillator` and `interrupt` values depend on your specific HAT. Check your HAT's documentation or silkscreen. Common values: oscillator = 8000000 or 16000000, interrupt = 25.
+> Our HAT uses the **MCP2517FD** CAN FD controller with a **20 MHz** crystal (S73305 20.000X15R) and MCP2562FDT-HSN transceiver. The interrupt GPIO (25) may need to be adjusted depending on how your HAT is wired — check the HAT schematic.
 
 Reboot after editing:
 ```bash
