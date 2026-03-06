@@ -109,14 +109,17 @@ describe('CAN Processor Unit Tests', () => {
             expect(result?.signals.StateOfCharge).toBeDefined();
         });
 
-        it('should return null for unknown CAN ID', () => {
+        it('should return unknown message format for unknown CAN ID', () => {
             const canId = 9999;
             const data = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
             const time = 4000;
 
             const result = decodeCanMessage(can, canId, data, time);
 
-            expect(result).toBeNull();
+            expect(result).not.toBeNull();
+            expect(result?.canId).toBe(9999);
+            expect(result?.messageName).toBe('Unknown_CAN_9999');
+            expect(result?.signals).toEqual({});
         });
 
         it('should format raw data as hex string', () => {
@@ -288,8 +291,9 @@ describe('CAN Processor Unit Tests', () => {
             const result = processor.processWebSocketMessage(wsMessage);
 
             expect(Array.isArray(result)).toBe(true);
-            expect(result?.length).toBe(1); // Only M192 exists in actual DBC
+            expect(result?.length).toBe(2); // M192 and an unknown message
             expect(result?.[0]?.messageName).toBe('M192_Command_Message');
+            expect(result?.[1]?.messageName).toBe('Unknown_CAN_512');
         });
 
         it('should process batch messages', async () => {
@@ -312,17 +316,19 @@ describe('CAN Processor Unit Tests', () => {
             expect(result).toBeNull();
         });
 
-        it('should filter out null results in batch processing', async () => {
+        it('should keep unknown messages in batch processing but filter invalid', async () => {
             const processor = await createCanProcessor();
             const messages = [
                 { time: 1000, canId: 192, data: [0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00] },
                 { time: 2000, canId: 9999, data: [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00] }, // Unknown ID
-                { time: 3000, canId: 514, data: [0xB8, 0x0B, 0xE8, 0x03, 0x64, 0x00, 0x00, 0x00] } // BMS_Current_Limit
+                { time: 3000, canId: 514, data: [0xB8, 0x0B, 0xE8, 0x03, 0x64, 0x00, 0x00, 0x00] }, // BMS_Current_Limit
+                { invalid: 'data' } // Invalid format, will be filtered out
             ];
             const result = processor.processBatchMessages(messages);
 
             expect(Array.isArray(result)).toBe(true);
-            expect(result.length).toBe(2); // Only valid messages
+            expect(result.length).toBe(3); // 2 valid CAN messages + 1 unknown CAN message
+            expect(result[1].messageName).toBe('Unknown_CAN_9999');
         });
     });
 
