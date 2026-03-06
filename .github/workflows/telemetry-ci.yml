@@ -242,7 +242,7 @@ jobs:
   publish-pecan:
     needs: [test, detect-changes]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.pecan == 'true'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name != 'pull_request' && needs.detect-changes.outputs.pecan == 'true')
     permissions:
       contents: read
       packages: write
