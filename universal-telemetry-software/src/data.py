@@ -162,6 +162,20 @@ class TelemetryNode:
                     batch = []
                     last_send = time.time()
 
+        # Heartbeat Injector Task
+        async def inject_heartbeat():
+            while True:
+                try:
+                    # Inject a heartbeat message (ID 1999) every second
+                    # Payload: 8-bytes representing the current Unix timestamp (double)
+                    timestamp_bytes = struct.pack("!d", time.time())
+                    hb_msg = CANMessage(time.time(), 1999, timestamp_bytes)
+                    await queue.put(hb_msg)
+                except Exception as e:
+                    logger.debug(f"Failed to inject heartbeat: {e}")
+                
+                await asyncio.sleep(1.0)
+
         # TCP Resend Server
         async def handle_resend(reader, writer):
             data = await reader.read(1024)
@@ -205,6 +219,7 @@ class TelemetryNode:
             resend_server.serve_forever(),
             throughput_listener_task(),
             heartbeat(),
+            inject_heartbeat(),
         )
 
     async def run_base(self):

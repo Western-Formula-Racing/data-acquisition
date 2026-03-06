@@ -198,8 +198,8 @@ class TestCloudSyncHelpers:
     def test_check_cloud_unreachable(self):
         """Connectivity check against unreachable host should return False."""
         from src.cloud_sync import check_cloud_reachable
-        # Use a non-routable IP to guarantee failure
-        assert check_cloud_reachable(host="192.0.2.1", port=443, timeout=1) is False
+        # Use localhost with an unreachable port to guarantee connection refused
+        assert check_cloud_reachable(host="127.0.0.1", port=65535, timeout=1) is False
 
 
 # ── Table/measurement naming ─────────────────────────────────────────────────

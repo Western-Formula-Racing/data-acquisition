@@ -1,4 +1,6 @@
+import { useState, useEffect } from 'react';
 import { Radio, AlertTriangle } from 'lucide-react';
+import { useLatestMessage } from '../../lib/useDataStore';
 import type { TelemetrySample } from '../../lib/DataStore';
 
 interface Props {
@@ -32,6 +34,16 @@ function StatPill({
 }
 
 export default function RadioStatChips({ radioData }: Props) {
+  const [now, setNow] = useState(Date.now());
+  const heartbeatData = useLatestMessage('1999');
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isPipelineAlive = heartbeatData && (now - heartbeatData.timestamp) < 3000;
+
   if (!radioData) {
     return (
       <div className="flex flex-col gap-1 opacity-40">
@@ -41,6 +53,11 @@ export default function RadioStatChips({ radioData }: Props) {
             Radio (not configured)
           </span>
         </div>
+        <StatPill
+          label="Pipeline"
+          value={isPipelineAlive ? 'Alive' : 'Dead'}
+          color={isPipelineAlive ? 'text-emerald-400' : 'text-rose-400'}
+        />
       </div>
     );
   }
@@ -61,6 +78,11 @@ export default function RadioStatChips({ radioData }: Props) {
             {radioData.rawData || 'Unreachable'}
           </span>
         </div>
+        <StatPill
+          label="Pipeline"
+          value={isPipelineAlive ? 'Alive' : 'Dead'}
+          color={isPipelineAlive ? 'text-emerald-400' : 'text-rose-400'}
+        />
       </div>
     );
   }
@@ -87,6 +109,11 @@ export default function RadioStatChips({ radioData }: Props) {
           Radio
         </span>
       </div>
+      <StatPill
+        label="Pipeline"
+        value={isPipelineAlive ? 'Alive' : 'Dead'}
+        color={isPipelineAlive ? 'text-emerald-400' : 'text-rose-400'}
+      />
       {rssi != null && (
         <StatPill label="RSSI" value={`${rssi}`} unit="dBm" color={rssiColor} />
       )}

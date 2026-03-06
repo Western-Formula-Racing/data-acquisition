@@ -90,6 +90,9 @@ BO_ 1280 Cooling_Status: 8 Vector__XXX
  SG_ PumpSpeed : 16|8@1+ (1,0) [0|100] "%" Vector__XXX
  SG_ FanSpeed : 24|8@1+ (1,0) [0|100] "%" Vector__XXX
 
+BO_ 1999 Heartbeat: 8 Vector__XXX
+ SG_ UTCTime : 0|64@1+ (1,0) [0|0] "s" Vector__XXX
+
 CM_ BO_ 192 "Vehicle Control Unit Status";
 CM_ BO_ 193 "Pedal Box Sensor Data";
 CM_ BO_ 194 "Steering Wheel Inputs";
@@ -100,3 +103,4 @@ CM_ BO_ 257 "Motor Controller Feedback";
 CM_ BO_ 768 "Wheel Speed Sensors";
 CM_ BO_ 1024 "IMU 6-DOF Data";
 CM_ BO_ 1280 "Cooling System Status";
+CM_ BO_ 1999 "Pipeline Heartbeat";

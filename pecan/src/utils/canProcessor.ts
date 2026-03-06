@@ -302,8 +302,19 @@ export function decodeCanMessage(
     const frame = canInstance.createFrame(canId, messageData);
     const decoded = canInstance.decode(frame);
 
+    const rawDataStr = messageData
+      .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+      .join(" ");
+
+    // If message is not defined in DBC
     if (!decoded) {
-      return null;
+      return {
+        canId: canId,
+        messageName: `Unknown_CAN_${canId}`,
+        time: time,
+        signals: {},
+        rawData: rawDataStr,
+      };
     }
 
     // Candied uses boundSignals (not signals)
@@ -324,9 +335,7 @@ export function decodeCanMessage(
       messageName: decoded.name,
       time: time,
       signals,
-      rawData: messageData
-        .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
-        .join(" "),
+      rawData: rawDataStr,
     };
   } catch (error) {
     console.error(`Error decoding message ${canId}:`, error);

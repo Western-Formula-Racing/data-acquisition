@@ -127,9 +127,9 @@ function Landing() {
                 {/* Hero Section */}
                 <div className="text-center mb-16">
                     <h1 className="text-5xl md:text-6xl font-bold text-white mb-4 tracking-tight">
-                        Project{" "}
-                        <span className="bg-gradient-to-r from-purple-400 via-pink-500 to-orange-400 bg-clip-text text-transparent">
-                            Pecan
+                        PROJECT{" "}
+                        <span className="bg-gradient-to-r from-purple-500 to-rose-500 bg-clip-text text-transparent">
+                            PECAN
                         </span>
                     </h1>
                     <p className="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed">
