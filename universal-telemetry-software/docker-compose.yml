@@ -12,7 +12,7 @@ services:
       - REDIS_URL=redis://localhost:6379/0 # localhost because network_mode: host
       - WS_PORT=9080 # WebSocket for PECAN dashboard
       - STATUS_PORT=8080 # HTTP server for status page
-      - SIMULATE=true # Set to true for simulation mode
+      - SIMULATE=false # Set to true for simulation mode
       - ENABLE_VIDEO=false # Enable video streaming
       - ENABLE_AUDIO=false # Enable audio streaming
     volumes:
