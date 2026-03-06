@@ -101,7 +101,8 @@ class TestWebSocketV2UplinkAck:
 
             assert ack is not None, "No uplink_ack received"
             assert ack["ref"] == ref
-            assert ack["status"] == "queued"
+            assert ack["status"] == "queued", \
+                "Base mode must return 'queued' (message goes via Redis relay, not written directly)"
             logger.info(f"Uplink ack OK: ref={ref}")
         finally:
             await ws.close()
@@ -332,7 +333,8 @@ class TestWebSocketV2Batch:
 
             assert ack is not None, "No uplink_ack for batch"
             assert ack["ref"] == ref
-            assert ack["status"] == "queued"
+            assert ack["status"] == "queued", \
+                "Base mode must return 'queued' (batch goes via Redis relay, not written directly)"
             logger.info(f"Batch ack OK: ref={ref}")
         finally:
             await ws.close()

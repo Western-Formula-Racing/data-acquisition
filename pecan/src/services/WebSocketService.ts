@@ -1,21 +1,13 @@
 import { dataStore } from '../lib/DataStore';
 import { createCanProcessor } from '../utils/canProcessor';
 
-// Uplink response types (Protocol v2)
-export interface UplinkAck {
-  type: 'uplink_ack';
-  ref: string;
-  status: 'queued' | 'delivered' | 'rejected';
-  reason: string | null;
-}
-
-export interface UplinkError {
-  type: 'error';
-  code: string;
-  message: string;
-}
-
-export type UplinkCallback = (response: UplinkAck | UplinkError) => void;
+// Synthetic message IDs for non-CAN diagnostic data
+export const DIAG_MSG_IDS = {
+  SYSTEM_STATS: '__system_stats__',
+  LINK_PING: '__link_ping__',
+  LINK_THROUGHPUT: '__link_throughput__',
+  LINK_RADIO: '__link_radio__',
+} as const;
 
 export class WebSocketService {
   private ws: WebSocket | null = null;
@@ -24,8 +16,6 @@ export class WebSocketService {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 2000; // Start with 2 seconds
   private messageCount = 0; // Track message count for logging
-  private pendingUplinks = new Map<string, UplinkCallback>(); // ref -> callback
-  private refCounter = 0;
 
   async initialize() {
     // Initialize CAN processor
@@ -58,17 +48,15 @@ export class WebSocketService {
       wsUrl = import.meta.env.VITE_WS_URL;
     } else {
       const hostname = window.location.hostname;
-      const isGitHubPages = hostname.includes('github.io');
-      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-      // User request: 192.168.x.x is the Car Hotspot (Local), but other IPs (172.x, etc) are for testing against Cloud
-      const isCarNetwork = hostname.startsWith('192.168.');
+      // Only 192.x IPs connect directly to the RPi; everything else uses the production backend
+      const isRpiNetwork = hostname.startsWith('192.');
 
-      if (isGitHubPages || (!isLocalhost && !isCarNetwork)) {
-        // GitHub Pages OR non-local/non-car network (e.g. 172.x): use the production backend
-        wsUrl = `wss://ws-wfr.0001200.xyz:9443`;
-      } else {
-        // Localhost or Car Network: use same hostname (local docker/car)
+      if (isRpiNetwork) {
+        // 192.x.x.x: connect directly to the RPi
         wsUrl = `${protocol}://${hostname}:${port}`;
+      } else {
+        // Localhost, GitHub Pages, other IPs: always use production backend
+        wsUrl = `wss://ws-wfr.0001200.xyz:9443`;
       }
     }
 
@@ -92,18 +80,10 @@ export class WebSocketService {
 
           const messageData = JSON.parse(event.data);
 
-          // Handle protocol v2 server responses (uplink_ack, error, pong)
-          if (messageData?.type === 'uplink_ack' || messageData?.type === 'error') {
-            const ref = messageData.ref;
-            if (ref && this.pendingUplinks.has(ref)) {
-              const cb = this.pendingUplinks.get(ref)!;
-              this.pendingUplinks.delete(ref);
-              cb(messageData);
-            }
+          // Intercept diagnostic messages BEFORE the CAN processor
+          if (this.handleDiagnosticMessage(messageData)) {
+            this.messageCount++;
             return;
-          }
-          if (messageData?.type === 'pong') {
-            return; // Handled silently; latency consumers can be added later
           }
 
           const decoded = this.processor.processWebSocketMessage(messageData);
@@ -162,68 +142,82 @@ export class WebSocketService {
     }
   }
 
-  /** Generate a unique reference ID for uplink messages */
-  private generateRef(): string {
-    return `pecan-${Date.now()}-${++this.refCounter}`;
-  }
-
   /**
-   * Send a single CAN message to the car (uplink).
-   * @param canId - CAN arbitration ID
-   * @param data - Data bytes (1-8 values, each 0-255)
-   * @param callback - Optional callback for the server's ack/error response
-   * @returns The reference ID for this message
+   * Intercept non-CAN diagnostic messages and inject into DataStore.
+   * Returns true if the message was handled, false to fall through to CAN processor.
    */
-  sendCanMessage(canId: number, data: number[], callback?: UplinkCallback): string {
-    const ref = this.generateRef();
-    if (!this.isConnected()) {
-      if (callback) callback({ type: 'error', code: 'NOT_CONNECTED', message: 'WebSocket is not connected' });
-      return ref;
+  private handleDiagnosticMessage(raw: unknown): boolean {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+    const msg = raw as Record<string, unknown>;
+
+    // system_stats: {"received": N, "missing": N, "recovered": N}
+    if ('received' in msg && 'missing' in msg && 'recovered' in msg && !('canId' in msg)) {
+      dataStore.ingestMessage({
+        msgID: DIAG_MSG_IDS.SYSTEM_STATS,
+        messageName: 'System Stats',
+        data: {
+          received:  { sensorReading: Number(msg.received),  unit: 'pkt/s' },
+          missing:   { sensorReading: Number(msg.missing),   unit: 'pkt/s' },
+          recovered: { sensorReading: Number(msg.recovered), unit: 'pkt/s' },
+        },
+        rawData: '',
+        timestamp: Date.now(),
+      });
+      return true;
     }
 
-    if (callback) this.pendingUplinks.set(ref, callback);
+    // link_diagnostics: {"type": "ping"|"throughput"|"radio", ...}
+    if ('type' in msg) {
+      const ts = typeof msg.ts === 'number' ? msg.ts : Date.now();
 
-    this.ws!.send(JSON.stringify({
-      type: 'can_send',
-      ref,
-      canId,
-      data,
-    }));
+      if (msg.type === 'ping') {
+        dataStore.ingestMessage({
+          msgID: DIAG_MSG_IDS.LINK_PING,
+          messageName: 'Link Ping',
+          data: {
+            rtt_ms: { sensorReading: msg.rtt_ms != null ? Number(msg.rtt_ms) : -1, unit: 'ms' },
+          },
+          rawData: '',
+          timestamp: ts,
+        });
+        return true;
+      }
 
-    return ref;
-  }
+      if (msg.type === 'throughput') {
+        dataStore.ingestMessage({
+          msgID: DIAG_MSG_IDS.LINK_THROUGHPUT,
+          messageName: 'Link Throughput',
+          data: {
+            mbps:     { sensorReading: msg.mbps != null ? Number(msg.mbps) : -1, unit: 'Mbps' },
+            loss_pct: { sensorReading: Number(msg.loss_pct ?? 0),                unit: '%'    },
+            sent:     { sensorReading: Number(msg.sent     ?? 0),                unit: 'pkt'  },
+            received: { sensorReading: Number(msg.received ?? 0),                unit: 'pkt'  },
+          },
+          rawData: '',
+          timestamp: ts,
+        });
+        return true;
+      }
 
-  /**
-   * Send multiple CAN messages to the car in a single batch.
-   * @param messages - Array of { canId, data } objects (max 20)
-   * @param callback - Optional callback for the server's ack/error response
-   * @returns The reference ID for this batch
-   */
-  sendCanBatch(messages: { canId: number; data: number[] }[], callback?: UplinkCallback): string {
-    const ref = this.generateRef();
-    if (!this.isConnected()) {
-      if (callback) callback({ type: 'error', code: 'NOT_CONNECTED', message: 'WebSocket is not connected' });
-      return ref;
+      if (msg.type === 'radio') {
+        dataStore.ingestMessage({
+          msgID: DIAG_MSG_IDS.LINK_RADIO,
+          messageName: 'Radio Stats',
+          data: {
+            rssi_dbm: { sensorReading: Number(msg.rssi_dbm ?? 0), unit: 'dBm'  },
+            tx_mbps:  { sensorReading: Number(msg.tx_mbps  ?? 0), unit: 'Mbps' },
+            rx_mbps:  { sensorReading: Number(msg.rx_mbps  ?? 0), unit: 'Mbps' },
+            ccq_pct:  { sensorReading: Number(msg.ccq_pct  ?? 0), unit: '%'    },
+            error:    { sensorReading: msg.error ? 1 : 0,         unit: ''     },
+          },
+          rawData: typeof msg.error === 'string' ? msg.error : '',
+          timestamp: ts,
+        });
+        return true;
+      }
     }
 
-    if (callback) this.pendingUplinks.set(ref, callback);
-
-    this.ws!.send(JSON.stringify({
-      type: 'can_send_batch',
-      ref,
-      messages,
-    }));
-
-    return ref;
-  }
-
-  /** Send a ping to measure round-trip latency */
-  sendPing() {
-    if (!this.isConnected()) return;
-    this.ws!.send(JSON.stringify({
-      type: 'ping',
-      timestamp: Date.now(),
-    }));
+    return false;
   }
 
   disconnect() {

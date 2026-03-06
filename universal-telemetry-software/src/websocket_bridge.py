@@ -17,12 +17,53 @@ REDIS_UPLINK_CHANNEL = "can_uplink"
 WS_PORT = int(os.getenv("WS_PORT", 9080))
 ENABLE_UPLINK = os.getenv("ENABLE_UPLINK", "false").lower() == "true"
 UPLINK_RATE_LIMIT = int(os.getenv("UPLINK_RATE_LIMIT", 10))  # messages per second per client
+ROLE = os.getenv("ROLE", "base")  # "car" = direct CAN write, "base" = Redis relay
 
 connected_clients = set()
 shutdown_event = asyncio.Event()
 
 # Per-client rate limiting state: websocket -> list of timestamps
 _client_send_times: dict = {}
+
+# Direct CAN bus handle (car mode only)
+_can_bus = None
+
+
+def _init_can_bus():
+    """Open the CAN bus for direct uplink writes (car mode only)."""
+    global _can_bus
+    if ROLE != "car" or not ENABLE_UPLINK:
+        return
+
+    if os.getenv("SIMULATE", "false").lower() == "true":
+        logger.info("Simulation mode: CAN bus writes will be logged only")
+        return
+
+    try:
+        import can
+        _can_bus = can.interface.Bus(channel='can0', bustype='socketcan')
+        logger.info("CAN bus opened for direct uplink writes on can0")
+    except Exception as e:
+        logger.warning(f"Could not open CAN bus for writing ({e}). Uplink writes will be logged only.")
+
+
+def _write_can_message(can_id: int, data: list, ref: str):
+    """Write a CAN message directly to the bus (car mode).
+
+    Raises on CAN send failure so the caller can respond with an error.
+    """
+    import can as can_mod
+    if _can_bus:
+        msg = can_mod.Message(
+            arbitration_id=can_id,
+            data=bytes(data),
+            is_extended_id=can_id > 0x7FF,
+        )
+        _can_bus.send(msg)
+        logger.info(f"CAN write: canId={can_id} ref={ref}")
+    else:
+        # Simulation / no hardware — log only
+        logger.info(f"CAN write (sim): canId={can_id} data={data} ref={ref}")
 
 
 def _check_rate_limit(ws) -> bool:
@@ -65,6 +106,7 @@ _ERROR_MESSAGES = {
     "RATE_LIMITED": f"Uplink rate limit exceeded (max {UPLINK_RATE_LIMIT} msg/sec)",
     "UPLINK_DISABLED": "Uplink is not enabled on this server",
     "UNKNOWN_TYPE": "Unrecognized message type",
+    "CAN_WRITE_FAILED": "CAN bus write failed",
 }
 
 
@@ -162,20 +204,37 @@ async def _handle_client_message(websocket, raw: str, redis_client):
             }))
             return
 
-        uplink_payload = json.dumps({
-            "ref": msg["ref"],
-            "canId": msg["canId"],
-            "data": msg["data"],
-            "source": client_info,
-            "timestamp": int(time.time() * 1000),
-        })
-        await redis_client.publish(REDIS_UPLINK_CHANNEL, uplink_payload)
-        logger.info(f"Uplink CAN send from {client_info}: canId={msg['canId']} ref={msg['ref']}")
+        if ROLE == "car":
+            # Car mode: write directly to CAN bus — no Redis
+            try:
+                _write_can_message(msg["canId"], msg["data"], msg["ref"])
+            except Exception as e:
+                logger.error(f"CAN write failed from {client_info}: {e}")
+                await websocket.send(json.dumps({
+                    "type": "error",
+                    "code": "CAN_WRITE_FAILED",
+                    "message": f"CAN bus write failed: {e}",
+                }))
+                return
+            status = "sent"
+        else:
+            # Base mode: publish to Redis for UDP relay to car
+            uplink_payload = json.dumps({
+                "ref": msg["ref"],
+                "canId": msg["canId"],
+                "data": msg["data"],
+                "source": client_info,
+                "timestamp": int(time.time() * 1000),
+            })
+            await redis_client.publish(REDIS_UPLINK_CHANNEL, uplink_payload)
+            status = "queued"
+
+        logger.info(f"Uplink CAN send from {client_info}: canId={msg['canId']} ref={msg['ref']} ({status})")
 
         await websocket.send(json.dumps({
             "type": "uplink_ack",
             "ref": msg["ref"],
-            "status": "queued",
+            "status": status,
             "reason": None,
         }))
 
@@ -210,24 +269,40 @@ async def _handle_client_message(websocket, raw: str, redis_client):
                 }))
                 return
 
-        # All valid — publish each
-        now = int(time.time() * 1000)
-        for i, sub_msg in enumerate(messages):
-            uplink_payload = json.dumps({
-                "ref": f"{ref}/{i}",
-                "canId": sub_msg["canId"],
-                "data": sub_msg["data"],
-                "source": client_info,
-                "timestamp": now,
-            })
-            await redis_client.publish(REDIS_UPLINK_CHANNEL, uplink_payload)
+        if ROLE == "car":
+            # Car mode: write each message directly to CAN bus
+            for i, sub_msg in enumerate(messages):
+                try:
+                    _write_can_message(sub_msg["canId"], sub_msg["data"], f"{ref}/{i}")
+                except Exception as e:
+                    logger.error(f"CAN batch write failed at index {i}: {e}")
+                    await websocket.send(json.dumps({
+                        "type": "error",
+                        "code": "CAN_WRITE_FAILED",
+                        "message": f"CAN bus write failed at message {i}: {e}",
+                    }))
+                    return
+            status = "sent"
+        else:
+            # Base mode: publish each to Redis
+            now = int(time.time() * 1000)
+            for i, sub_msg in enumerate(messages):
+                uplink_payload = json.dumps({
+                    "ref": f"{ref}/{i}",
+                    "canId": sub_msg["canId"],
+                    "data": sub_msg["data"],
+                    "source": client_info,
+                    "timestamp": now,
+                })
+                await redis_client.publish(REDIS_UPLINK_CHANNEL, uplink_payload)
+            status = "queued"
 
-        logger.info(f"Uplink CAN batch from {client_info}: {len(messages)} msgs ref={ref}")
+        logger.info(f"Uplink CAN batch from {client_info}: {len(messages)} msgs ref={ref} ({status})")
 
         await websocket.send(json.dumps({
             "type": "uplink_ack",
             "ref": ref,
-            "status": "queued",
+            "status": status,
             "reason": None,
         }))
 
@@ -239,7 +314,8 @@ async def ws_handler(websocket):
     logger.info(f"Client connected: {client_info}. Total: {len(connected_clients)}")
 
     redis_client = None
-    if ENABLE_UPLINK:
+    if ENABLE_UPLINK and ROLE != "car":
+        # Base mode: need Redis to relay uplink messages
         try:
             redis_client = redis.from_url(REDIS_URL)
             await redis_client.ping()
@@ -277,9 +353,13 @@ async def run_websocket_bridge():
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, handle_signal)
 
-    logger.info(f"Starting WebSocket Bridge on port {WS_PORT}...")
+    logger.info(f"Starting WebSocket Bridge on port {WS_PORT}... (role={ROLE})")
     if ENABLE_UPLINK:
-        logger.info(f"Uplink ENABLED (rate limit: {UPLINK_RATE_LIMIT} msg/sec/client)")
+        if ROLE == "car":
+            logger.info("Uplink ENABLED — CAR MODE (direct CAN bus write)")
+            _init_can_bus()
+        else:
+            logger.info(f"Uplink ENABLED — BASE MODE (Redis relay, rate limit: {UPLINK_RATE_LIMIT} msg/sec/client)")
     else:
         logger.info("Uplink DISABLED (set ENABLE_UPLINK=true to enable)")
 
