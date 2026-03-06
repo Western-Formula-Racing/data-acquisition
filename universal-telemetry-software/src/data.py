@@ -93,8 +93,9 @@ class TelemetryNode:
                 # Note: Adjust interface as needed for RPi (e.g., mcp2515)
                 bus = can.interface.Bus(channel='can0', bustype='socketcan')
                 logger.info("CAN Reader started on can0")
+                loop = asyncio.get_running_loop()
                 while True:
-                    msg = bus.recv(0.1)
+                    msg = await loop.run_in_executor(None, lambda: bus.recv(0.1))
                     if msg:
                         telemetry_msg = CANMessage(msg.timestamp, msg.arbitration_id, msg.data)
                         await queue.put(telemetry_msg)
