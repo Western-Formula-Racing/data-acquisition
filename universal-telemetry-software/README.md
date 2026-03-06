@@ -1,497 +1,285 @@
 # Universal Telemetry Software
 
-**Complete DAQ telemetry system for Formula Racing vehicles**
-
-This unified software runs on both the car and base station Raspberry Pis, automatically detecting its role and starting the appropriate services.
+Complete DAQ telemetry system for Formula Racing vehicles. Runs on both the car and base station Raspberry Pis, automatically detecting its role based on CAN bus availability.
 
 ---
 
-## 🎯 Features
+## Architecture
 
-### Car Mode (Auto-detected if `can0` present)
-- ✅ CAN bus data acquisition (GPIO/can0)
-- ✅ UDP streaming with batching (20 msgs/50ms)
-- ✅ TCP retransmission server (60-second ring buffer)
-- ✅ Audio/Video transmission (optional)
-- ✅ Simulation mode for testing without hardware
+```mermaid
+graph LR
+  subgraph CAR["CAR — Raspberry Pi"]
+    CAN["CAN Reader\n(can0)"] --> UDP["UDP Sender\n(batch 20msg/50ms)"]
+    CAN --> RB["Ring Buffer\n(60 sec)"]
+    RB --> TCP_S["TCP Resend Server\n(:5006)"]
+  end
 
-### Base Station Mode (Auto-detected if no `can0`)
-- ✅ UDP receiver with sequence tracking
-- ✅ TCP client for missing packet recovery
-- ✅ Redis publishing (`can_messages`, `system_stats`)
-- ✅ **WebSocket bridge for PECAN dashboard** (port 9080)
-- ✅ **Status monitoring HTTP server** (port 8080)
-- ✅ Audio/Video reception (optional)
-- ✅ InfluxDB logging (future)
+  subgraph BASE["BASE — Raspberry Pi"]
+    UDP_R["UDP Receiver"] --> Redis["Redis Publisher"]
+    Redis --> WS["WebSocket Bridge\n(:9080)"]
+    Redis --> STATUS["Status HTTP Server\n(:8080)"]
+    TCP_C["TCP Client\n(recovery)"] --> Redis
+  end
 
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────┐         ┌─────────────────────────────────┐
-│      CAR (Raspberry Pi)         │         │     BASE (Raspberry Pi)         │
-│                                 │         │                                 │
-│  CAN Reader (can0/GPIO)         │         │  UDP Receiver                   │
-│         ↓                       │         │         ↓                       │
-│  UDP Sender (batch 20/50ms) ────┼────────→│  Redis Publisher                │
-│         ↓                       │         │         ↓                       │
-│  Ring Buffer (60 sec)           │         │  WebSocket Bridge (9080) ───┬──→│ PECAN (3000)
-│         ↓                       │         │         ↓                   │   │
-│  TCP Resend Server (5006)   ←───┼─────────┤  TCP Client (recovery)      │   │
-│         ↓                       │         │         ↓                   │   │
-│  WebSocket Bridge (9080) ───────┼─────────┼─→ Status HTTP Server (8080) │   │
-│         ↓                       │         │         ↓                   │   │
-│  PECAN Dashboard (3000)     ←───┼─────────┼─────────────────────────────┘   │
-│         ↓                       │         │                                 │
-│  Audio/Video TX (optional)  ────┼────────→│  Audio/Video RX (optional)      │
-└─────────────────────────────────┘         └─────────────────────────────────┘
+  UDP -- "UDP :5005" --> UDP_R
+  TCP_S -- "TCP :5006" --> TCP_C
+  WS --> PECAN["PECAN Dashboard\n(:3000)"]
 ```
 
+**Car mode** is auto-detected when `can0` is present. Otherwise the software runs in **base station mode**.
+
 ---
 
-## 🚀 Quick Start
+## Hardware Setup (Ubuntu)
+
+This section covers setting up a CAN HAT (e.g. MCP2515-based) on Ubuntu before running the software.
+
+### 1. Enable the CAN HAT kernel module
+
+Install the SocketCAN tools:
+```bash
+sudo apt update && sudo apt install -y can-utils
+```
+
+Load the CAN modules at boot:
+```bash
+echo "can" | sudo tee -a /etc/modules
+echo "can_raw" | sudo tee -a /etc/modules
+echo "mcp251xfd" | sudo tee -a /etc/modules
+```
+
+### 2. Configure the HAT overlay
+
+Edit `/boot/firmware/config.txt` (Ubuntu on RPi uses `/boot/firmware/`, not `/boot/`):
+```ini
+dtoverlay=mcp251xfd,oscillator=20000000,interrupt=25
+dtoverlay=spi-bcm2835
+```
+
+> Our HAT uses the **MCP2517FD** CAN FD controller with a **20 MHz** crystal (S73305 20.000X15R) and MCP2562FDT-HSN transceiver. The interrupt GPIO (25) may need to be adjusted depending on how your HAT is wired — check the HAT schematic.
+
+Reboot after editing:
+```bash
+sudo reboot
+```
+
+### 3. Bring up can0 automatically on boot
+
+Create a systemd service to bring up the interface on boot:
+```bash
+sudo nano /etc/systemd/system/can0.service
+```
+
+Paste:
+```ini
+[Unit]
+Description=CAN bus interface can0
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ip link set can0 up type can bitrate 500000
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+```bash
+sudo systemctl enable can0
+sudo systemctl start can0
+```
+
+### 4. Verify CAN is working
+
+Check the interface is up:
+```bash
+ip link show can0
+# Should show: can0: <NOARP,UP,LOWER_UP> ...
+```
+
+Listen for CAN frames (requires a live CAN bus):
+```bash
+candump can0
+```
+
+Send a test frame on a loopback setup:
+```bash
+sudo ip link set can0 type can loopback on
+cansend can0 123#DEADBEEF
+candump can0
+```
+
+Once `can0` is confirmed working, proceed to deployment.
+
+---
+
+## Quick Start
 
 ### Prerequisites
-- Raspberry Pi 4/5 (both car and base)
+- Raspberry Pi 4/5 with Ubuntu
 - Docker and Docker Compose installed
-- Network connection (LAN cable or Ubiquiti radios)
+- CAN HAT set up (see Hardware Setup above)
+- Network connection between car and base (LAN cable or Ubiquiti radios)
 
 ### Installation
 
-**1. Clone repository on both RPis:**
+Clone the repository:
 ```bash
 git clone https://github.com/Western-Formula-Racing/daq-radio.git
-cd daq-radio
-git checkout telemetry-software
-cd universal-telemetry-software
+cd daq-radio/universal-telemetry-software
 ```
 
-**2. Configure environment:**
-
-Edit `docker-compose.yml` and set `REMOTE_IP` to the other RPi's IP address.
-
-**Car RPi** (e.g., `192.168.1.10`):
+Set `REMOTE_IP` in `docker-compose.yml` to the IP of the other RPi:
 ```yaml
 environment:
-  - REMOTE_IP=192.168.1.20  # Base station IP
-  - SIMULATE=true  # Use simulation until CAN GPIO ready
+  - REMOTE_IP=192.168.1.20   # car sets this to base IP, base sets this to car IP
 ```
 
-**Base RPi** (e.g., `192.168.1.20`):
-```yaml
-environment:
-  - REMOTE_IP=192.168.1.10  # Car IP
-```
-
-**3. Deploy:**
+Start services:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-**4. Verify:**
+### Verify
 
-On base station:
+Check logs:
 ```bash
-# Check logs
-docker-compose logs -f
-
-# Should see:
-# - "Auto-detected Role: base"
-# - "WebSocket server running at ws://0.0.0.0:9080"
-# - "Serving status page at http://0.0.0.0:8080"
+docker compose logs -f telemetry
+# Car should show:  "Auto-detected Role: car"
+# Base should show: "Auto-detected Role: base"
 ```
 
-**5. Access interfaces:**
-- **Status page**: `http://<base-ip>:8080` (or `http://<car-ip>:8080`)
-- **PECAN dashboard**: `http://<base-ip>:3000` (or `http://<car-ip>:3000`)
-- **WebSocket**: `ws://<base-ip>:9080` (or `ws://<car-ip>:9080`)
+### Access
+
+| Interface | URL |
+|-----------|-----|
+| Status page | `http://<ip>:8080` |
+| PECAN dashboard | `http://<ip>:3000` |
+| WebSocket | `ws://<ip>:9080` |
 
 ---
 
 ## Deploying with Pre-built Images (GHCR)
 
-For Raspberry Pi or other deployments, you can use the pre-built Docker images from GitHub Container Registry instead of building them locally. This is much faster and ensures you're running the exact same code as CI.
+Instead of building locally, use pre-built images from GitHub Container Registry:
 
-1. **Login to GHCR** (required for private packages, or to avoid rate limits):
-   ```bash
-   # Create a Classic PAT with 'read:packages' scope on GitHub
-   echo $CR_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
-   ```
+```bash
+# Login (required for private packages)
+echo $CR_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 
-2. **Run using production compose file**:
-   ```bash
-   # Pull the latest images
-   docker compose -f docker-compose.prod.yml pull
+# Pull and start
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
 
-   # Start the services
-   docker compose -f docker-compose.prod.yml up -d
-   ```
-
-   The production compose file (`docker-compose.prod.yml`) is configured to pull:
-   - `ghcr.io/western-formula-racing/universal-telemetry:latest`
-   - `ghcr.io/western-formula-racing/pecan:latest`
-
-   These images are built for both `linux/amd64` (laptops) and `linux/arm64` (Raspberry Pi).
+Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 
 ---
 
-## 📊 Monitoring
-
-### Status Monitoring Page (Port 8080)
-
-Access from any device on the network: `http://<base-station-ip>:8080`
-
-**Features:**
-- 🟢 Real-time connection status
-- 📊 Packet statistics (RX rate, loss %, recovery)
-- 📈 Live packet rate chart (60-second history)
-- ⏱️ Uptime and last message timestamp
-
-**Perfect for:**
-- Headless RPi monitoring via WiFi hotspot
-- Quick health checks during testing
-- Race day connection verification
-
-### PECAN Dashboard (Port 3000)
-
-The PECAN dashboard runs on **both car and base station** at port 3000, providing:
-- Live CAN message visualization
-- Real-time telemetry data display
-- Automatic WebSocket connection to port 9080
-
-**Access:**
-- Car's dashboard: `http://<car-ip>:3000` (connects to car's hotspot)
-- Base station's dashboard: `http://<base-ip>:3000`
-
-**WebSocket Connection:**
-Pecan automatically connects to the WebSocket bridge on the same host at port 9080. No configuration needed - it uses the browser's hostname.
-
----
-
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ROLE` | `auto` | Force `car` or `base` mode (auto-detects based on `can0`) |
-| `REMOTE_IP` | `192.168.1.100` | IP address of the other RPi |
-| `UDP_PORT` | `5005` | Port for real-time UDP streaming |
-| `TCP_PORT` | `5006` | Port for TCP retransmission |
-| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection string |
+| `ROLE` | `auto` | Force `car` or `base` (auto-detects from `can0`) |
+| `REMOTE_IP` | `192.168.1.100` | IP of the other RPi |
+| `UDP_PORT` | `5005` | Real-time UDP streaming port |
+| `TCP_PORT` | `5006` | TCP retransmission port |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection |
 | `WS_PORT` | `9080` | WebSocket port for PECAN |
 | `STATUS_PORT` | `8080` | HTTP port for status page |
-| `SIMULATE` | `false` | Enable simulation mode (no CAN hardware) |
+| `SIMULATE` | `false` | Simulate CAN data (no hardware needed) |
 | `ENABLE_VIDEO` | `false` | Enable video streaming |
 | `ENABLE_AUDIO` | `false` | Enable audio streaming |
+| `ENABLE_INFLUX_LOGGING` | `false` | Log telemetry to local InfluxDB3 |
 
 ### Ports
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 5005 | UDP | CAN data streaming (batched) |
-| 5006 | TCP | Packet retransmission requests |
+| 5005 | UDP | CAN data streaming |
+| 5006 | TCP | Packet retransmission |
 | 6379 | TCP | Redis (internal) |
 | 8080 | HTTP | Status monitoring page |
-| 9080 | WebSocket | PECAN dashboard WebSocket connection |
+| 9080 | WebSocket | PECAN dashboard feed |
 | 3000 | HTTP | PECAN dashboard UI |
-
-
----
-
-## 🔄 CI/CD Pipeline
-
-### Automated Testing
-
-Every push to the repository triggers a comprehensive CI/CD pipeline that:
-- ✅ Builds all Docker containers
-- ✅ Simulates car-to-base connection
-- ✅ Verifies UDP data reception and Redis publishing
-- ✅ Tests WebSocket broadcasting to PECAN
-- ✅ Forces packet drops to simulate network issues
-- ✅ Validates TCP retransmission and recovery
-
-### Running Tests Locally
-
-**Prerequisites:**
-```bash
-pip install pytest pytest-asyncio websockets redis requests
-```
-
-**Run the full test suite:**
-```bash
-cd universal-telemetry-software
-./run_ci_tests.sh
-```
-
-This will:
-1. Build the Docker image
-2. Start car and base containers with Redis
-3. Run 8 integration test scenarios
-4. Report results and collect logs
-
-**Expected output:**
-```
-✓ Test 1: Container Health - PASSED
-✓ Test 2: UDP Data Flow - PASSED
-✓ Test 3: Redis Publishing - PASSED
-✓ Test 4: WebSocket Broadcasting - PASSED
-✓ Test 5: Status HTTP Server - PASSED
-✓ Test 6: Forced Packet Drop - PASSED
-✓ Test 7: TCP Retransmission - PASSED
-✓ Test 8: Packet Recovery - PASSED
-
-All tests passed! ✓
-```
-
-### Test Coverage
-
-The integration tests validate:
-
-| Test | Description |
-|------|-------------|
-| **Container Health** | All containers start and roles are detected correctly |
-| **UDP Data Flow** | Car sends simulated CAN data via UDP to base |
-| **Redis Publishing** | Base publishes CAN messages to Redis channels |
-| **WebSocket Broadcasting** | WebSocket server streams data to PECAN dashboard |
-| **Status HTTP Server** | Status monitoring page is accessible |
-| **Forced Packet Drop** | Network packet loss is detected (using iptables) |
-| **TCP Retransmission** | Base requests missing packets via TCP |
-| **Packet Recovery** | Car resends missing data from ring buffer |
-
-### GitHub Actions
-
-The CI workflow runs automatically on:
-- Push to `main` or `telemetry-software` branches
-- Pull requests to these branches
-
-View workflow status: [GitHub Actions](https://github.com/Western-Formula-Racing/daq-radio/actions)
+| 9000 | HTTP | InfluxDB3 (when enabled) |
 
 ---
 
-## 🧪 Testing
+## Monitoring
 
+**Status page** (`http://<ip>:8080`): real-time connection status, packet stats, live packet rate chart.
 
-### Local Testing (Two RPis with LAN Cable)
-
-**1. Connect RPis via Ethernet**
-
-**2. Assign static IPs:**
-
-Car RPi:
-```bash
-sudo ip addr add 192.168.1.10/24 dev eth0
-```
-
-Base RPi:
-```bash
-sudo ip addr add 192.168.1.20/24 dev eth0
-```
-
-**3. Update `docker-compose.yml` with IPs**
-
-**4. Start services:**
-```bash
-# On both RPis
-docker-compose up -d
-```
-
-**5. Monitor on base station:**
-
-Terminal 1 - Docker logs:
-```bash
-docker-compose logs -f telemetry
-```
-
-Terminal 2 - Redis messages:
-```bash
-docker exec -it universal-telemetry-software-redis-1 redis-cli
-> SUBSCRIBE can_messages
-```
-
-Browser - Status page:
-```
-http://192.168.1.20:8080
-```
-
-**6. Expected results:**
-- ✅ Car logs show "Auto-detected Role: car"
-- ✅ Base logs show "Auto-detected Role: base"
-- ✅ Base logs show "Initial sequence: 1" (first packet received)
-- ✅ Redis shows JSON messages flowing
-- ✅ Status page shows green "Connected to Car"
-- ✅ PECAN dashboard receives data
+**PECAN dashboard** (`http://<ip>:3000`): live CAN message visualization. Connects automatically to WebSocket on port 9080.
 
 ---
 
-## 🏁 Production Deployment (Ubiquiti Radios)
-
-**1. Configure radios in bridge mode**
-
-**2. Assign static IPs to RPis:**
-- Car: `192.168.1.10`
-- Base: `192.168.1.20`
-
-**3. Update `docker-compose.yml` with production IPs**
-
-**4. Deploy:**
-```bash
-docker-compose up -d
-```
-
-**5. Set up WiFi hotspot on base station** (for status page access)
-
-**6. Access status page from phone/tablet:**
-```
-http://192.168.1.20:8080
-```
-
----
-
-## 📝 Redis Channels
+## Redis Channels
 
 ### `can_messages`
-Published by base station, consumed by PECAN and status page.
-
-**Format:** JSON array of CAN messages
+Published by base station, consumed by PECAN.
 ```json
-[
-  {
-    "time": 1234567890,
-    "canId": 256,
-    "data": [146, 86, 42, 123, 205, 255, 0, 0]
-  },
-  ...
-]
+[{ "time": 1234567890, "canId": 256, "data": [146, 86, 42, 123, 205, 255, 0, 0] }]
 ```
 
 ### `system_stats`
-Published by base station every 1 second.
-
-**Format:** JSON object with packet statistics
+Published by base station every second.
 ```json
-{
-  "received": 45,    // Packets received this second
-  "missing": 1,      // Packets missing this second
-  "recovered": 0     // Packets recovered via TCP this second
-}
+{ "received": 45, "missing": 1, "recovered": 0 }
 ```
 
 ---
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
-### No data flowing
-
-**Check 1:** Verify both containers running
+**No data flowing**
 ```bash
-docker-compose ps
+docker compose ps                                      # check containers running
+docker compose logs telemetry | grep "UDP"             # car: confirm sending
+docker compose logs telemetry | grep "Initial sequence" # base: confirm receiving
+ping <other-rpi-ip>                                    # confirm network
 ```
 
-**Check 2:** Check car logs for UDP sending
+**WebSocket not connecting**
 ```bash
-docker-compose logs telemetry | grep "UDP"
+docker compose logs telemetry | grep "WebSocket"
+# Expected: "WebSocket server running at ws://0.0.0.0:9080"
 ```
 
-**Check 3:** Check base logs for UDP receiving
+**can0 not detected**
 ```bash
-docker-compose logs telemetry | grep "Initial sequence"
-```
-
-**Check 4:** Verify network connectivity
-```bash
-ping <other-rpi-ip>
-```
-
-### WebSocket not connecting to PECAN
-
-**Check 1:** Verify WebSocket bridge running
-```bash
-docker-compose logs telemetry | grep "WebSocket"
-# Should see: "WebSocket server running at ws://0.0.0.0:9080"
-```
-
-**Check 2:** Test WebSocket connection
-```bash
-# From another machine
-wscat -c ws://<base-ip>:9080
-```
-
-**Check 3:** Verify Redis has data
-```bash
-docker exec -it universal-telemetry-software-redis-1 redis-cli
-> SUBSCRIBE can_messages
-```
-
-### Status page not loading
-
-**Check 1:** Verify status server running
-```bash
-docker-compose logs telemetry | grep "StatusServer"
-# Should see: "Serving status page at http://0.0.0.0:8080"
-```
-
-**Check 2:** Test HTTP server
-```bash
-curl http://<base-ip>:8080
+ip link show can0       # check interface exists
+dmesg | grep mcp        # check for kernel errors loading the HAT driver
+systemctl status can0   # check the bring-up service
 ```
 
 ---
 
-## 🆚 Migration from Old Base Station Folder
-
-This consolidated system **replaces** the old `base-station/` folder.
-
-**What's different:**
-- ✅ Single deployment (not two separate systems)
-- ✅ Auto-role detection (car vs base)
-- ✅ Integrated WebSocket bridge (no separate `redis_ws_bridge.py`)
-- ✅ Built-in status monitoring page
-- ✅ Complete car-side functionality (CAN reading, UDP/TCP)
-- ✅ Unified configuration
-
-**Migration:**
-1. Deploy this unified system on both RPis
-2. Delete old `base-station/` folder
-3. Update PECAN to connect to port 9080
-
----
-
-## 📦 File Structure
+## File Structure
 
 ```
 universal-telemetry-software/
-├── main.py                    # Main orchestrator
+├── main.py                     # Main orchestrator
 ├── src/
-│   ├── data.py               # UDP/TCP + Redis (car & base)
-│   ├── audio.py              # Audio streaming
-│   ├── video.py              # Video streaming
-│   ├── websocket_bridge.py   # Redis → WebSocket for PECAN
-│   └── status_server.py      # HTTP server for status page
-├── status/
-│   └── index.html            # Status monitoring page
-├── docker-compose.yml        # Deployment configuration
-├── Dockerfile                # Container build
-└── requirements.txt          # Python dependencies
+│   ├── data.py                 # UDP/TCP + Redis (car & base)
+│   ├── audio.py                # Audio streaming
+│   ├── video.py                # Video streaming
+│   ├── websocket_bridge.py     # Redis -> WebSocket for PECAN
+│   ├── influx_bridge.py        # InfluxDB3 logging
+│   ├── leds.py                 # LED status indicators
+│   ├── link_diagnostics.py     # Radio link health
+│   └── poe.py                  # PoE monitor
+├── tests/
+├── docker-compose.yml          # Development/local deployment
+├── docker-compose.prod.yml     # Production (GHCR images)
+├── Dockerfile
+└── requirements.txt
 ```
 
 ---
 
-## 🔮 Future Enhancements
-
-- [ ] InfluxDB3 logging for `system_stats`
-- [ ] Grafana dashboard for historical analysis
-- [ ] Web-based configuration interface
-
----
-
-## 📄 License
-
-AGPL-3.0 - See LICENSE file for details.
-
----
-
-**Built with ❤️ by Western Formula Racing**
-
-London, Ontario, Canada 🇨🇦
+Built by Western Formula Racing — London, Ontario, Canada

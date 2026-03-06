@@ -2,6 +2,9 @@ import { webSocketService } from "../services/WebSocketService";
 import { forceCache, clearDbcCache } from "../utils/canProcessor";
 import { useState } from "react";
 import { Button } from "./Button";
+import { useAllSignals } from "../lib/useDataStore";
+import { loadPinnedSensors, savePinnedSensors, type CommsSensorConfig } from "./CommsSensorStrip";
+import { Plus, X, Activity } from "lucide-react";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -55,6 +58,66 @@ async function uploadFileToCache(file: File) {
     } catch (error) {
         console.error("[uploadFileToCache] Error saving to localStorage:", error);
     }
+}
+
+function CommsSensorPicker() {
+    const allSignals = useAllSignals();
+    const [pinned, setPinned] = useState<CommsSensorConfig[]>(() => loadPinnedSensors());
+
+    const isPinned = (msgID: string, signalName: string) =>
+        pinned.some(s => s.msgID === msgID && s.signalName === signalName);
+
+    const togglePin = (msgID: string, signalName: string) => {
+        let updated: CommsSensorConfig[];
+        if (isPinned(msgID, signalName)) {
+            updated = pinned.filter(s => !(s.msgID === msgID && s.signalName === signalName));
+        } else {
+            updated = [...pinned, { msgID, signalName }];
+        }
+        setPinned(updated);
+        savePinnedSensors(updated);
+    };
+
+    return (
+        <div className="space-y-3">
+            {pinned.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                    {pinned.map((s, i) => (
+                        <button
+                            key={`${s.msgID}-${s.signalName}-${i}`}
+                            onClick={() => togglePin(s.msgID, s.signalName)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-400 text-sm font-footer hover:bg-rose-500/20 hover:border-rose-500/40 hover:text-rose-400 transition-colors"
+                        >
+                            <Activity className="w-3.5 h-3.5" />
+                            {s.signalName}
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    ))}
+                </div>
+            )}
+            {allSignals.length > 0 ? (
+                <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+                    {allSignals
+                        .filter(s => !isPinned(s.msgID, s.signalName))
+                        .map((s, i) => (
+                            <button
+                                key={`${s.msgID}-${s.signalName}-${i}`}
+                                onClick={() => togglePin(s.msgID, s.signalName)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-data-textbox-bg border border-sidebarfg/20 text-sidebarfg text-sm font-footer hover:bg-emerald-600/20 hover:border-emerald-500/40 hover:text-emerald-400 transition-colors"
+                            >
+                                <Plus className="w-3.5 h-3.5" />
+                                {s.signalName}
+                                <span className="text-xs text-sidebarfg/50">({s.msgID})</span>
+                            </button>
+                        ))}
+                </div>
+            ) : (
+                <p className="text-sidebarfg/50 text-sm font-footer">
+                    No CAN signals available yet. Connect to the car to see available sensors.
+                </p>
+            )}
+        </div>
+    );
 }
 
 function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalProps>) {
@@ -201,7 +264,14 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                         </label>
                     </div>
 
-                    {/* Future settings will go here */}
+                    {/* Comms Pinned Sensors */}
+                    <div className="w-full rounded-lg text-white bg-option p-4">
+                        <span className="text-sm font-medium block mb-2">Comms Page — Pinned Sensors</span>
+                        <p className="text-gray-400 text-xs mb-3">
+                            Select CAN signals to display on the Comms page. Click to add or remove.
+                        </p>
+                        <CommsSensorPicker />
+                    </div>
                 </div>
             </div>
         </div>

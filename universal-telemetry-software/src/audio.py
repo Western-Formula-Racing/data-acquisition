@@ -180,12 +180,18 @@ class AudioWebBridge:
         if self.loop:
             self.loop.quit()
 
-def run_audio(role, remote_ip):
+def run_audio(role, remote_ip, heartbeat_event=None):
     # For now, read PTT from ENV. In real usage, this would be a GPIO callback.
     ptt_initial = os.getenv("PTT_ENABLED", "false").lower() == "true"
-    
-    # Check if we are "Car" or "Base" to maybe default PTT differently?
-    # Actually, bidirectional means symmetric logic. 
-    
+
+    # Heartbeat thread for LED status
+    if heartbeat_event is not None:
+        def _heartbeat():
+            while True:
+                heartbeat_event.set()
+                time.sleep(1)
+        t = threading.Thread(target=_heartbeat, daemon=True)
+        t.start()
+
     transceiver = AudioTransceiver(remote_ip, ptt_active=ptt_initial)
     transceiver.start()

@@ -234,3 +234,6 @@ test-logs/
 *.dat
 *.code-workspace
 /.claude
+
+# Ignore generated service worker files
+sw.js

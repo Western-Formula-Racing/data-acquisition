@@ -60,6 +60,8 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
         });
     }, [data]);
 
+    const isUnknown = name.startsWith("Unknown_CAN_");
+
     const toggle = () => setOpen((v) => !v);
 
     return (
@@ -79,8 +81,17 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
                 </div>
 
                 {/* Message name column */}
-                <div className="col-span-4 md:col-span-4 flex justify-left items-center px-3 truncate">
-                    {name}
+                <div className="col-span-4 md:col-span-4 flex items-center px-3 truncate">
+                    {isUnknown ? (
+                        <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 text-[11px] font-bold text-white bg-rose-600 rounded" title="Not defined in DBC">
+                                UNKNOWN
+                            </span>
+                            <span className="text-sidebarfg opacity-80 text-sm">CAN {msgID}</span>
+                        </div>
+                    ) : (
+                        name
+                    )}
                 </div>
 
                 {/* Category column with coloured background */}

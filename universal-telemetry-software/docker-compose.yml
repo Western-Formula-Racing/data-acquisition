@@ -15,6 +15,20 @@ services:
       - SIMULATE=false # Set to true for simulation mode
       - ENABLE_VIDEO=false # Enable video streaming
       - ENABLE_AUDIO=false # Enable audio streaming
+      # InfluxDB logging (Base Station only)
+      - ENABLE_INFLUX_LOGGING=true
+      - LOCAL_INFLUX_URL=http://influxdb3:8181
+      - LOCAL_INFLUX_TOKEN=apiv3_local-telemetry-token
+      - LOCAL_INFLUX_ORG=WFR
+      - LOCAL_INFLUX_BUCKET=${INFLUX_SEASON:-WFR26}
+      - INFLUX_TABLE=${INFLUX_SEASON:-WFR26}_base
+      - DBC_FILE_PATH=/app/example.dbc
+      # Cloud sync (disabled by default in dev)
+      - CLOUD_INFLUX_URL=${CLOUD_INFLUX_URL:-https://influxdb3.westernformularacing.org}
+      - CLOUD_INFLUX_TOKEN=${CLOUD_INFLUX_TOKEN:-}
+      - CLOUD_INFLUX_ORG=WFR
+      - CLOUD_INFLUX_BUCKET=${INFLUX_SEASON:-WFR26}
+      - SYNC_INTERVAL_SECONDS=60
     volumes:
       - /lib/modules:/lib/modules # In case CAN drivers are needed
     logging:
@@ -24,6 +38,7 @@ services:
         max-file: "3"
     depends_on:
       - redis
+      - influxdb3
 
   redis:
     image: redis:8.2
@@ -32,6 +47,25 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+
+  # WebRTC video relay — ingests RTP from car, serves to browsers
+  # NOTE: ENABLE_VIDEO must be false on telemetry service to avoid port 5600 conflict
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    container_name: daq-go2rtc
+    restart: unless-stopped
+    ports:
+      - "1984:1984/tcp" # API + WHEP endpoint
+      - "8555:8555/tcp" # WebRTC TCP
+      - "8555:8555/udp" # WebRTC UDP candidates
+      - "5600:5600/udp" # RTP ingest from car
+    volumes:
+      - ./go2rtc.yaml:/config/go2rtc.yaml:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
 
   pecan:
     build: ../pecan
@@ -42,14 +76,87 @@ services:
     depends_on:
       - telemetry
 
+  # Voice Communication Services
+  murmur:
+    image: mumblevoip/mumble-server:latest
+    container_name: daq-murmur
+    restart: unless-stopped
+    ports:
+      - "64738:64738/tcp" # Mumble TCP
+      - "64738:64738/udp" # Mumble UDP
+    environment:
+      - MUMBLE_SUPERUSER_PASSWORD=wfr2025
+      - MUMBLE_CONFIG_WELCOMETEXT=Welcome to WFR Comms!
+      - MUMBLE_CONFIG_REGISTERPASSWORD=
+      - MUMBLE_CONFIG_ALLOWPING=true
+    volumes:
+      - murmur_data:/data
+
+  mumble-web:
+    image: rankenstein/mumble-web:latest
+    container_name: daq-mumble-web
+    restart: unless-stopped
+    ports:
+      - "8088:8080" # Web client with websockify (internal 8080)
+    environment:
+      - MUMBLE_SERVER=murmur:64738
+    depends_on:
+      - murmur
+
+  # ── Local InfluxDB3 ──────────────────────────────────────────────────────
+  influxdb3:
+    image: influxdb:3.5.0-core
+    container_name: daq-influxdb3
+    command: >
+      influxdb3 serve
+        --node-id influxdb3-local
+        --object-store file
+        --data-dir /var/lib/influxdb3
+        --admin-token-file /influxdb3-admin-token.json
+        --wal-snapshot-size 100
+        --snapshotted-wal-files-to-keep 10
+    restart: unless-stopped
+    ports:
+      - "9000:8181"
+    volumes:
+      - influxdb3_data:/var/lib/influxdb3
+      - ./influxdb3-admin-token.json:/influxdb3-admin-token.json:ro
+    healthcheck:
+      test: [ "CMD-SHELL", "timeout 1 bash -c 'cat < /dev/null > /dev/tcp/localhost/8181' || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Grafana ──────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana
+    container_name: daq-grafana
+    restart: unless-stopped
+    ports:
+      - "8087:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 100ms
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      influxdb3:
+        condition: service_healthy
+
 volumes:
   redis_data:
+  murmur_data:
+  influxdb3_data:
+  grafana_data:
 
     # Ports exposed (via network_mode: host):
     # 5005 - UDP (CAN data streaming)
     # 5006 - TCP (packet retransmission)
     # 6379 - Redis
     # 8080 - Status monitoring HTTP server
+    # 8087 - Grafana dashboards
+    # 9000 - InfluxDB3 API
     # 9080 - WebSocket for PECAN dashboard
     # 3000 - PECAN dashboard UI
-

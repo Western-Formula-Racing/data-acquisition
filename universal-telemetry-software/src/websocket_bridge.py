@@ -14,6 +14,7 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 REDIS_CHANNEL = "can_messages"
 REDIS_STATS_CHANNEL = "system_stats"
 REDIS_UPLINK_CHANNEL = "can_uplink"
+REDIS_DIAG_CHANNEL = "link_diagnostics"
 WS_PORT = int(os.getenv("WS_PORT", 9080))
 ENABLE_UPLINK = os.getenv("ENABLE_UPLINK", "false").lower() == "true"
 UPLINK_RATE_LIMIT = int(os.getenv("UPLINK_RATE_LIMIT", 10))  # messages per second per client
@@ -115,8 +116,8 @@ async def redis_listener():
     try:
         r = redis.from_url(REDIS_URL)
         pubsub = r.pubsub()
-        await pubsub.subscribe(REDIS_CHANNEL, REDIS_STATS_CHANNEL)
-        logger.info(f"Subscribed to Redis channels: {REDIS_CHANNEL}, {REDIS_STATS_CHANNEL}")
+        await pubsub.subscribe(REDIS_CHANNEL, REDIS_STATS_CHANNEL, REDIS_DIAG_CHANNEL)
+        logger.info(f"Subscribed to Redis channels: {REDIS_CHANNEL}, {REDIS_STATS_CHANNEL}, {REDIS_DIAG_CHANNEL}")
 
         async for message in pubsub.listen():
             if shutdown_event.is_set():
@@ -340,8 +341,7 @@ async def ws_handler(websocket):
             await redis_client.aclose()
         logger.info(f"Client disconnected: {client_info}. Total: {len(connected_clients)}")
 
-
-async def run_websocket_bridge():
+async def run_websocket_bridge(heartbeat_event=None):
     """Main entry point for WebSocket bridge."""
     loop = asyncio.get_running_loop()
 
@@ -352,6 +352,12 @@ async def run_websocket_bridge():
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, handle_signal)
+
+    async def heartbeat():
+        while not shutdown_event.is_set():
+            if heartbeat_event is not None:
+                heartbeat_event.set()
+            await asyncio.sleep(1)
 
     logger.info(f"Starting WebSocket Bridge on port {WS_PORT}... (role={ROLE})")
     if ENABLE_UPLINK:
@@ -367,8 +373,8 @@ async def run_websocket_bridge():
     async with websockets.serve(ws_handler, "0.0.0.0", WS_PORT):
         logger.info(f"WebSocket server running at ws://0.0.0.0:{WS_PORT}")
 
-        # Run Redis listener until shutdown
-        await redis_listener()
+        # Run Redis listener and heartbeat until shutdown
+        await asyncio.gather(redis_listener(), heartbeat())
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

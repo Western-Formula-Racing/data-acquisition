@@ -5,6 +5,7 @@ import Accumulator from "./pages/Accumulator";
 import Account from "./pages/Account";
 import ChargeCart from "./pages/ChargeCart";
 import MonitorBuilder from "./pages/MonitorBuilder";
+import Comms from "./pages/Comms";
 import SystemLink from "./pages/SystemLink";
 import Landing from "./pages/Landing";
 import ThrottleMapper from "./pages/ThrottleMapper";
@@ -29,6 +30,7 @@ export const router = createBrowserRouter([
       // Settings managed via modal now
       { path: "chargecart", element: <ChargeCart /> },
       { path: "monitor-builder", element: <MonitorBuilder /> },
+      { path: "comms", element: <Comms /> },
       { path: "system-link", element: <SystemLink /> },
       { path: "throttle-mapper", element: <ThrottleMapper /> },
       // { path: "tx", element: <TxDashboard /> },

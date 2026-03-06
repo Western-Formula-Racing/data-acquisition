@@ -87,8 +87,8 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 onClose={onClose}
               />
               <SidebarOption
-                option="SYSTEM LINK"
-                path="/system-link"
+                option="COMMS"
+                path="/comms"
                 onClose={onClose}
               />
               {/* <SidebarOption

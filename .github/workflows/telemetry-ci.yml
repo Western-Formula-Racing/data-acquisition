@@ -1,14 +1,13 @@
 name: Telemetry System CI/CD
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ main, telemetry-software, ws-bidirectional ]
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
       - '.github/workflows/telemetry-ci.yml'
   pull_request:
-    branches: [ main, telemetry-software ]
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
@@ -46,42 +45,118 @@ jobs:
       working-directory: ./universal-telemetry-software
       run: |
         docker build -t universal-telemetry:test .
-    
+
+    - name: Build car-jitsi-client Docker image
+      working-directory: ./universal-telemetry-software/car-jitsi-client
+      run: |
+        docker build -t car-jitsi-client:test .
+
+    - name: Verify car-jitsi-client starts
+      run: |
+        docker run --rm --entrypoint node car-jitsi-client:test -e "require('./index.js')" &
+        PID=$!
+        sleep 5
+        kill $PID 2>/dev/null || true
+
+    - name: Verify go2rtc config
+      run: |
+        docker run --rm -v ${{ github.workspace }}/universal-telemetry-software/go2rtc.yaml:/config/go2rtc.yaml:ro alexxit/go2rtc:latest -c /config/go2rtc.yaml &
+        PID=$!
+        sleep 3
+        kill $PID 2>/dev/null || true
+
+    - name: Build and typecheck PECAN
+      working-directory: ./pecan
+      run: |
+        npm ci
+        npx tsc --noEmit
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    # ── Install all Python deps in one shot ──────────────────────────────
+    - name: Install Python dependencies
+      run: |
+        pip install \
+          pytest pytest-asyncio pytest-timeout \
+          cantools influxdb-client \
+          websockets redis requests \
+          playwright
+
+    # ── Unit tests (no containers needed) ───────────────────────────────
+    - name: Run unit tests
+      working-directory: ./universal-telemetry-software
+      run: |
+        python -m pytest tests/test_leds.py tests/test_influx_bridge.py -v
+
+    # ── Validate all compose configs ─────────────────────────────────────
+    - name: Validate compose configurations
+      working-directory: ./universal-telemetry-software
+      run: |
+        docker compose -f docker-compose.yml config --quiet
+        docker compose -f docker-compose.test.yml config --quiet
+        docker compose -f docker-compose.prod.yml config --quiet
+        echo "✓ All compose configs valid"
+
+    # ── Pull heavy images so compose up is fast ──────────────────────────
+    - name: Pull base images
+      run: |
+        docker pull influxdb:3.5.0-core &
+        docker pull redis:8.2 &
+        wait
+        echo "✓ Images pulled"
+
+    # ── Start full test stack ────────────────────────────────────────────
     - name: Start test environment
       working-directory: ./universal-telemetry-software
       run: |
-        docker compose -f docker-compose.test.yml up -d
-        echo "Waiting for services to be ready..."
-        sleep 10
-    
+        docker compose -f docker-compose.test.yml up -d --build
+        echo "Waiting for all services (InfluxDB3 needs ~15s)..."
+        sleep 20
+
     - name: Check container health
       working-directory: ./universal-telemetry-software
       run: |
         docker compose -f docker-compose.test.yml ps
-        docker compose -f docker-compose.test.yml logs
-    
-    - name: Install test dependencies
+        docker compose -f docker-compose.test.yml logs --tail 30
+
+    # ── Verify all expected containers running ───────────────────────────
+    - name: Verify containers
       run: |
-        pip install pytest pytest-asyncio websockets redis requests playwright
-        playwright install chromium --with-deps
-    
+        for container in daq-car daq-base daq-car-redis daq-base-redis daq-pecan-test daq-test-influxdb3; do
+          if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+            echo "✓ ${container} running"
+          else
+            echo "✗ ${container} NOT running"
+            docker logs ${container} 2>&1 || true
+            exit 1
+          fi
+        done
+
+    # ── Install Playwright browsers ──────────────────────────────────────
+    - name: Install Playwright browsers
+      run: playwright install chromium --with-deps
+
+    # ── Integration tests (pytest directly, stack already up) ────────────
     - name: Run integration tests
       working-directory: ./universal-telemetry-software
       run: |
-        chmod +x run_ci_tests.sh
-        ./run_ci_tests.sh
-    
+        python -m pytest tests/test_integration.py -v -s --timeout=120
+
     - name: Collect logs on failure
       if: failure()
       working-directory: ./universal-telemetry-software
       run: |
         mkdir -p test-logs
-        docker compose -f docker-compose.test.yml logs --no-color > test-logs/docker-compose.log
-        docker logs daq-car > test-logs/car.log 2>&1 || true
-        docker logs daq-base > test-logs/base.log 2>&1 || true
-        docker logs daq-car-redis > test-logs/car-redis.log 2>&1 || true
-        docker logs daq-base-redis > test-logs/base-redis.log 2>&1 || true
-        docker logs daq-pecan-test > test-logs/pecan.log 2>&1 || true
+        docker compose -f docker-compose.test.yml logs --no-color > test-logs/docker-compose.log 2>&1
+        docker logs daq-car              > test-logs/car.log 2>&1 || true
+        docker logs daq-base             > test-logs/base.log 2>&1 || true
+        docker logs daq-car-redis        > test-logs/car-redis.log 2>&1 || true
+        docker logs daq-base-redis       > test-logs/base-redis.log 2>&1 || true
+        docker logs daq-pecan-test       > test-logs/pecan.log 2>&1 || true
+        docker logs daq-test-influxdb3   > test-logs/influxdb3.log 2>&1 || true
     
     - name: Upload test logs
       if: failure()
@@ -100,7 +175,7 @@ jobs:
   publish-telemetry:
     needs: [test, detect-changes]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.telemetry == 'true'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name != 'pull_request' && needs.detect-changes.outputs.telemetry == 'true')
     permissions:
       contents: read
       packages: write
@@ -128,7 +203,7 @@ jobs:
       with:
         images: ghcr.io/${{ github.repository }}/universal-telemetry
         tags: |
-          type=raw,value=latest,enable=${{ github.ref == 'format:refs/heads/main' }}
+          type=raw,value=latest,enable=${{ github.ref == 'format:refs/heads/main' || github.event_name == 'workflow_dispatch' }}
           type=sha
           
     - name: Build and push Telemetry image
@@ -143,24 +218,45 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
+    - name: Extract metadata (tags, labels) for Car Jitsi Client
+      id: meta-car-jitsi
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository }}/car-jitsi-client
+        tags: |
+          type=raw,value=latest,enable=${{ github.ref == 'format:refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+          type=sha
+
+    - name: Build and push Car Jitsi Client image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./universal-telemetry-software/car-jitsi-client
+        file: ./universal-telemetry-software/car-jitsi-client/Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta-car-jitsi.outputs.tags }}
+        labels: ${{ steps.meta-car-jitsi.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
   publish-pecan:
     needs: [test, detect-changes]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' && needs.detect-changes.outputs.pecan == 'true'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name != 'pull_request' && needs.detect-changes.outputs.pecan == 'true')
     permissions:
       contents: read
       packages: write
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
-      
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-      
+
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v3
       with:
@@ -174,7 +270,7 @@ jobs:
       with:
         images: ghcr.io/${{ github.repository }}/pecan
         tags: |
-          type=raw,value=latest,enable=${{ github.ref == 'format:refs/heads/main' }}
+          type=raw,value=latest,enable=${{ github.ref == 'format:refs/heads/main' || github.event_name == 'workflow_dispatch' }}
           type=sha
           
     - name: Build and push Pecan image

@@ -43,12 +43,14 @@ class CANMessage:
         return cls(timestamp, can_id, data)
 
 class TelemetryNode:
-    def __init__(self):
+    def __init__(self, can_event=None, telemetry_event=None):
         self.buffer = deque()
         self.seq_num = 0
         self.received_messages = {} # seq_num -> message_batch
         self.role = os.getenv("ROLE", "auto")
         self.has_can = False
+        self.can_event = can_event  # multiprocessing.Event signalled on each CAN RX
+        self.telemetry_event = telemetry_event  # heartbeat for LED status
         try:
             self.redis_client = redis.from_url(REDIS_URL)
             self.redis_client.ping()
@@ -97,6 +99,8 @@ class TelemetryNode:
                 while True:
                     msg = await loop.run_in_executor(None, lambda: bus.recv(0.1))
                     if msg:
+                        if self.can_event is not None:
+                            self.can_event.set()
                         telemetry_msg = CANMessage(msg.timestamp, msg.arbitration_id, msg.data)
                         await queue.put(telemetry_msg)
             except Exception as e:
@@ -118,6 +122,8 @@ class TelemetryNode:
                         # specific byte manipulation if needed, else random is fine for "alive" check
                         pass
                         
+                    if self.can_event is not None:
+                        self.can_event.set()
                     telemetry_msg = CANMessage(time.time(), can_id, data)
                     await queue.put(telemetry_msg)
 
@@ -169,6 +175,20 @@ class TelemetryNode:
 
                     batch = []
                     last_send = time.time()
+
+        # Heartbeat Injector Task
+        async def inject_heartbeat():
+            while True:
+                try:
+                    # Inject a heartbeat message (ID 1999) every second
+                    # Payload: 8-bytes representing the current Unix timestamp (double)
+                    timestamp_bytes = struct.pack("!d", time.time())
+                    hb_msg = CANMessage(time.time(), 1999, timestamp_bytes)
+                    await queue.put(hb_msg)
+                except Exception as e:
+                    logger.debug(f"Failed to inject heartbeat: {e}")
+                
+                await asyncio.sleep(1.0)
 
         # TCP Resend Server
         async def handle_resend(reader, writer):
@@ -253,7 +273,24 @@ class TelemetryNode:
                         logger.info(f"Uplink received (sim): canId={msg.can_id} data={list(msg.data)} seq={seq}")
 
         resend_server = await asyncio.start_server(handle_resend, '0.0.0.0', TCP_PORT)
-        tasks = [can_reader(), udp_sender(), resend_server.serve_forever()]
+
+        # Throughput listener for link diagnostics burst test
+        from src.throughput_listener import throughput_listener_task
+
+        async def heartbeat():
+            while True:
+                if self.telemetry_event is not None:
+                    self.telemetry_event.set()
+                await asyncio.sleep(1)
+
+        tasks = [
+            can_reader(),
+            udp_sender(),
+            resend_server.serve_forever(),
+            throughput_listener_task(),
+            heartbeat(),
+            inject_heartbeat(),
+        ]
         if ENABLE_UPLINK:
             tasks.append(uplink_receiver())
         await asyncio.gather(*tasks)
@@ -423,7 +460,13 @@ class TelemetryNode:
             finally:
                 uplink_sock.close()
 
-        tasks = [udp_receiver(), missing_reporter(), stats_publisher()]
+        async def heartbeat():
+            while True:
+                if self.telemetry_event is not None:
+                    self.telemetry_event.set()
+                await asyncio.sleep(1)
+
+        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), heartbeat()]
         if ENABLE_UPLINK:
             tasks.append(uplink_relay())
         await asyncio.gather(*tasks)
