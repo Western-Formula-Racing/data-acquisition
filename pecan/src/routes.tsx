@@ -7,7 +7,7 @@ import ChargeCart from "./pages/ChargeCart";
 import MonitorBuilder from "./pages/MonitorBuilder";
 import SystemLink from "./pages/SystemLink";
 import Landing from "./pages/Landing";
-import ThrottleMapper from "./pages/Throttle_Mapper";
+import ThrottleMapper from "./pages/ThrottleMapper";
 // import TxDashboard from "./pages/TxDashboard";
 import DataTransmitter from "./pages/Transmitter";
 

@@ -1,9 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createCanProcessor } from "../utils/canProcessor";
-<<<<<<< HEAD:pecan/src/pages/Throttle_Mapper.tsx
 import { packMessage } from "../utils/packMessage";
-=======
->>>>>>> 534c6d3 (making a different page to see outgoing can bus messages from throttle mapper):pecan/Frontend/pecan-live-dashboard/src/pages/Throttle_Mapper.tsx
 import { dataStore } from "../lib/DataStore";
 
 import {
@@ -38,7 +35,7 @@ type CanHex = {
 };
 
 const MIN_DEADZONE = 0.03; // 3%
-const CANVAS_SIZE = 400;
+const CANVAS_SIZE = 325;
 const PADDING = 40;
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
@@ -345,7 +342,9 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
             <div className="max-w-6xl mx-auto space-y-6">
                 {/* Header */}
                 <div className="flex items-center space-x-3">
-                    <Activity className="w-8 h-8 text-blue-600" />
+                    <div className="bg-data-module-bg p-2 rounded-lg border border-sidebarfg/20">
+                        <Activity className="w-6 h-6 text-white" />
+                    </div>
                     <div>
                         <h1 className="text-2xl font-bold font-heading text-white">
                             Throttle Mapper
