@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from "react";
-import { Search, Zap, Send, Clock, Info } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Search, Zap, Send, Info } from "lucide-react";
 import { packMessage } from "../utils/packMessage";
 // Assuming you have a hook or utility to get your DBC messages
 import localDbc from "../assets/dbc.dbc?raw";
@@ -10,8 +10,6 @@ const DataTransmitter = () => {
   const [selectedMsgId, setSelectedMsgId] = useState<number | null>(null);
   const [signalValues, setSignalValues] = useState<Record<string, number>>({});
   const [delay, setDelay] = useState<number | "">("");
-
-  const UPLINK_WHITELIST = [256, 101];
 
   // 1. Load available messages from DBC
   const availableMessages = useMemo(() => {

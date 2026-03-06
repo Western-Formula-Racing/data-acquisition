@@ -2,7 +2,7 @@ import banner from "../assets/banner.png";
 import settings from "../assets/settings.png";
 import avatar from "../assets/avatar.png";
 import SidebarOption from "./SidebarOption";
-import { NavLink, useLocation } from "react-router";
+import { NavLink } from "react-router";
 import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 

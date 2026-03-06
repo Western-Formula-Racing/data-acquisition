@@ -5,31 +5,28 @@ export const packMessage = (canId: number, signals: Record<string, number>): str
     try {
         const dbc = new Dbc();
         const data = dbc.load(localDbcText);
-        
-        // FIX: Can constructor usually takes 0 arguments in recent versions
-        const can = new Can();
 
-        // Find the message definition in the DBC
-        const messageDef = data.messages.get(canId);
+        const can = new Can();
+        can.database = data;
+
+        // Find the message definition by CAN ID via the number-keyed idMap
+        const messageDef = can.idMap.get(canId);
         if (!messageDef) throw new Error(`Message ID ${canId} not found in DBC`);
 
-        // Create the 8-byte buffer
-        const buffer = new Uint8Array(8);
+        // Create a bound message with zero-initialized payload
+        const boundMsg = can.createBoundMessage(messageDef);
 
+        // Set each signal value
         Object.entries(signals).forEach(([name, value]) => {
-            // Find the specific signal definition object
-            const signalDef = messageDef.signals.get(name);
-            
-            if (signalDef) {
-                // FIX: candied's setSignal typically expects: (buffer, signalDefinition, physicalValue)
-                can.setSignal(buffer, signalDef, value);
+            if (messageDef.signals.has(name)) {
+                boundMsg.setSignalValue(name, value);
             } else {
                 console.warn(`Signal "${name}" not found in message ${canId}`);
             }
         });
 
-        // Convert the Uint8Array to a hex string
-        return Array.from(buffer)
+        // Extract payload from the bound message frame
+        return boundMsg.boundData.frame.payload
             .map(byte => byte.toString(16).padStart(2, '0').toUpperCase())
             .join('');
     } catch (err) {
