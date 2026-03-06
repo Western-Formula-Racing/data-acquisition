@@ -267,7 +267,8 @@ jobs:
       with:
         images: ghcr.io/${{ github.repository }}/universal-telemetry
         tags: |
-          type=raw,value=latest,enable=${{ github.ref == 'format:refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          type=raw,value=test-latest,enable=${{ github.ref != 'refs/heads/main' }}
           type=sha
           
     - name: Build and push Telemetry image
@@ -288,7 +289,8 @@ jobs:
       with:
         images: ghcr.io/${{ github.repository }}/car-jitsi-client
         tags: |
-          type=raw,value=latest,enable=${{ github.ref == 'format:refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          type=raw,value=test-latest,enable=${{ github.ref != 'refs/heads/main' }}
           type=sha
 
     - name: Build and push Car Jitsi Client image
@@ -334,7 +336,8 @@ jobs:
       with:
         images: ghcr.io/${{ github.repository }}/pecan
         tags: |
-          type=raw,value=latest,enable=${{ github.ref == 'format:refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          type=raw,value=test-latest,enable=${{ github.ref != 'refs/heads/main' }}
           type=sha
           
     - name: Build and push Pecan image
