@@ -91,7 +91,7 @@ BO_ 1280 Cooling_Status: 8 Vector__XXX
  SG_ FanSpeed : 24|8@1+ (1,0) [0|100] "%" Vector__XXX
 
 BO_ 1999 Heartbeat: 8 Vector__XXX
- SG_ UTCTime : 0|64@1+ (1,0) [0|0] "s" Vector__XXX
+ SG_ UTCTime : 0|64@1+ (1,0) [0|0] "YYYYMMDDHHMMSS" Vector__XXX
 
 CM_ BO_ 192 "Vehicle Control Unit Status";
 CM_ BO_ 193 "Pedal Box Sensor Data";

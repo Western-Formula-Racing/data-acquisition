@@ -3,6 +3,7 @@ import socket
 import struct
 import time
 import os
+from datetime import datetime, timezone
 import json
 import logging
 import can
@@ -181,8 +182,9 @@ class TelemetryNode:
             while True:
                 try:
                     # Inject a heartbeat message (ID 1999) every second
-                    # Payload: 8-bytes representing the current Unix timestamp (double)
-                    timestamp_bytes = struct.pack("!d", time.time())
+                    # Payload: 8-bytes representing UTC time as YYYYMMDDHHMMSS (uint64, little-endian)
+                    utc_int = int(datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"))
+                    timestamp_bytes = struct.pack("<Q", utc_int)
                     hb_msg = CANMessage(time.time(), 1999, timestamp_bytes)
                     await queue.put(hb_msg)
                 except Exception as e:
