@@ -151,12 +151,21 @@ class TelemetryNode:
                     except (PermissionError, OSError) as e:
                         # This can happen if iptables is blocking the packet
                         logger.debug(f"UDP send failed: {e}")
-                    
+
+                    # Publish locally to Redis so the WebSocket bridge
+                    # can serve data to PECAN without a base station.
+                    msgs_to_publish = [{
+                        "time": int(m.timestamp * 1000),
+                        "canId": m.can_id,
+                        "data": list(m.data)
+                    } for m in batch]
+                    self.publish(REDIS_CHANNEL, json.dumps(msgs_to_publish))
+
                     # Store in ring buffer (1 min)
                     self.buffer.append((self.seq_num, batch, time.time()))
                     while self.buffer and time.time() - self.buffer[0][2] > BUFFER_DURATION:
                         self.buffer.popleft()
-                    
+
                     batch = []
                     last_send = time.time()
 
