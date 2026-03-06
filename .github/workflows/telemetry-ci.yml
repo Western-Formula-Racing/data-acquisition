@@ -98,6 +98,7 @@ jobs:
         docker compose -f docker-compose.yml config --quiet
         docker compose -f docker-compose.test.yml config --quiet
         docker compose -f docker-compose.prod.yml config --quiet
+        docker compose -f docker-compose.can-test.yml config --quiet
         echo "✓ All compose configs valid"
 
     # ── Pull heavy images so compose up is fast ──────────────────────────
@@ -158,19 +159,82 @@ jobs:
         docker logs daq-pecan-test       > test-logs/pecan.log 2>&1 || true
         docker logs daq-test-influxdb3   > test-logs/influxdb3.log 2>&1 || true
     
-    - name: Upload test logs
+    - name: Upload integration test logs
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: test-logs
+        name: integration-test-logs
         path: universal-telemetry-software/test-logs/
         retention-days: 7
-    
-    - name: Cleanup
+
+    - name: Cleanup integration test stack
       if: always()
       working-directory: ./universal-telemetry-software
       run: |
         docker compose -f docker-compose.test.yml down -v
+
+    # ── vCAN pipeline tests (real CAN code path) ──────────────────────────
+    # These run regardless of integration test results (always()).
+    - name: Set up virtual CAN interface
+      if: always()
+      run: |
+        sudo modprobe vcan
+        sudo ip link add dev can0 type vcan
+        sudo ip link set up can0
+        ip link show can0
+        echo "✓ vcan interface can0 is UP"
+
+    - name: Install can-utils
+      if: always()
+      run: sudo apt-get install -y can-utils
+
+    - name: Start vCAN test stack
+      if: always()
+      working-directory: ./universal-telemetry-software
+      run: |
+        docker compose -f docker-compose.can-test.yml up -d --build
+        echo "Waiting for telemetry container to start CAN reader..."
+        sleep 15
+
+    - name: Verify real CAN mode (not simulation)
+      if: always()
+      run: |
+        if docker logs daq-can-test 2>&1 | grep -q "CAN Reader started on can0"; then
+          echo "✓ Container is reading real can0"
+        else
+          echo "✗ Container did NOT start real CAN reader"
+          docker logs daq-can-test 2>&1
+          exit 1
+        fi
+
+    - name: Run vCAN pipeline tests
+      if: always()
+      working-directory: ./universal-telemetry-software
+      run: |
+        python -m pytest tests/test_can_pipeline.py -v -s --timeout=60
+
+    - name: Collect vCAN test logs on failure
+      if: failure()
+      working-directory: ./universal-telemetry-software
+      run: |
+        mkdir -p test-logs
+        docker logs daq-can-test       > test-logs/can-test.log 2>&1 || true
+        docker logs daq-can-test-redis > test-logs/can-test-redis.log 2>&1 || true
+
+    - name: Upload vCAN test logs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: vcan-test-logs
+        path: universal-telemetry-software/test-logs/
+        retention-days: 7
+
+    - name: Cleanup vCAN test stack
+      if: always()
+      working-directory: ./universal-telemetry-software
+      run: |
+        docker compose -f docker-compose.can-test.yml down -v 2>/dev/null || true
+        sudo ip link delete can0 2>/dev/null || true
 
   publish-telemetry:
     needs: [test, detect-changes]
