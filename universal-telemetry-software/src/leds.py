@@ -2,7 +2,7 @@
 LED controller for the PoE injection board.
 
 Pin assignments (BCM numbering):
-  CAN activity   Blue    GPIO 3
+  CAN activity   Blue    GPIO 26
   CAN telemetry  Yellow  GPIO 6   – DATA LAN jack (PCB label)
   WebSocket      Green   GPIO 10  – DATA LAN jack (PCB label)
   Audio          Yellow  GPIO 7   – RADIO LAN jack (PCB label)
@@ -30,7 +30,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ── GPIO pin numbers (BCM) ────────────────────────────────────────────────────
-PIN_CAN_BLUE    = 3
+PIN_CAN_BLUE    = 26
 
 PIN_TELEMETRY   = 6    # Yellow – DATA LAN jack – CAN telemetry process
 PIN_WEBSOCKET   = 10   # Green  – DATA LAN jack – WebSocket bridge
@@ -115,7 +115,7 @@ class LEDStateMachine:
         self.can_active     = False
         self.can_led_on     = False
         self.idle_step      = 0
-        self.idle_step_time = 0.0
+        self.idle_step_time = None  # None until first idle tick; avoids skipping step 0 on startup
 
         # PoE error flash state
         self.poe_flash_on   = False
@@ -187,16 +187,21 @@ class LEDStateMachine:
                 if was_active:
                     self.idle_step = 0
                     self.idle_step_time = now
-
-                desired, duration = CAN_IDLE_CYCLE[self.idle_step]
-                if now - self.idle_step_time >= duration:
-                    self.idle_step = (self.idle_step + 1) % len(CAN_IDLE_CYCLE)
+                elif self.idle_step_time is None:
+                    # First idle tick ever: seed the timer but don't emit a
+                    # change yet, so PoE-recovery resets aren't immediately
+                    # overridden by the idle pattern in the same tick.
                     self.idle_step_time = now
-                    desired = CAN_IDLE_CYCLE[self.idle_step][0]
+                else:
+                    desired, duration = CAN_IDLE_CYCLE[self.idle_step]
+                    if now - self.idle_step_time >= duration:
+                        self.idle_step = (self.idle_step + 1) % len(CAN_IDLE_CYCLE)
+                        self.idle_step_time = now
+                        desired = CAN_IDLE_CYCLE[self.idle_step][0]
 
-                if desired != self.can_led_on:
-                    self.can_led_on = desired
-                    changes[PIN_CAN_BLUE] = desired
+                    if desired != self.can_led_on:
+                        self.can_led_on = desired
+                        changes[PIN_CAN_BLUE] = desired
 
         # ── Status LEDs ──────────────────────────────────────────────────
         for pin, state in self.status_leds.items():
