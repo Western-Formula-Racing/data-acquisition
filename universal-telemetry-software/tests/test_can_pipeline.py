@@ -11,6 +11,7 @@ import subprocess
 import time
 import json
 import asyncio
+import statistics
 import pytest
 from tests.test_helpers import (
     RedisHelper,
@@ -222,3 +223,133 @@ class TestEventLoopNotBlocked:
             "No heartbeat arrived during/after a 20-frame burst — "
             "event loop may be blocked by bus.recv()"
         )
+
+
+# ── TestPipelineLatency ────────────────────────────────────────────────────
+
+LATENCY_ITERATIONS = 10
+# data.py batches at 50 ms / 20 msgs, so sub-200 ms CAN→Redis is expected.
+# Full pipeline (CAN→WS) adds Redis pub/sub + bridge forwarding.
+MAX_REDIS_LATENCY_MS = 500
+MAX_WS_LATENCY_MS = 1000
+
+
+def _latency_stats(samples_ms: list[float]) -> dict:
+    """Return min / avg / p95 / max from a list of latency samples."""
+    s = sorted(samples_ms)
+    p95_idx = int(len(s) * 0.95) - 1
+    return {
+        "min":  round(s[0], 2),
+        "avg":  round(statistics.mean(s), 2),
+        "p95":  round(s[max(p95_idx, 0)], 2),
+        "max":  round(s[-1], 2),
+        "samples": len(s),
+    }
+
+
+class TestPipelineLatency:
+    """
+    Measure end-to-end delay from cansend on vcan until the message is
+    observable in Redis and at a WebSocket client.
+    """
+
+    def test_can_to_redis_latency(self, redis_helper, container_uses_real_can):
+        """Send N frames and measure cansend→Redis arrival time."""
+        redis_helper.subscribe(REDIS_CHANNEL)
+        # Drain any stale messages
+        while redis_helper.get_message(timeout=0.5) is not None:
+            pass
+
+        latencies: list[float] = []
+
+        for i in range(LATENCY_ITERATIONS):
+            marker = (i + 0xA0) & 0xFF
+            data_hex = f"{marker:02X}AABBCCDDEEFF00"
+
+            t_send = time.monotonic()
+            cansend("0C0", data_hex)
+
+            # Wait for the marker to show up in a Redis batch
+            found = False
+            for _ in range(40):
+                msg = redis_helper.get_message(timeout=0.5)
+                if msg is None:
+                    continue
+                for m in msg:
+                    if m["canId"] == 192 and m["data"][0] == marker:
+                        t_recv = time.monotonic()
+                        latencies.append((t_recv - t_send) * 1000)
+                        found = True
+                        break
+                if found:
+                    break
+
+            assert found, f"Iteration {i}: marker 0x{marker:02X} never arrived in Redis"
+
+        stats = _latency_stats(latencies)
+        print(f"\n{'─'*60}")
+        print(f"  CAN → Redis latency  ({stats['samples']} samples)")
+        print(f"    min  {stats['min']:>8.1f} ms")
+        print(f"    avg  {stats['avg']:>8.1f} ms")
+        print(f"    p95  {stats['p95']:>8.1f} ms")
+        print(f"    max  {stats['max']:>8.1f} ms")
+        print(f"{'─'*60}")
+
+        assert stats["p95"] < MAX_REDIS_LATENCY_MS, (
+            f"CAN→Redis p95 latency {stats['p95']} ms exceeds threshold "
+            f"of {MAX_REDIS_LATENCY_MS} ms"
+        )
+
+    @pytest.mark.asyncio
+    async def test_can_to_websocket_latency(self, container_uses_real_can):
+        """Send N frames and measure cansend→WebSocket arrival time."""
+        ws = WebSocketHelper(WS_URL)
+        await ws.connect()
+
+        # Drain stale messages
+        for _ in range(10):
+            if await ws.receive_message(timeout=0.3) is None:
+                break
+
+        latencies: list[float] = []
+
+        try:
+            for i in range(LATENCY_ITERATIONS):
+                marker = (i + 0xB0) & 0xFF
+                data_hex = f"{marker:02X}FFEEDDCCBBAA00"
+
+                t_send = time.monotonic()
+                cansend("0C0", data_hex)
+
+                found = False
+                for _ in range(40):
+                    data = await ws.receive_message(timeout=0.5)
+                    if data is None:
+                        continue
+                    entries = data if isinstance(data, list) else [data]
+                    for m in entries:
+                        if m.get("canId") == 192 and isinstance(m.get("data"), list) and m["data"][0] == marker:
+                            t_recv = time.monotonic()
+                            latencies.append((t_recv - t_send) * 1000)
+                            found = True
+                            break
+                    if found:
+                        break
+
+                assert found, f"Iteration {i}: marker 0x{marker:02X} never arrived via WebSocket"
+
+            stats = _latency_stats(latencies)
+            print(f"\n{'─'*60}")
+            print(f"  CAN → WebSocket latency  ({stats['samples']} samples)")
+            print(f"    min  {stats['min']:>8.1f} ms")
+            print(f"    avg  {stats['avg']:>8.1f} ms")
+            print(f"    p95  {stats['p95']:>8.1f} ms")
+            print(f"    max  {stats['max']:>8.1f} ms")
+            print(f"{'─'*60}")
+
+            assert stats["p95"] < MAX_WS_LATENCY_MS, (
+                f"CAN→WebSocket p95 latency {stats['p95']} ms exceeds threshold "
+                f"of {MAX_WS_LATENCY_MS} ms"
+            )
+        finally:
+            await ws.close()
