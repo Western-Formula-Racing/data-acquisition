@@ -3,6 +3,8 @@ import settings from "../assets/settings.png";
 import avatar from "../assets/avatar.png";
 import SidebarOption from "./SidebarOption";
 import { NavLink } from "react-router";
+import { useEffect, useState } from "react";
+import { ChevronDown } from "lucide-react";
 
 interface InputProps {
   isOpen: boolean;
@@ -12,6 +14,21 @@ interface InputProps {
 }
 
 function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<InputProps>) {
+
+  // Define the paths that belong to the Vehicle Control group
+  const controlPaths = ["/throttle-mapper", "/can-transmitter", "/tx"];
+  
+  // State to track if the Vehicle Control dropdown is open
+  const [isControlOpen, setIsControlOpen] = useState(
+    controlPaths.some(path => location.pathname === path)
+  );
+
+  useEffect(() => {
+    if (controlPaths.some(path => location.pathname === path)) {
+      setIsControlOpen(true);
+    }
+  }, [location.pathname]);
+
   const handleSettingsClick = () => {
     onClose();
     onOpenSettings();
@@ -74,10 +91,63 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 path="/comms"
                 onClose={onClose}
               />
+              {/* <SidebarOption
+                option="Throttle Mapper"
+                path="/throttle-mapper"
+                onClose={onClose}
+              />
+              <SidebarOption
+                option="CAN Transmitter"
+                path="/can-transmitter"
+                onClose={onClose}
+              />
+              <SidebarOption
+                option="TX Messages"
+                path="/tx"
+                onClose={onClose}
+              /> */}
+
+
+              {/* DROPDOWN GROUP */}
+              <li>
+                <button 
+                  onClick={() => setIsControlOpen(!isControlOpen)}
+                  className="flex w-full gap-3 h-20 items-center justify-between box-border px-3 bg-option hover:bg-option-select/75 transition-colors border-none cursor-pointer"
+                >
+                  <span className="text-sidebarfg text-3xl font-heading leading-6 scale-y-75 uppercase text-left">
+                    Vehicle Control
+                  </span>
+                  <ChevronDown className={`text-sidebarfg transition-transform duration-300 ${isControlOpen ? 'rotate-180' : ''}`} />
+                </button>
+                
+                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isControlOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
+                  <ul className="list-none p-0 m-0 bg-black/10">
+                    <SidebarOption
+                      option="Throttle Mapper"
+                      path="/throttle-mapper"
+                      onClose={onClose}
+                      nested
+                    />
+                    <SidebarOption
+                      option="CAN Transmitter"
+                      path="/can-transmitter"
+                      onClose={onClose}
+                      nested
+                    />
+                    {/* <SidebarOption
+                      option="TX Messages"
+                      path="/tx"
+                      onClose={onClose}
+                      nested
+                    /> */}
+                  </ul>
+                </div>
+              </li>
+
             </ul>
           </div>
+
           <footer className="font-footer flex flex-col items-start pl-[10%] gap-10 mb-10">
-            {/* Should go to /account*/}
             {/* Should go to /account*/}
             <button
               onClick={handleAuthClick}

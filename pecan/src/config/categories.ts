@@ -113,7 +113,10 @@ export function determineCategory(
   // If explicit category is provided, use it
   if (explicitCategory) return explicitCategory;
   
-  const numericId = parseInt(msgID);
+  // Parse hex ("0x1A3") or decimal ID strings
+  const numericId = msgID.startsWith("0x") || msgID.startsWith("0X")
+    ? parseInt(msgID, 16)
+    : parseInt(msgID, 10);
   if (isNaN(numericId)) return DEFAULT_CATEGORY.name;
   
   // Find first matching category

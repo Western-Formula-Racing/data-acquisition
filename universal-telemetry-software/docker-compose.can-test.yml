@@ -1,0 +1,36 @@
+# Minimal compose for vCAN pipeline testing.
+# Requires: host has `can0` (vcan or physical) already up.
+# Container uses network_mode: host so it sees the host CAN interface.
+services:
+  telemetry:
+    build: .
+    container_name: daq-can-test
+    privileged: true
+    network_mode: host
+    restart: "no"
+    environment:
+      - ROLE=car
+      - REMOTE_IP=127.0.0.1
+      - UDP_PORT=5005
+      - TCP_PORT=5006
+      - REDIS_URL=redis://localhost:6379/0
+      - WS_PORT=9080
+      - SIMULATE=false
+      - ENABLE_VIDEO=false
+      - ENABLE_AUDIO=false
+      - ENABLE_UPLINK=false
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:8.2
+    container_name: daq-can-test-redis
+    restart: "no"
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3

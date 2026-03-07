@@ -1,6 +1,19 @@
 import { useState, useMemo, useEffect } from "react";
 import { determineCategory, getCategoryColor } from "../config/categories";
 
+const CAN_STD_MAX = 0x7FF;
+
+function formatMsgId(msgID: string): string {
+    const n = msgID.startsWith("0x") || msgID.startsWith("0X")
+        ? parseInt(msgID, 16)
+        : parseInt(msgID, 10);
+    if (isNaN(n)) return msgID;
+    if (n <= CAN_STD_MAX) {
+        return `${n} (0x${n.toString(16).toUpperCase().padStart(3, "0")})`;
+    }
+    return `0x${n.toString(16).toUpperCase().padStart(8, "0")} (${n})`;
+}
+
 interface DataRowProps {
     msgID: string;
     name: string;
@@ -76,8 +89,8 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
             >
 
                 {/* Msg ID column */}
-                <div className="col-span-2 md:col-span-1 flex justify-left items-center ps-3">
-                    {msgID}
+                <div className="col-span-2 md:col-span-1 flex justify-left items-center ps-3 text-xs font-mono">
+                    {formatMsgId(msgID)}
                 </div>
 
                 {/* Message name column */}
@@ -87,7 +100,7 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
                             <span className="px-2 py-0.5 text-[11px] font-bold text-white bg-rose-600 rounded" title="Not defined in DBC">
                                 UNKNOWN
                             </span>
-                            <span className="text-sidebarfg opacity-80 text-sm">CAN {msgID}</span>
+                            <span className="text-sidebarfg opacity-80 text-sm font-mono">{formatMsgId(msgID)}</span>
                         </div>
                     ) : (
                         name

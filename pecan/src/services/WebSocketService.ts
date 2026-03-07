@@ -1,5 +1,5 @@
 import { dataStore } from '../lib/DataStore';
-import { createCanProcessor } from '../utils/canProcessor';
+import { createCanProcessor, formatCanId } from '../utils/canProcessor';
 
 // Synthetic message IDs for non-CAN diagnostic data
 export const DIAG_MSG_IDS = {
@@ -104,11 +104,11 @@ export class WebSocketService {
 
           messages.forEach(msg => {
             if (msg?.signals) {
-              const canId = msg.canId.toString();
+              const hexId = formatCanId(msg.canId);
 
               dataStore.ingestMessage({
-                msgID: canId,
-                messageName: msg.messageName || `CAN_${canId}`,
+                msgID: hexId,
+                messageName: msg.messageName || `CAN_${hexId}`,
                 data: msg.signals,
                 rawData: msg.rawData,
                 timestamp: msg.time || Date.now()

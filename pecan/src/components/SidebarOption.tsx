@@ -5,6 +5,7 @@ interface InputProps {
   path: string;
   onClose: () => void;
   isPending?: boolean;
+  nested?: boolean;
 }
 
 function SidebarOption({
@@ -12,20 +13,21 @@ function SidebarOption({
   path,
   onClose,
   isPending,
+  nested
 }: Readonly<InputProps>) {
   return (
     <li>
       <NavLink
         onClick={onClose}
         className={({ isActive }) =>
-          `flex gap-6 h-20 items-center box-border px-3 !no-underline ${isActive
+          `flex gap-6 items-center box-border px-3 !no-underline ${isActive
             ? "bg-option-select md:rounded-r-md md:mr-[-2%]"
-            : "bg-option hover:bg-white/10 transition-colors duration-450"
-          }`
+            : "bg-option hover:bg-option-select/80 transition-colors duration-450"
+          } ${nested ? "pl-10 h-15" : "h-20"}`
         }
         to={path}
       >
-        <span className="text-sidebarfg text-3xl font-heading leading-6 scale-y-75 uppercase">
+        <span className={`${nested ? "text-xl" : "text-3xl"} text-sidebarfg text-3xl font-heading leading-6 scale-y-75 uppercase`}>
           {option}
         </span>
         {isPending && (

@@ -8,10 +8,14 @@ import MonitorBuilder from "./pages/MonitorBuilder";
 import Comms from "./pages/Comms";
 import SystemLink from "./pages/SystemLink";
 import Landing from "./pages/Landing";
+import ThrottleMapper from "./pages/ThrottleMapper";
+// import TxDashboard from "./pages/TxDashboard";
+import DataTransmitter from "./pages/Transmitter";
 
 
 // Get base path for GitHub Pages deployment
 const basename = import.meta.env.BASE_URL || '/';
+
 
 export const router = createBrowserRouter([
   {
@@ -28,6 +32,9 @@ export const router = createBrowserRouter([
       { path: "monitor-builder", element: <MonitorBuilder /> },
       { path: "comms", element: <Comms /> },
       { path: "system-link", element: <SystemLink /> },
+      { path: "throttle-mapper", element: <ThrottleMapper /> },
+      // { path: "tx", element: <TxDashboard /> },
+      { path: "can-transmitter", element: <DataTransmitter /> },
     ],
   },
 

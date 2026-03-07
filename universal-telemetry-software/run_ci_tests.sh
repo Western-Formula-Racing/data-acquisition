@@ -34,6 +34,7 @@ cleanup() {
         # compose down -v already removes the project network; skip network prune
         # to avoid zsh sort-specifier errors from docker network prune output.
         docker compose -f docker-compose.test.yml down -v 2>/dev/null || true
+        docker compose -f docker-compose.can-test.yml down -v 2>/dev/null || true
     fi
 }
 trap cleanup EXIT
@@ -64,6 +65,7 @@ echo -e "\n${YELLOW}Validating compose configs...${NC}"
 docker compose -f docker-compose.yml config --quiet
 docker compose -f docker-compose.test.yml config --quiet
 docker compose -f docker-compose.prod.yml config --quiet
+docker compose -f docker-compose.can-test.yml config --quiet
 echo -e "${GREEN}✓ All compose configs valid${NC}"
 
 # ── Start test environment ───────────────────────────────────────────────────
@@ -114,6 +116,64 @@ python -m pytest tests/test_integration.py -v -s --timeout=120 || {
     echo -e "${YELLOW}Logs saved to test-logs/${NC}"
     exit $TEST_EXIT_CODE
 }
+
+# Step 7: Run WebSocket v2 protocol tests
+echo -e "\n${YELLOW}Step 7: Running WebSocket v2 protocol tests...${NC}"
+python3 -m pytest tests/test_websocket_v2.py -v -s || {
+    TEST_EXIT_CODE=$?
+    echo -e "\n${RED}✗ WebSocket v2 tests failed${NC}"
+
+    mkdir -p test-logs
+    docker compose -f docker-compose.test.yml logs --no-color > test-logs/docker-compose.log 2>&1
+    docker logs daq-car            > test-logs/car.log 2>&1 || true
+    docker logs daq-base           > test-logs/base.log 2>&1 || true
+    docker logs daq-test-influxdb3 > test-logs/influxdb3.log 2>&1 || true
+    echo -e "${YELLOW}Logs saved to test-logs/${NC}"
+    exit $TEST_EXIT_CODE
+}
+
+# ── Tear down integration stack before vCAN tests ─────────────────────────────
+echo -e "\n${YELLOW}Tearing down integration test stack...${NC}"
+docker compose -f docker-compose.test.yml down -v 2>/dev/null || true
+
+# ── vCAN pipeline tests ──────────────────────────────────────────────────────
+# Requires: can0 (vcan or physical) UP, can-utils installed
+if ip link show can0 &>/dev/null; then
+    echo -e "\n${YELLOW}Running vCAN pipeline tests (can0 detected)...${NC}"
+
+    docker compose -f docker-compose.can-test.yml up -d --build || {
+        echo -e "${RED}✗ Failed to start vCAN test stack${NC}"
+        exit 1
+    }
+    echo "Waiting for telemetry container to start CAN reader (15s)..."
+    sleep 15
+
+    # Verify real CAN mode
+    if docker logs daq-can-test 2>&1 | grep -q "CAN Reader started on can0"; then
+        echo -e "${GREEN}✓ Container is reading real can0${NC}"
+    else
+        echo -e "${RED}✗ Container did NOT start real CAN reader${NC}"
+        docker logs daq-can-test 2>&1
+        exit 1
+    fi
+
+    python -m pytest tests/test_can_pipeline.py -v -s --timeout=60 || {
+        TEST_EXIT_CODE=$?
+        echo -e "\n${RED}✗ vCAN pipeline tests failed${NC}"
+
+        mkdir -p test-logs
+        docker logs daq-can-test       > test-logs/can-test.log 2>&1 || true
+        docker logs daq-can-test-redis > test-logs/can-test-redis.log 2>&1 || true
+        echo -e "${YELLOW}Logs saved to test-logs/${NC}"
+        exit $TEST_EXIT_CODE
+    }
+    echo -e "${GREEN}✓ vCAN pipeline tests passed${NC}"
+
+    docker compose -f docker-compose.can-test.yml down -v 2>/dev/null || true
+else
+    echo -e "\n${YELLOW}Skipping vCAN pipeline tests (can0 not found)${NC}"
+    echo -e "${YELLOW}  To run: sudo modprobe vcan && sudo ip link add dev can0 type vcan && sudo ip link set up can0${NC}"
+fi
 
 echo -e "\n${GREEN}=========================================${NC}"
 echo -e "${GREEN}✓ All tests passed!${NC}"

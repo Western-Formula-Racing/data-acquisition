@@ -14,6 +14,7 @@ services:
       - SIMULATE=true # Simulation mode (no CAN hardware)
       - ENABLE_VIDEO=false
       - ENABLE_AUDIO=false
+      - ENABLE_UPLINK=true # Enable uplink for bidirectional testing
     depends_on:
       car-redis:
         condition: service_healthy
@@ -62,6 +63,7 @@ services:
       - SIMULATE=false # Base doesn't simulate
       - ENABLE_VIDEO=false
       - ENABLE_AUDIO=false
+      - ENABLE_UPLINK=true # Enable uplink for bidirectional testing
       # InfluxDB logging
       - ENABLE_INFLUX_LOGGING=true
       - LOCAL_INFLUX_URL=http://test-influxdb3:8181

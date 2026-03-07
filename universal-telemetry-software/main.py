@@ -102,6 +102,9 @@ if __name__ == "__main__":
             role = "base"
         logger.info(f"Auto-detected Role: {role}")
 
+    # Export ROLE so child processes (e.g. websocket_bridge) can read it
+    os.environ["ROLE"] = role
+
     processes = []
 
     # Shared events for LED controller
@@ -132,12 +135,13 @@ if __name__ == "__main__":
     p_telemetry.start()
     processes.append(p_telemetry)
 
-    # 2. WebSocket Bridge (Base Station Only - for PECAN)
-    if role == "base":
-        p_websocket = multiprocessing.Process(target=start_websocket_bridge, args=(websocket_event,), name="WebSocket")
-        p_websocket.start()
-        processes.append(p_websocket)
-        logger.info("WebSocket bridge started for PECAN dashboard")
+    # 2. WebSocket Bridge (Both roles — for PECAN)
+    #    Car mode:  enables direct CAN bus uplink writes (no Redis relay)
+    #    Base mode: relays uplink via Redis -> UDP to car
+    p_websocket = multiprocessing.Process(target=start_websocket_bridge, args=(websocket_event,), name="WebSocket")
+    p_websocket.start()
+    processes.append(p_websocket)
+    logger.info(f"WebSocket bridge started for PECAN dashboard (role={role})")
 
     # 3. Status Server (Base Station Only - for monitoring)
     if role == "base":

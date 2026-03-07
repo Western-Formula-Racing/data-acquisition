@@ -89,6 +89,11 @@ class WebSocketHelper:
             logger.error(f"WebSocket receive error: {e}")
             return None
     
+    async def send_message(self, data: dict):
+        """Send a JSON message to WebSocket server."""
+        if self.websocket:
+            await self.websocket.send(json.dumps(data))
+
     async def close(self):
         """Close WebSocket connection."""
         if self.websocket:

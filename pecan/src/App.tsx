@@ -69,7 +69,7 @@ function App() {
   }, []); // Empty dependency array = runs once on mount
 
   return (
-    <div className="h-screen flex flex-row overflow-hidden">
+    <div className="h-screen flex flex-row overflow-y-auto">
       <div className={`h-screen transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'lg:w-2/9 md:w-2/5 sm:w-3/5 w-full' : 'w-[60px]'}`}>
         {!isSidebarOpen && <Hamburger trigger={() => setIsSidebarOpen(true)} />}
         {isSidebarOpen && <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} onOpenSettings={openSettings} onOpenAuth={openAuth} />}

@@ -18,6 +18,7 @@ export interface TelemetrySample {
     };
   };
   rawData: string; // Original payload bytes "00 01 02 ..."
+  direction?: "rx" | "tx";
 }
 
 // Internal storage structure
@@ -78,6 +79,7 @@ class DataStore {
     };
     rawData: string;
     timestamp?: number;
+    direction?: "rx" | "tx";
   }): void {
     // Fix for old timestamps from recorded data
     // If timestamp is more than 1 hour old, use current time
@@ -108,6 +110,7 @@ class DataStore {
       messageName: message.messageName,
       data: roundedData,
       rawData: message.rawData,
+      direction: message.direction ?? "rx", // 👈 default to RX
     };
 
     // Get or create buffer for this msgID
