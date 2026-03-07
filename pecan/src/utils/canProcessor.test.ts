@@ -118,7 +118,7 @@ describe('CAN Processor Unit Tests', () => {
 
             expect(result).not.toBeNull();
             expect(result?.canId).toBe(9999);
-            expect(result?.messageName).toBe('Unknown_CAN_9999');
+            expect(result?.messageName).toBe('Unknown_CAN_0x0000270F');
             expect(result?.signals).toEqual({});
         });
 
@@ -293,7 +293,7 @@ describe('CAN Processor Unit Tests', () => {
             expect(Array.isArray(result)).toBe(true);
             expect(result?.length).toBe(2); // M192 and an unknown message
             expect(result?.[0]?.messageName).toBe('M192_Command_Message');
-            expect(result?.[1]?.messageName).toBe('Unknown_CAN_512');
+            expect(result?.[1]?.messageName).toBe('Unknown_CAN_0x200');
         });
 
         it('should process batch messages', async () => {
@@ -328,7 +328,7 @@ describe('CAN Processor Unit Tests', () => {
 
             expect(Array.isArray(result)).toBe(true);
             expect(result.length).toBe(3); // 2 valid CAN messages + 1 unknown CAN message
-            expect(result[1].messageName).toBe('Unknown_CAN_9999');
+            expect(result[1].messageName).toBe('Unknown_CAN_0x0000270F');
         });
     });
 
