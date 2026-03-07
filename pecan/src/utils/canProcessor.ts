@@ -2,9 +2,29 @@ import { Dbc, Can } from "candied";
 import { dataStore } from "../lib/DataStore";
 // Import DBC file as raw text - Vite's ?raw suffix loads file content at build time
 // Note: Files in src/assets/ cannot be fetched via URL, they must be imported
-// Import both DBC files
 import localDbc from "../assets/dbc.dbc?raw";
 import exampleDbc from "../assets/example.dbc?raw";
+
+/**
+ * Standard CAN uses 11-bit IDs (0x000–0x7FF). IDs above that are extended
+ * 29-bit IDs. DBC files encode extended IDs with bit 31 set (0x80000000).
+ * python-can sends the raw 29-bit arbitration_id without that flag, so we
+ * must add it before looking up in candied.
+ */
+const CAN_EFF_FLAG = 0x80000000;
+const CAN_STD_MAX = 0x7FF;
+
+function toDbcId(rawCanId: number): number {
+  return rawCanId > CAN_STD_MAX ? (rawCanId | CAN_EFF_FLAG) >>> 0 : rawCanId;
+}
+
+export function formatCanId(canId: number): string {
+  const raw = canId > CAN_STD_MAX ? canId & ~CAN_EFF_FLAG : canId;
+  if (raw > CAN_STD_MAX) {
+    return `0x${raw.toString(16).toUpperCase().padStart(8, "0")}`;
+  }
+  return `0x${raw.toString(16).toUpperCase().padStart(3, "0")}`;
+}
 
 export function ingestCanFrameToStore(params: {
   time: number;
@@ -13,15 +33,16 @@ export function ingestCanFrameToStore(params: {
   messageNameHint?: string;
 }) {
   const { time, canId, data, messageNameHint } = params;
+  const hexId = formatCanId(canId);
 
   const rawData = data
     .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
     .join(" ");
 
   dataStore.ingestMessage({
-    msgID: canId.toString(),
-    messageName: messageNameHint ?? `CAN_${canId}`,
-    data: {}, // filled by decode step if you have it
+    msgID: hexId,
+    messageName: messageNameHint ?? `CAN_${hexId}`,
+    data: {},
     rawData,
     timestamp: time,
   });
@@ -34,6 +55,7 @@ export function decodeAndIngestCanFrame(params: {
   data: number[];
 }) {
   const { canInstance, time, canId, data } = params;
+  const hexId = formatCanId(canId);
 
   const decoded = decodeCanMessage(canInstance, canId, data, time);
 
@@ -42,8 +64,8 @@ export function decodeAndIngestCanFrame(params: {
     .join(" ");
 
   dataStore.ingestMessage({
-    msgID: canId.toString(),
-    messageName: decoded?.messageName ?? `CAN_${canId}`,
+    msgID: hexId,
+    messageName: decoded?.messageName ?? `CAN_${hexId}`,
     data: decoded?.signals ?? {},
     rawData,
     timestamp: time,
@@ -58,6 +80,7 @@ export async function decodeAndIngestUsingDbc(params: {
   data: number[];
 }) {
   const { time, canId, data } = params;
+  const hexId = formatCanId(canId);
 
   const processor = await createCanProcessor();
   const decoded = processor.decode(canId, data, time);
@@ -67,8 +90,8 @@ export async function decodeAndIngestUsingDbc(params: {
     .join(" ");
 
   dataStore.ingestMessage({
-    msgID: canId.toString(),
-    messageName: decoded?.messageName ?? `CAN_${canId}`,
+    msgID: hexId,
+    messageName: decoded?.messageName ?? `CAN_${hexId}`,
     data: decoded?.signals ?? {},
     rawData,
     timestamp: time,
@@ -309,8 +332,8 @@ export async function processTestMessages() {
           console.log("Signals:", signals);
 
           dataStore.ingestMessage({
-            msgID: testMsg.canId.toString(),
-            messageName: decoded.name || `CAN_${testMsg.canId}`,
+            msgID: formatCanId(testMsg.canId),
+            messageName: decoded.name || `CAN_${formatCanId(testMsg.canId)}`,
             data: signals,
             rawData: testMsg.data
               .map((byte) => byte.toString(16).padStart(2, "0").toUpperCase())
@@ -370,18 +393,21 @@ export function decodeCanMessage(
   time: number
 ): DecodedMessage | null {
   try {
-    const frame = canInstance.createFrame(canId, messageData);
+    const dbcId = toDbcId(canId);
+    const frame = canInstance.createFrame(dbcId, messageData);
     const decoded = canInstance.decode(frame);
 
     const rawDataStr = messageData
       .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
       .join(" ");
 
+    const hexId = formatCanId(canId);
+
     // If message is not defined in DBC
     if (!decoded) {
       return {
         canId: canId,
-        messageName: `Unknown_CAN_${canId}`,
+        messageName: `Unknown_CAN_${hexId}`,
         time: time,
         signals: {},
         rawData: rawDataStr,
