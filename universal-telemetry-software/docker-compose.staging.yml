@@ -1,0 +1,168 @@
+# Staging compose — pulls :test-latest images built from non-main branches.
+# Use this to validate a branch build on real hardware before merging to main.
+#
+# Usage:
+#   docker compose -f docker-compose.staging.yml pull
+#   docker compose -f docker-compose.staging.yml up -d
+#
+# To tear down and clean up volumes:
+#   docker compose -f docker-compose.staging.yml down -v
+
+services:
+  telemetry:
+    image: ghcr.io/western-formula-racing/universal-telemetry:test-latest
+    container_name: daq-telemetry
+    privileged: true
+    restart: unless-stopped
+    ports:
+      - "5005:5005/udp" # UDP CAN data
+      - "5006:5006/tcp" # TCP retransmission
+      - "8080:8080/tcp" # Status HTTP server
+      - "9080:9080/tcp" # WebSocket for PECAN
+    environment:
+      - ROLE=auto # auto, car, or base
+      - REMOTE_IP=192.168.1.100 # IP of the other RPi
+      - UDP_PORT=5005
+      - TCP_PORT=5006
+      - REDIS_URL=redis://redis:6379/0
+      - WS_PORT=9080
+      - STATUS_PORT=8080
+      - SIMULATE=true # Set to true for simulation mode
+      - ENABLE_VIDEO=false
+      - ENABLE_AUDIO=false
+      # InfluxDB logging (Base Station only)
+      - ENABLE_INFLUX_LOGGING=true
+      - LOCAL_INFLUX_URL=http://influxdb3:8181
+      - LOCAL_INFLUX_TOKEN=${LOCAL_INFLUX_TOKEN:-apiv3_local-telemetry-token}
+      - LOCAL_INFLUX_ORG=WFR
+      - LOCAL_INFLUX_BUCKET=${INFLUX_SEASON:-WFR26}
+      - INFLUX_TABLE=${INFLUX_SEASON:-WFR26}_base
+      - DBC_FILE_PATH=/app/example.dbc
+      # Cloud sync
+      - CLOUD_INFLUX_URL=${CLOUD_INFLUX_URL:-https://influxdb3.westernformularacing.org}
+      - CLOUD_INFLUX_TOKEN=${CLOUD_INFLUX_TOKEN:-}
+      - CLOUD_INFLUX_ORG=WFR
+      - CLOUD_INFLUX_BUCKET=${INFLUX_SEASON:-WFR26}
+      - SYNC_INTERVAL_SECONDS=60
+    volumes:
+      - /lib/modules:/lib/modules
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - redis
+      - influxdb3
+
+  redis:
+    image: redis:8.2
+    container_name: daq-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  go2rtc:
+    image: alexxit/go2rtc:latest
+    container_name: daq-go2rtc
+    restart: unless-stopped
+    ports:
+      - "1984:1984/tcp"
+      - "8555:8555/tcp"
+      - "8555:8555/udp"
+      - "5600:5600/udp"
+    volumes:
+      - ./go2rtc.yaml:/config/go2rtc.yaml:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  pecan:
+    image: ghcr.io/western-formula-racing/pecan:test-latest
+    container_name: daq-pecan
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - telemetry
+
+  murmur:
+    image: mumblevoip/mumble-server:latest
+    container_name: daq-murmur
+    restart: unless-stopped
+    ports:
+      - "64738:64738/tcp"
+      - "64738:64738/udp"
+    environment:
+      - MUMBLE_SUPERUSER_PASSWORD=wfr2025
+      - MUMBLE_CONFIG_WELCOMETEXT=Welcome to WFR Comms!
+      - MUMBLE_CONFIG_REGISTERPASSWORD=
+      - MUMBLE_CONFIG_ALLOWPING=true
+    volumes:
+      - murmur_data:/data
+
+  mumble-web:
+    image: rankenstein/mumble-web:latest
+    container_name: daq-mumble-web
+    restart: unless-stopped
+    ports:
+      - "8088:8080"
+    environment:
+      - MUMBLE_SERVER=murmur:64738
+    depends_on:
+      - murmur
+
+  influxdb3:
+    image: influxdb:3.5.0-core
+    container_name: daq-influxdb3
+    command: >
+      influxdb3 serve
+        --node-id influxdb3-local
+        --object-store file
+        --data-dir /var/lib/influxdb3
+        --admin-token-file /influxdb3-admin-token.json
+        --wal-snapshot-size 100
+        --snapshotted-wal-files-to-keep 10
+    restart: unless-stopped
+    ports:
+      - "9000:8181"
+    volumes:
+      - influxdb3_data:/var/lib/influxdb3
+      - ./influxdb3-admin-token.json:/influxdb3-admin-token.json:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: [ "CMD-SHELL", "timeout 1 bash -c 'cat < /dev/null > /dev/tcp/localhost/8181' || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  grafana:
+    image: grafana/grafana
+    container_name: daq-grafana
+    restart: unless-stopped
+    ports:
+      - "8087:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 100ms
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      influxdb3:
+        condition: service_healthy
+
+volumes:
+  redis_data:
+  murmur_data:
+  influxdb3_data:
+  grafana_data:
