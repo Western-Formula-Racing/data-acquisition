@@ -139,10 +139,11 @@ flowchart TD
 
 **Connection features:**
 - **Auto-protocol detection**: `ws://` on HTTP, `wss://` on HTTPS
-- **Three deployment modes**: Production cloud, localhost dev, car hotspot (192.168.x.x)
-- **Configurable override**: Users can set a custom WebSocket URL via Settings
+- **Deployment modes**: Production cloud, localhost dev, car hotspot (192.168.x.x)
+- **Default backend**: On non-`192.x.x.x` hosts (including `localhost`) PECAN connects to the hosted backend at `wss://ws-wfr.0001200.xyz:9443`, unless overridden
+- **Configurable override**: Users can set a custom WebSocket URL via Settings or `VITE_WS_URL`
 - **Reconnection**: Up to 5 attempts with linear backoff (2s increments)
-- **Bidirectional**: Supports downlink (telemetry) and uplink (`can_send`, `can_send_batch`, `ping`)
+- **Uplink in active development**: The WebSocket protocol supports uplink (`can_send`, `can_send_batch`, `ping`), but the PECAN UI and client helpers for sending control messages are still under active development
 
 ## Development
 
@@ -158,7 +159,7 @@ npm install
 npm run dev
 ```
 
-The development server will start on `http://localhost:5173` with a WebSocket server on `ws://localhost:9080`.
+By default, the development server runs on `http://localhost:5173` and PECAN connects to the **hosted** telemetry backend at `wss://ws-wfr.0001200.xyz:9443`. To force a different backend (for example, a local UTS instance on `ws://localhost:9080`), set `VITE_WS_URL` or configure a `custom-ws-url` in the PECAN Settings dialog.
 
 ### Testing
 

@@ -10,22 +10,23 @@ Comprehensive telemetry and data acquisition system for real-time monitoring of 
 
 
 
-## 🏎️ Overview
+## Overview
 
 The repository contains the end-to-end telemetry software for Western Formula Racing vehicles, enabling real-time monitoring of critical vehicle systems during testing and competition. The system consists of:
 
 - **PECAN Dashboard**: Real-time web-based visualization of vehicle telemetry
-- **Unified Telemetry Software**: Onboard and base station software for data transmission
+- **Universal Telemetry Software** (`/universal-telemetry-software`): Onboard and base station software for CAN acquisition, transport, and WebSocket/Redis bridging
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```mermaid
 flowchart LR
     ECU["Vehicle CAN Bus (ECU)"]
     HAT["Raspberry Pi CAN HAT"]
-    EDGE["Raspberry Pi
-    Edge Collector"]
-    BASE["Base Station Raspberry Pi"]
+    EDGE["Car Raspberry Pi
+    (UTS car mode)"]
+    BASE["Base Station Raspberry Pi
+    (UTS base mode)"]
     REDIS["Redis"]
     DASH["PECAN Dashboard
     (Web UI)"]
@@ -41,20 +42,20 @@ flowchart LR
 
 **Data Flow:**
 
-1. Vehicle CAN bus messages are read by Raspberry Pi
-2. Onboard Raspberry Pi packs messages in UDP/TCP for radio transmission
-3. Base station receives RF data and publishes to Redis
+1. Vehicle CAN bus messages are read by the car-side Universal Telemetry Software on the Raspberry Pi
+2. The car-side UTS packs messages in UDP/TCP for radio or Ethernet transmission
+3. The base-side UTS receives telemetry and publishes it to Redis
 4. Redis-to-WebSocket/InfluxDB bridge broadcasts messages to connected clients and InfluxDB 3
 5. PECAN dashboard visualizes data in real-time through customizable views
 
-
+For the detailed WebSocket message contract between PECAN and UTS, see [`WEBSOCKET_PROTOCOL.md`](./WEBSOCKET_PROTOCOL.md).
 
 InfluxDB 3 is implemented in a separate repository:
 https://github.com/Western-Formula-Racing/daq-server-components
 
 
 
-## 📦 Components
+## Components
 
 ### PECAN Dashboard (`/pecan`)
 
@@ -74,16 +75,20 @@ A modern React + TypeScript web application for real-time telemetry visualizatio
 
 [📖 Detailed Documentation](./pecan/README.md)
 
-### Base Station (`/base-station`)
+### Universal Telemetry Software (`/universal-telemetry-software`)
 
-Python-based receiver system that bridges radio telemetry to WebSocket clients.
+Complete DAQ telemetry stack that runs on both the car and base station Raspberry Pis, automatically detecting its role based on CAN bus availability.
 
-**Components:**
-- **Redis Message Queue**: Central message broker for telemetry data
-- **WebSocket Bridge** (`redis_ws_bridge.py`): Broadcasts Redis messages to connected web clients
-- **Docker Deployment**: Containerized setup with Redis included
+**Features:**
 
-**Tech Stack:** Python, Redis, WebSockets, Docker
+- Car/base auto-detection (single codebase deployable to both Pis)
+- UDP and TCP telemetry transport with packet recovery
+- Redis publisher, WebSocket bridge, and status HTTP server
+- Optional InfluxDB 3 logging, audio/video streaming, and simulation mode
+
+**Tech Stack:** Python, Redis, WebSockets, Docker, InfluxDB 3
+
+[📖 Detailed Documentation](./universal-telemetry-software/README.md)
 
 ### Car Simulator (`/car-simulate`)
 
@@ -91,13 +96,13 @@ Development and testing tools for simulating vehicle telemetry without physical 
 
 **Features:**
 - **CSV Data Playback**: Replay recorded CAN data from CSV files
-- **Persistent WebSocket Server**: Continuous data broadcasting for testing
-- **WebSocket Sender**: Configurable data transmission scripts
+- **Persistent WebSocket Server**: Continuous data broadcasting for testing via `car-simulate/persistent-broadcast`
+- **WebSocket Sender / container scaffolding**: Minimal Docker setup and example clients for local experiments
 
 **Includes:**
 - Sample CAN data files (CSV format)
 - Example DBC (CAN database) file for message definitions
-- Docker Compose setup for isolated testing environment
+- Docker Compose setups for isolated testing environments, including a dev/demo server configuration in `car-simulate/persistent-broadcast`
 
 ### Host Demo (`/host-demo`)
 
@@ -109,13 +114,13 @@ Production deployment configuration for hosting the PECAN dashboard.
 
 [📖 Deployment Guide](./host-demo/README.md)
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
 - **Node.js** (v18+) and npm
 - **Python** 3.8+
-- **Redis** server
+- **Redis** server (bundled via Docker Compose in `universal-telemetry-software` for most deployments)
 - **Docker** and Docker Compose (for containerized deployment)
 
 ### Development Setup
@@ -125,7 +130,7 @@ Production deployment configuration for hosting the PECAN dashboard.
    git clone https://github.com/Western-Formula-Racing/daq-radio.git
    cd daq-radio
    ```
-   Documentation WIP.
+   Documentation lives in component READMEs such as `pecan/README.md` and `universal-telemetry-software/README.md`.
 
 ### Manual Setup (Individual Components)
 
@@ -136,11 +141,11 @@ npm install
 npm run dev
 ```
 
-#### Base Station
+#### Universal Telemetry Software
 ```bash
-cd base-station
-pip install -r requirements.txt
-python redis_ws_bridge.py
+cd universal-telemetry-software
+docker compose up -d
+# See universal-telemetry-software/README.md for full hardware and production setup details.
 ```
 
 #### Car Simulator
@@ -149,7 +154,7 @@ cd car-simulate
 python websocket_sender.py
 ```
 
-## 📊 CAN Message Categories
+## CAN Message Categories
 
 PECAN supports configurable message categorization through a simple text-based configuration file. This allows customization of message grouping and color-coding without code changes.
 
@@ -163,7 +168,7 @@ Example categories:
 
 [📖 Category Configuration Guide](./pecan/CATEGORIES.md)
 
-## 🐳 Docker Deployment
+## Docker Deployment
 
 ### Development Environment
 ```bash
@@ -177,7 +182,7 @@ cd host-demo
 docker-compose up -d --build
 ```
 
-## 🛠️ Development
+## Development
 
 ### Project Structure
 ```
@@ -189,9 +194,10 @@ daq-radio/
 │   │   ├── services/   # WebSocket and data services
 │   │   └── config/     # Category configuration
 │   └── public/         # Static assets
-├── base-station/       # Radio receiver and WebSocket bridge
+├── universal-telemetry-software/  # Car/base telemetry stack (UTS)
 ├── car-simulate/       # Testing and simulation tools
 ├── host-demo/          # Production hosting configuration
+├── dev-utils/          # Developer utilities and scripts
 └── start_system.sh     # Automated startup script
 ```
 
@@ -205,7 +211,7 @@ daq-radio/
 - **Data Format**: CAN bus (DBC files)
 - **Deployment**: Docker, Docker Compose, Nginx
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! This project is maintained by the Western Formula Racing team.
 
@@ -216,16 +222,16 @@ Contributions are welcome! This project is maintained by the Western Formula Rac
 4. Test thoroughly with the simulator
 5. Submit a pull request
 
-## 📝 License
+## License
 This project is licensed under the AGPL-3.0 License. See the [LICENSE](./LICENSE) file for details.
 
-## 🔗 Related Resources
+## Related Resources
 
 - **PECAN Project Page**: [Project PECAN](https://western-formula-racing.github.io/project-pecan-website/)
 - **Live Demo**: [Demo](https://western-formula-racing.github.io/daq-radio/dashboard)
 
 
-## ❓ Support
+## Support
 
 For questions or issues, please open an issue on GitHub.
 
@@ -233,4 +239,4 @@ For questions or issues, please open an issue on GitHub.
 
 **Built with ❤️ by Western Formula Racing**
 
-London, Ontario, Canada 🇨🇦 
+London, Ontario, Canada 🇨🇦
