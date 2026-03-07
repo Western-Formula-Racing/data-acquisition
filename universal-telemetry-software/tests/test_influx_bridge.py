@@ -212,7 +212,9 @@ class TestTableNaming:
         with patch.dict(os.environ, {"INFLUX_TABLE": "WFR26_base"}):
             with patch("src.influx_bridge.InfluxDBClient"):
                 from importlib import reload
+                import src.config
                 import src.influx_bridge
+                reload(src.config)
                 reload(src.influx_bridge)
                 bridge = src.influx_bridge.InfluxBridge()
                 lines = bridge.decode_can(512, bytes(8), 1700000000000)
@@ -225,7 +227,9 @@ class TestTableNaming:
         with patch.dict(os.environ, {"INFLUX_TABLE": "WFR27_base"}):
             with patch("src.influx_bridge.InfluxDBClient"):
                 from importlib import reload
+                import src.config
                 import src.influx_bridge
+                reload(src.config)
                 reload(src.influx_bridge)
                 bridge = src.influx_bridge.InfluxBridge()
                 lines = bridge.decode_can(512, bytes(8), 1700000000000)

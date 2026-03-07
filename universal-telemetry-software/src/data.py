@@ -7,18 +7,15 @@ from datetime import datetime, timezone
 import json
 import logging
 import can
-import redis
 import redis.asyncio as aioredis
 from collections import deque
 
-# Configuration
-UDP_IP = os.getenv("REMOTE_IP", "192.168.1.100") # IP of the other side
-UDP_PORT = int(os.getenv("UDP_PORT", 5005))
-TCP_PORT = int(os.getenv("TCP_PORT", 5006))
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-REDIS_CHANNEL = "can_messages"
-REDIS_UPLINK_CHANNEL = "can_uplink"
-ENABLE_UPLINK = os.getenv("ENABLE_UPLINK", "false").lower() == "true"
+from src.config import (
+    REMOTE_IP, UDP_PORT, TCP_PORT,
+    REDIS_URL, REDIS_CAN_CHANNEL, REDIS_UPLINK_CHANNEL, ENABLE_UPLINK,
+)
+from src import redis_utils, utils
+
 BATCH_SIZE = 20
 BATCH_TIMEOUT = 0.05  # 50ms
 BUFFER_DURATION = 60  # 1 minute ring buffer
@@ -52,20 +49,10 @@ class TelemetryNode:
         self.has_can = False
         self.can_event = can_event  # multiprocessing.Event signalled on each CAN RX
         self.telemetry_event = telemetry_event  # heartbeat for LED status
-        try:
-            self.redis_client = redis.from_url(REDIS_URL)
-            self.redis_client.ping()
-            logger.info("Connected to Redis")
-        except Exception as e:
-            logger.warning(f"Could not connect to Redis: {e}. Data will not be published to Redis.")
-            self.redis_client = None
+        self.redis_client = redis_utils.get_sync_client(REDIS_URL)
 
     def publish(self, channel, data):
-        if self.redis_client:
-            try:
-                self.redis_client.publish(channel, data)
-            except Exception as e:
-                logger.error(f"Redis publish error: {e}")
+        redis_utils.safe_publish(self.redis_client, channel, data, logger)
 
     def detect_role(self):
         if self.role != "auto":
@@ -155,7 +142,7 @@ class TelemetryNode:
                         payload += m.pack()
                     
                     try:
-                        sock.sendto(payload, (UDP_IP, UDP_PORT))
+                        sock.sendto(payload, (REMOTE_IP, UDP_PORT))
                     except (PermissionError, OSError) as e:
                         # This can happen if iptables is blocking the packet
                         logger.debug(f"UDP send failed: {e}")
@@ -167,7 +154,7 @@ class TelemetryNode:
                         "canId": m.can_id,
                         "data": list(m.data)
                     } for m in batch]
-                    self.publish(REDIS_CHANNEL, json.dumps(msgs_to_publish))
+                    self.publish(REDIS_CAN_CHANNEL, json.dumps(msgs_to_publish))
 
                     # Store in ring buffer (1 min)
                     self.buffer.append((self.seq_num, batch, time.time()))
@@ -279,18 +266,12 @@ class TelemetryNode:
         # Throughput listener for link diagnostics burst test
         from src.throughput_listener import throughput_listener_task
 
-        async def heartbeat():
-            while True:
-                if self.telemetry_event is not None:
-                    self.telemetry_event.set()
-                await asyncio.sleep(1)
-
         tasks = [
             can_reader(),
             udp_sender(),
             resend_server.serve_forever(),
             throughput_listener_task(),
-            heartbeat(),
+            utils.heartbeat_coro(self.telemetry_event),
             inject_heartbeat(),
         ]
         if ENABLE_UPLINK:
@@ -358,7 +339,7 @@ class TelemetryNode:
                     offset += 20
                 
                 if msgs_to_publish:
-                    self.publish(REDIS_CHANNEL, json.dumps(msgs_to_publish))
+                    self.publish(REDIS_CAN_CHANNEL, json.dumps(msgs_to_publish))
 
         # Missing Packet Reporter Task
         async def missing_reporter():
@@ -369,7 +350,7 @@ class TelemetryNode:
                     # This is a guestimate based on seq numbers
                     logger.info(f"Requesting resend for {len(missing_seqs)} batches")
                     try:
-                        reader, writer = await asyncio.open_connection(UDP_IP, TCP_PORT)
+                        reader, writer = await asyncio.open_connection(REMOTE_IP, TCP_PORT)
                         request = {"missing": sorted(list(missing_seqs))[-100:]} # Limit request size
                         writer.write(json.dumps(request).encode())
                         await writer.drain()
@@ -383,7 +364,7 @@ class TelemetryNode:
                             seq = item['seq']
                             if seq in missing_seqs:
                                 msgs = [{"time": int(m['t']*1000), "canId": m['id'], "data": list(bytes.fromhex(m['d']))} for m in item['msgs']]
-                                self.publish(REDIS_CHANNEL, json.dumps(msgs))
+                                self.publish(REDIS_CAN_CHANNEL, json.dumps(msgs))
                                 missing_seqs.remove(seq)
                         
                         writer.close()
@@ -423,9 +404,7 @@ class TelemetryNode:
                         continue
 
                     try:
-                        data = message['data']
-                        if isinstance(data, bytes):
-                            data = data.decode('utf-8')
+                        data = redis_utils.decode_message(message['data'])
                         uplink_msg = json.loads(data)
 
                         can_id = uplink_msg.get("canId")
@@ -449,7 +428,7 @@ class TelemetryNode:
                         payload += can_msg.pack()
 
                         try:
-                            uplink_sock.sendto(payload, (UDP_IP, UDP_PORT))
+                            uplink_sock.sendto(payload, (REMOTE_IP, UDP_PORT))
                             logger.info(f"Uplink relayed to car: canId={can_id} ref={ref} seq={uplink_seq}")
                         except (PermissionError, OSError) as e:
                             logger.error(f"Uplink UDP send failed: {e}")
@@ -462,13 +441,7 @@ class TelemetryNode:
             finally:
                 uplink_sock.close()
 
-        async def heartbeat():
-            while True:
-                if self.telemetry_event is not None:
-                    self.telemetry_event.set()
-                await asyncio.sleep(1)
-
-        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), heartbeat()]
+        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), utils.heartbeat_coro(self.telemetry_event)]
         if ENABLE_UPLINK:
             tasks.append(uplink_relay())
         await asyncio.gather(*tasks)

@@ -23,7 +23,6 @@ import asyncio
 import json
 import logging
 import os
-import signal
 import socket
 import sys
 import time
@@ -32,18 +31,20 @@ from pathlib import Path
 
 from influxdb_client import InfluxDBClient, WriteOptions
 
+from src.config import (
+    LOCAL_INFLUX_URL,
+    LOCAL_INFLUX_TOKEN,
+    LOCAL_INFLUX_ORG,
+    LOCAL_INFLUX_BUCKET,
+    INFLUX_TABLE,
+)
+from src import utils
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("CloudSync")
-
-# ── Local InfluxDB3 ───────────────────────────────────────────────────────────
-LOCAL_INFLUX_URL    = os.getenv("LOCAL_INFLUX_URL", "http://localhost:8181")
-LOCAL_INFLUX_TOKEN  = os.getenv("LOCAL_INFLUX_TOKEN", "")
-LOCAL_INFLUX_ORG    = os.getenv("LOCAL_INFLUX_ORG", "WFR")
-LOCAL_INFLUX_BUCKET = os.getenv("LOCAL_INFLUX_BUCKET", "WFR26")
-INFLUX_TABLE        = os.getenv("INFLUX_TABLE", "WFR26_base")
 
 # ── Cloud InfluxDB3 ──────────────────────────────────────────────────────────
 CLOUD_INFLUX_URL    = os.getenv("CLOUD_INFLUX_URL", "https://influxdb3.westernformularacing.org")
@@ -257,14 +258,7 @@ async def sync_loop():
 async def run_cloud_sync():
     """Entry point when run as a managed process from main.py."""
     loop = asyncio.get_running_loop()
-
-    def _shutdown():
-        logger.info("Cloud sync shutting down …")
-        shutdown_event.set()
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _shutdown)
-
+    utils.register_shutdown_signals(loop, shutdown_event, "Cloud sync")
     await sync_loop()
 
 
