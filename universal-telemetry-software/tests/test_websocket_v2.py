@@ -17,7 +17,6 @@ Also tests protocol-level features:
 import pytest
 import asyncio
 import time
-import json
 import uuid
 import logging
 from .test_helpers import (
