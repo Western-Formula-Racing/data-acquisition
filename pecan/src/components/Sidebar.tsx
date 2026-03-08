@@ -90,36 +90,23 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 option="COMMS"
                 path="/comms"
                 onClose={onClose}
+                isPending={true}
               />
-              {/* <SidebarOption
-                option="Throttle Mapper"
-                path="/throttle-mapper"
-                onClose={onClose}
-              />
-              <SidebarOption
-                option="CAN Transmitter"
-                path="/can-transmitter"
-                onClose={onClose}
-              />
-              <SidebarOption
-                option="TX Messages"
-                path="/tx"
-                onClose={onClose}
-              /> */}
-
-
-              {/* DROPDOWN GROUP */}
               <li>
-                <button 
+                <button
                   onClick={() => setIsControlOpen(!isControlOpen)}
                   className="flex w-full gap-3 h-20 items-center justify-between box-border px-3 bg-option hover:bg-option-select/75 transition-colors border-none cursor-pointer"
                 >
-                  <span className="text-sidebarfg text-3xl font-heading leading-6 scale-y-75 uppercase text-left">
-                    Vehicle Control
+                  <span className="flex items-center gap-2">
+                    <span className="text-sidebarfg text-3xl font-heading leading-6 scale-y-75 uppercase text-left">
+                      Vehicle Control
+                    </span>
+                    <span className="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/40 font-mono tracking-wider">
+                      DEV
+                    </span>
                   </span>
                   <ChevronDown className={`text-sidebarfg transition-transform duration-300 ${isControlOpen ? 'rotate-180' : ''}`} />
                 </button>
-                
                 <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isControlOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
                   <ul className="list-none p-0 m-0 bg-black/10">
                     <SidebarOption
@@ -127,19 +114,15 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                       path="/throttle-mapper"
                       onClose={onClose}
                       nested
+                      isPending={true}
                     />
                     <SidebarOption
                       option="CAN Transmitter"
                       path="/can-transmitter"
                       onClose={onClose}
                       nested
+                      isPending={true}
                     />
-                    {/* <SidebarOption
-                      option="TX Messages"
-                      path="/tx"
-                      onClose={onClose}
-                      nested
-                    /> */}
                   </ul>
                 </div>
               </li>

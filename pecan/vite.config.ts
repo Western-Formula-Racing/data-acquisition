@@ -3,6 +3,15 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import type { Plugin } from "vite";
 import { VitePWA } from 'vite-plugin-pwa';
+import { execSync } from 'node:child_process';
+
+function getGitCommit(): string {
+  try {
+    return execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
 
 // Custom domain: pecan.westernformularacing.org (no base path needed)
 
@@ -73,8 +82,12 @@ function startWebSocketServer() {
 }
 
 // https://vite.dev/config/
+const gitCommit = getGitCommit();
 export default defineConfig({
   base: '/',
+  define: {
+    __GIT_COMMIT__: JSON.stringify(gitCommit),
+  },
   plugins: [
     react(),
     tailwindcss(),

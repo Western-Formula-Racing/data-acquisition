@@ -761,15 +761,16 @@ function Dashboard() {
         )
       }
 
-      {/* Performance Tab - Fixed at bottom (controlled by settings) */}
-      {showPerfOverlay && (
-        <div className="fixed bottom-0 left-0 right-0 z-30">
-          <div className="w-full py-2 px-4 bg-data-textbox-bg/95 backdrop-blur text-gray-300 text-xs border-t border-white/10">
-            <div className="flex justify-between items-center max-w-6xl mx-auto flex-wrap gap-1">
+      {/* Bottom bar: Build version + Force update, and perf stats when overlay enabled */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 py-1.5 px-4 bg-data-textbox-bg/95 backdrop-blur text-gray-400 text-xs border-t border-white/10">
+        <div className="flex justify-between items-center max-w-6xl mx-auto flex-wrap gap-2">
+          <span title="Git commit this build is based on">
+            Build: <code className="font-mono text-gray-300">{typeof __GIT_COMMIT__ !== "undefined" ? __GIT_COMMIT__ : "—"}</code>
+          </span>
+          {showPerfOverlay && (
+            <div className="flex flex-wrap gap-2">
               <span>FPS: {performanceStats.fps}</span>
-              <span className="hidden sm:inline">
-                CAN: {dataStoreStats.totalMessages > 0 ? "Live" : "0"}
-              </span>
+              <span className="hidden sm:inline">CAN: {dataStoreStats.totalMessages > 0 ? "Live" : "0"}</span>
               <span className="hidden md:inline">
                 Mem: {performanceStats.memoryUsage}
                 {typeof performanceStats.memoryUsage === "number" ? "MB" : ""}
@@ -779,9 +780,25 @@ function Dashboard() {
               </span>
               <span className="hidden lg:inline">Store Mem: {dataStoreStats.memoryEstimateMB}MB</span>
             </div>
-          </div>
+          )}
+          <button
+            type="button"
+            onClick={async () => {
+              if (!confirm("Clear PWA cache and reload to get the latest version?")) return;
+              try {
+                const regs = await navigator.serviceWorker?.getRegistrations?.() ?? [];
+                for (const reg of regs) await reg.unregister();
+                const names = await caches?.keys?.() ?? [];
+                for (const name of names) await caches.delete(name);
+              } catch (_) { /* ignore */ }
+              window.location.reload();
+            }}
+            className="text-gray-400 hover:text-white underline cursor-pointer shrink-0"
+          >
+            Force update
+          </button>
         </div>
-      )}
+      </div>
     </div>
   );
 }
