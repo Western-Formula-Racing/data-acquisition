@@ -7,13 +7,14 @@ set -e
 echo "=== WebSocket Broadcast Server Setup ==="
 
 # Check if CSV file exists
-if [ ! -f "2025-01-01-00-07-00.csv" ]; then
+DEFAULT_CSV="2025-01-01-00-00-00.csv"
+if [ ! -f "$DEFAULT_CSV" ]; then
     echo "Copying CSV data file..."
-    if [ -f "../2025-01-01-00-07-00.csv" ]; then
-        cp ../2025-01-01-00-07-00.csv .
+    if [ -f "../$DEFAULT_CSV" ]; then
+        cp "../$DEFAULT_CSV" .
         echo "✓ CSV file copied"
     else
-        echo "⚠ Warning: CSV file not found. Please copy 2025-01-01-00-07-00.csv to this directory."
+        echo "⚠ Warning: CSV file not found. Please copy $DEFAULT_CSV to this directory."
     fi
 else
     echo "✓ CSV file already exists"

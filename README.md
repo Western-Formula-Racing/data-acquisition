@@ -104,15 +104,16 @@ Development and testing tools for simulating vehicle telemetry without physical 
 - Example DBC (CAN database) file for message definitions
 - Docker Compose setups for isolated testing environments, including a dev/demo server configuration in `car-simulate/persistent-broadcast`
 
-### Host Demo (`/host-demo`)
+### WebSocket Backend (`/ws-backend`)
 
-Production deployment configuration for hosting the PECAN dashboard.
+Convenience deployment for the PECAN WebSocket broadcast server. The dashboard is hosted at `pecan.westernformularacing.org` (GitHub Pages); this backend provides live CAN data over `ws://` or `wss://`.
 
 **Features:**
-- Dockerized Nginx setup for static file serving
-- SSL/HTTPS configuration support
+- Runs the broadcast server with production defaults
+- Standard + extended CAN IDs, accumulator simulation
+- Optional CSV replay
 
-[📖 Deployment Guide](./host-demo/README.md)
+[📖 Deployment Guide](./ws-backend/README.md)
 
 ## Quick Start
 
@@ -176,10 +177,10 @@ cd car-simulate/persistent-broadcast
 docker-compose up -d
 ```
 
-### Production Deployment
+### Production Deployment (WebSocket backend)
 ```bash
-cd host-demo
-docker-compose up -d --build
+cd ws-backend
+docker compose up -d --build
 ```
 
 ## Development
@@ -196,7 +197,7 @@ daq-radio/
 │   └── public/         # Static assets
 ├── universal-telemetry-software/  # Car/base telemetry stack (UTS)
 ├── car-simulate/       # Testing and simulation tools
-├── host-demo/          # Production hosting configuration
+├── ws-backend/         # WebSocket broadcast server deployment
 ├── dev-utils/          # Developer utilities and scripts
 └── start_system.sh     # Automated startup script
 ```
