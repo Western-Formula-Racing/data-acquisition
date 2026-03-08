@@ -11,6 +11,7 @@ import {
 import { Outlet } from "react-router";
 import { webSocketService } from "./services/WebSocketService";
 import { DefaultBanner, CacheBanner } from "./components/AppBanners";
+import FloatingTools from "./components/FloatingTools";
 
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
@@ -89,6 +90,7 @@ function App() {
         <Outlet context={{ isSidebarOpen, openSettings, ...bannerApi }} />
         <SettingsModal isOpen={isSettingsOpen} onClose={closeSettings} bannerApi={bannerApi} />
         <AuthModal isOpen={isAuthOpen} onClose={closeAuth} />
+        <FloatingTools />
       </main>
 
 

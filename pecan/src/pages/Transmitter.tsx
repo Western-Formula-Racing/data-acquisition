@@ -39,7 +39,7 @@ const DataTransmitter = () => {
   }, [selectedMsgId, signalValues]);
 
   return (
-    <div className="flex h-full gap-6 p-6 text-white overflow-hidden">
+    <div className="relative flex h-full gap-6 p-6 text-white overflow-hidden">
 
       {/* --- LEFT COLUMN: Floating Sidebar --- */}
       <div className="w-80 flex flex-col gap-4 bg-slate-900/50 rounded-2xl border border-blue-500/20 p-4 backdrop-blur-md shadow-2xl">

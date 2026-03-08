@@ -154,6 +154,15 @@ function Dashboard() {
   const frameCountRef = useRef(0);
   const lastFpsUpdateRef = useRef(Date.now());
 
+  // Allow global tools button to start the dashboard tour
+  useEffect(() => {
+    const handler = () => {
+      handleStartTour();
+    };
+    window.addEventListener("dashboard-tour-start", handler);
+    return () => window.removeEventListener("dashboard-tour-start", handler);
+  }, []);
+
   // TEMPORARY: Expose dataStore to console for testing
   useEffect(() => {
     (window as any).dataStore = dataStore;
@@ -734,16 +743,6 @@ function Dashboard() {
           )}
         </div>
       </div>
-
-      {/* Floating Tour Button */}
-      <button
-        onClick={handleStartTour}
-        className="fixed bottom-10 right-6 z-40 w-10 h-10 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center hover:bg-blue-500 hover:scale-110 transition-all"
-        title="Start Tour"
-        aria-label="Start Tour"
-      >
-        <span className="text-lg font-bold">?</span>
-      </button>
 
       {/* Plot Controls Modal */}
       {

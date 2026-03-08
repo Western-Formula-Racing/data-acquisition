@@ -5,6 +5,7 @@ import {
     Wrench,
     Link2,
     Zap,
+    ScrollText,
     type LucideIcon,
 } from "lucide-react";
 
@@ -50,6 +51,14 @@ const features: FeatureCard[] = [
         path: "/system-link",
         gradient: "from-blue-500/20 to-cyan-600/20",
         iconColor: "text-blue-400",
+    },
+    {
+        title: "CAN Trace",
+        description: "Live timestamped log of every raw CAN frame — Kvaser-style trace with scroll, fixed-position, delta timing, and CSV export.",
+        icon: ScrollText,
+        path: "/trace",
+        gradient: "from-cyan-500/20 to-teal-600/20",
+        iconColor: "text-cyan-400",
     },
     {
         title: "ChargeCart",

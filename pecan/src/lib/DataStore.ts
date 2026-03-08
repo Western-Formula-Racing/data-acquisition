@@ -27,6 +27,9 @@ interface MessageBuffer {
   lastUpdated: number;
 }
 
+// Maximum number of frames kept in the flat trace ring buffer
+const TRACE_BUFFER_MAX = 10000;
+
 // Listener callback type
 type Listener = (msgID?: string) => void;
 
@@ -37,19 +40,27 @@ class DataStore {
   // Internal storage: msgID -> array of samples (chronological order)
   private buffer: Map<string, MessageBuffer>;
 
+  // Flat chronological ring buffer for CAN Trace view
+  private traceBuffer: TelemetrySample[];
+
   // Retention window in milliseconds (default: 30 seconds)
   private retentionWindowMs: number;
 
   // Pub/sub listeners
   private listeners: Set<Listener>;
 
+  // Listeners specifically for trace buffer updates
+  private traceListeners: Set<Listener>;
+
   // Singleton instance
   private static instance: DataStore | null = null;
 
   private constructor(retentionWindowMs: number = 300000) { // 5 minutes
     this.buffer = new Map();
+    this.traceBuffer = [];
     this.retentionWindowMs = retentionWindowMs;
     this.listeners = new Set();
+    this.traceListeners = new Set();
   }
 
   /**
@@ -129,6 +140,13 @@ class DataStore {
 
     // Prune old samples (rolling window)
     this.pruneOldSamples(msgID);
+
+    // Append to flat trace ring buffer (capped)
+    this.traceBuffer.push(sample);
+    if (this.traceBuffer.length > TRACE_BUFFER_MAX) {
+      this.traceBuffer.splice(0, this.traceBuffer.length - TRACE_BUFFER_MAX);
+    }
+    this.notifyTrace();
 
     // Notify all subscribers
     this.notifyAll(msgID);
@@ -267,7 +285,48 @@ class DataStore {
    */
   public clear(): void {
     this.buffer.clear();
+    this.traceBuffer = [];
     this.notifyAll();
+    this.notifyTrace();
+  }
+
+  // ── Trace buffer API ──────────────────────────────────────────────────────
+
+  /**
+   * Get a snapshot of the flat chronological trace buffer.
+   * Returns a shallow copy to prevent external mutation.
+   */
+  public getTrace(): TelemetrySample[] {
+    return [...this.traceBuffer];
+  }
+
+  /**
+   * Clear only the trace buffer (does not affect per-ID history).
+   */
+  public clearTrace(): void {
+    this.traceBuffer = [];
+    this.notifyTrace();
+  }
+
+  /**
+   * Subscribe to trace buffer updates.
+   * The callback is called every time a new frame is appended.
+   */
+  public subscribeTrace(listener: Listener): () => void {
+    this.traceListeners.add(listener);
+    return () => {
+      this.traceListeners.delete(listener);
+    };
+  }
+
+  private notifyTrace(): void {
+    this.traceListeners.forEach((listener) => {
+      try {
+        listener();
+      } catch (error) {
+        console.error('Error in DataStore trace listener:', error);
+      }
+    });
   }
 
   /**
