@@ -19,10 +19,12 @@ function getGitCommit(): string {
 const websocketPlugin = (): Plugin => ({
   name: 'websocket-server',
   configureServer() {
+    if (process.env.NODE_ENV === 'test') return;
     // Run WebSocket server in development
     startWebSocketServer();
   },
   configurePreviewServer() {
+    if (process.env.NODE_ENV === 'test') return;
     // Run WebSocket server in preview mode (production testing)
     startWebSocketServer();
   }

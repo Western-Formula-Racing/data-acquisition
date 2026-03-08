@@ -10,6 +10,7 @@ import {
 } from "./utils/canProcessor";
 import { Outlet } from "react-router";
 import { webSocketService } from "./services/WebSocketService";
+import { serialService } from "./services/SerialService";
 import { DefaultBanner, CacheBanner } from "./components/AppBanners";
 import FloatingTools from "./components/FloatingTools";
 
@@ -66,6 +67,7 @@ function App() {
     // Cleanup on unmount
     return () => {
       webSocketService.disconnect();
+      serialService.disconnect();
     };
   }, []); // Empty dependency array = runs once on mount
 
