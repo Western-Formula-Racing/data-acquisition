@@ -326,6 +326,12 @@ jobs:
       run: |
         python -m pytest tests/test_can_pipeline.py -v -s --timeout=60
 
+    - name: Run pecan UI vCAN tests
+      working-directory: ./pecan
+      run: |
+        npm ci
+        npm run test:ci
+
     - name: Collect vCAN test logs on failure
       if: failure()
       working-directory: ./universal-telemetry-software
@@ -563,4 +569,3 @@ jobs:
           directory: './pecan/dist'
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: dev
-

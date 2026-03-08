@@ -1,10 +1,11 @@
 import { webSocketService } from "../services/WebSocketService";
 import { forceCache, clearDbcCache } from "../utils/canProcessor";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "./Button";
 import { useAllSignals } from "../lib/useDataStore";
 import { loadPinnedSensors, savePinnedSensors, type CommsSensorConfig } from "./CommsSensorStrip";
-import { Plus, X, Activity } from "lucide-react";
+import { Plus, X, Activity, Usb, Unplug } from "lucide-react";
+import { serialService } from "../services/SerialService";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -125,6 +126,17 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
     const [perfOverlayEnabled, setPerfOverlayEnabled] = useState(() =>
         localStorage.getItem("perf-overlay-enabled") === "true"
     );
+    const [isSerialConnected, setIsSerialConnected] = useState(serialService.getConnectionStatus());
+
+    useEffect(() => {
+        // Subscribe to serial connection changes
+        serialService.onConnectionChange = (connected) => {
+            setIsSerialConnected(connected);
+        };
+        return () => {
+            serialService.onConnectionChange = null;
+        };
+    }, []);
 
     if (!isOpen) return null;
 
@@ -262,6 +274,33 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                             />
                             <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                         </label>
+                    </div>
+
+                    {/* Local USB CAN Adapter Toggle */}
+                    <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
+                        <div className="flex flex-col">
+                            <span className="text-sm font-medium">Local USB CAN Adapter</span>
+                            <span className="text-xs text-gray-400">Connect to slcan compatible device (e.g. Kvaser/CANable) directly via Web Serial</span>
+                        </div>
+                        <div className="flex gap-2 items-center">
+                            {isSerialConnected ? (
+                                <Button
+                                    onClick={() => serialService.disconnect()}
+                                    variant="danger"
+                                    className="flex items-center gap-1.5"
+                                >
+                                    <Unplug className="w-4 h-4" /> Disconnect
+                                </Button>
+                            ) : (
+                                <Button
+                                    onClick={() => serialService.connect()}
+                                    variant="primary"
+                                    className="flex items-center gap-1.5"
+                                >
+                                    <Usb className="w-4 h-4" /> Connect USB CAN
+                                </Button>
+                            )}
+                        </div>
                     </div>
 
                     {/* Comms Pinned Sensors */}
