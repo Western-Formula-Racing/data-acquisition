@@ -13,7 +13,7 @@ from websockets.server import WebSocketServerProtocol
 # Configuration from environment variables
 WS_PORT = int(os.getenv('WS_PORT', '9080'))
 WSS_PORT = int(os.getenv('WSS_PORT', '9443'))
-CSV_FILE = os.getenv('CSV_FILE', '2025-01-01-00-07-00.csv')
+CSV_FILE = os.getenv('CSV_FILE', '2025-01-01-00-00-00.csv')
 SSL_CERT = os.getenv('SSL_CERT', '/app/ssl/cert.pem')
 SSL_KEY = os.getenv('SSL_KEY', '/app/ssl/key.pem')
 DOMAIN = os.getenv('DOMAIN', 'ws-wfr.0001200.xyz')
@@ -445,14 +445,14 @@ async def broadcast_data(can_data: List[dict], accu_sim: AccumulatorSimulator):
             accu_sim.update(dt)
             messages.extend(accu_sim.generate_messages())
 
-        # Standard CAN IDs at 20 Hz
-        if (now - last_standard_time) >= standard_interval:
+        # Standard CAN IDs at 20 Hz (disabled when CSV replay is enabled)
+        if not ENABLE_CSV and (now - last_standard_time) >= standard_interval:
             last_standard_time = now
             now_ms = int(time.time() * 1000)
             messages.extend(standard_sim.generate_messages(now_ms))
 
-        # Charger extended CAN IDs at 5 Hz
-        if (now - last_charger_time) >= charger_interval:
+        # Charger extended CAN IDs at 5 Hz (disabled when CSV replay is enabled)
+        if not ENABLE_CSV and (now - last_charger_time) >= charger_interval:
             last_charger_time = now
             now_ms = int(time.time() * 1000)
             messages.extend(charger_sim.generate_messages(now_ms))

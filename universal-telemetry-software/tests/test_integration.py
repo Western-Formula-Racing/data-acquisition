@@ -256,10 +256,13 @@ class TestWebSocketBroadcast:
                 if found >= self.EXTENDED_IDS:
                     break
 
-            assert len(found) > 0, (
-                f"No extended CAN IDs arrived via WebSocket. "
-                f"Expected at least one of {self.EXTENDED_IDS}. "
-                "Check that data.py simulation includes extended IDs."
+            assert found >= self.EXTENDED_IDS, (
+                "Did not observe all expected extended CAN IDs via WebSocket. "
+                "Expected: "
+                + ", ".join(f"0x{i:08X}" for i in sorted(self.EXTENDED_IDS))
+                + "; observed: "
+                + (", ".join(f"0x{i:08X}" for i in sorted(found)) or "none")
+                + ". Check that data.py simulation includes all extended IDs."
             )
             logger.info(
                 f"✓ Extended CAN IDs received via WebSocket: "

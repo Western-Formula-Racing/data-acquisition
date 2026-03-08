@@ -25,13 +25,24 @@ DBC_PATHS = [
 
 def _signal_signature(sig) -> tuple:
     """Return a comparable tuple for signal structure (name, start, length, scale, offset)."""
-    scale = getattr(sig, "scale", None) or (
-        sig.conversion.scale if hasattr(sig, "conversion") and sig.conversion else 1.0
-    )
-    offset = getattr(sig, "offset", None) or (
-        sig.conversion.offset if hasattr(sig, "conversion") and sig.conversion else 0.0
-    )
-    start = getattr(sig, "start", None) or getattr(sig, "start_bit", 0)
+    # Preserve valid falsy values (e.g., 0, 0.0) by checking explicitly for None
+    scale = getattr(sig, "scale", None)
+    if scale is None:
+        if hasattr(sig, "conversion") and sig.conversion is not None:
+            conv_scale = getattr(sig.conversion, "scale", None)
+            scale = 1.0 if conv_scale is None else conv_scale
+        else:
+            scale = 1.0
+    offset = getattr(sig, "offset", None)
+    if offset is None:
+        if hasattr(sig, "conversion") and sig.conversion is not None:
+            conv_offset = getattr(sig.conversion, "offset", None)
+            offset = 0.0 if conv_offset is None else conv_offset
+        else:
+            offset = 0.0
+    start = getattr(sig, "start", None)
+    if start is None:
+        start = getattr(sig, "start_bit", 0)
     return (sig.name, start, sig.length, scale, offset)
 
 
@@ -83,12 +94,14 @@ def test_shared_messages_consistent(canonical_db, other_db_paths):
     """
     failures = []
 
+    # Load each "other" DBC once and reuse it to avoid redundant parsing work.
+    other_dbs = {path: _load_dbc(path) for path in other_db_paths}
+
     for canon_msg in canonical_db.messages:
         frame_id = canon_msg.frame_id
         canon_sig = _message_signature(canon_msg)
 
-        for other_path in other_db_paths:
-            other_db = _load_dbc(other_path)
+        for other_path, other_db in other_dbs.items():
             other_msg = _get_message_by_frame_id(other_db, frame_id)
 
             if other_msg is None:

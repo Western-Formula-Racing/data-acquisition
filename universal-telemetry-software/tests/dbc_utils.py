@@ -13,7 +13,7 @@ for the two extended (J1939 29-bit) messages added for CI testing:
 
 The DBC convention for extended frames is to store IDs with bit 31 set
 (0x80000000).  python-can reports msg.arbitration_id WITHOUT that bit, so the
-values in EXTENDED_CAN_IDS below are the raw arbitration IDs.
+values in the EXTENDED_FRAME_IDS mapping below are the raw arbitration IDs.
 """
 
 from pathlib import Path

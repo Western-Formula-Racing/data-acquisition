@@ -5,14 +5,14 @@ services:
       - "9080:9080"
       - "9443:9443"
     volumes:
-      # - ./2025-01-01-00-07-00.csv:/app/2025-01-01-00-07-00.csv:ro
+      # - ./2025-01-01-00-00-00.csv:/app/2025-01-01-00-00-00.csv:ro
       - ./ssl:/app/ssl:ro
     environment:
       - WS_PORT=9080
       - WSS_PORT=9443
       - SSL_CERT=/app/ssl/cert.pem
       - SSL_KEY=/app/ssl/key.pem
-      - CSV_FILE=/app/2025-01-01-00-07-00.csv
+      # ENABLE_CSV=false by default; for replay, set ENABLE_CSV=true and mount CSV
       - DOMAIN=ws-wfr.0001200.xyz
     restart: unless-stopped
     networks:

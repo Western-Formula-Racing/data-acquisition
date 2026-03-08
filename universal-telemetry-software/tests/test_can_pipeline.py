@@ -84,20 +84,22 @@ class TestCANToRedis:
         # 0x0C0 = 192 (VCU_Status)
         cansend("0C0", "DEADBEEF01020304")
 
-        # data.py batches at 50 ms / 20 msgs — wait for the batch flush
-        msg = redis_helper.get_message(timeout=10)
-        assert msg is not None, "No message received on Redis can_messages channel"
+        # data.py batches at 50 ms / 20 msgs. The first message may be a heartbeat
+        # or pre-send batch — loop like other tests until we find our frame.
+        found = False
+        for _ in range(30):
+            msg = redis_helper.get_message(timeout=2)
+            if msg is None:
+                continue
+            assert isinstance(msg, list), f"Expected list, got {type(msg)}"
+            for m in msg:
+                if m["canId"] == 192 and m["data"][:4] == [0xDE, 0xAD, 0xBE, 0xEF]:
+                    found = True
+                    break
+            if found:
+                break
 
-        # The message is a list of CAN entries
-        assert isinstance(msg, list), f"Expected list, got {type(msg)}"
-        ids = [m["canId"] for m in msg]
-        assert 192 in ids, f"CAN ID 192 (VCU) not in Redis batch: {ids}"
-
-        # Verify data field
-        vcu = next(m for m in msg if m["canId"] == 192)
-        assert vcu["data"][:4] == [0xDE, 0xAD, 0xBE, 0xEF], (
-            f"Unexpected data bytes: {vcu['data']}"
-        )
+        assert found, "CAN ID 192 (VCU) with data DEADBEEF... never appeared in Redis"
 
     def test_heartbeat_appears_in_redis(self, redis_helper, container_uses_real_can):
         """Heartbeat (ID 1999) should be injected by data.py every second."""
