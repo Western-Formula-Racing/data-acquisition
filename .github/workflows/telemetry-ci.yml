@@ -138,7 +138,7 @@ jobs:
     - name: Run unit tests
       working-directory: ./universal-telemetry-software
       run: |
-        python -m pytest tests/test_leds.py tests/test_influx_bridge.py tests/test_car_mode.py -v
+        python -m pytest tests/test_leds.py tests/test_influx_bridge.py tests/test_car_mode.py tests/test_dbc_consistency.py -v
 
   # ── Integration tests: full docker-compose stack ─────────────────────────
   integration:

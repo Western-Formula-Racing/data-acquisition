@@ -1,27 +1,36 @@
 # Persistent WebSocket Broadcast Server
 
-This Docker Compose setup provides a persistent WebSocket server that cycles through CAN data from a CSV file and broadcasts it to connected clients on both `ws://` and `wss://` protocols.
+This Docker Compose setup provides a persistent WebSocket server that broadcasts realistic CAN data to connected clients on both `ws://` and `wss://` protocols.
+
+By default it uses **class-based simulators** rather than CSV playback:
+
+- Standard 11-bit IDs (e.g. `VCU_Status` 192, `BMS_Status` 512, `Wheel_Speeds` 768)
+- Extended 29-bit charger IDs from `example.dbc` (e.g. `0x1806E5F4`, `0x18FF50E5`)
+- High-rate accumulator messages (cell voltages and temperatures)
+
+You can still optionally replay a recorded CSV log by enabling `ENABLE_CSV=true`.
 
 ## Features
 
 - **Dual Protocol Support**: Broadcasts on both WebSocket (ws) and Secure WebSocket (wss)
 - **Persistent Operation**: Automatically restarts if the container crashes
-- **Cyclic Playback**: Continuously cycles through the CSV data
+- **Realistic Simulation**: Continuously generates CAN traffic from simulators
+- **Optional CSV Playback**: Can cycle through a CSV log if desired
 - **Multi-Client**: Supports multiple simultaneous client connections
 - **Domain Ready**: Configured for `ws-wfr.0001200.xyz` via Cloudflare
 
 ## Prerequisites
 
-1. **CSV Data File**: Copy `2025-01-01-00-07-00.csv` to this directory
-2. **SSL Certificates** (for wss://): Generate or obtain SSL certificates for secure connections
+1. **SSL Certificates** (for wss://): Generate or obtain SSL certificates for secure connections
+2. (Optional) **CSV Data File**: Only needed if you enable CSV replay
 
 ## Setup
 
-### 1. Copy the CSV file
+### 1. (Optional) Copy a CSV file for recorded-log replay
 
-```bash
-cp ../2025-01-01-00-07-00.csv .
-```
+If you want to replay a recorded log instead of (or in addition to) the built-in
+simulators, copy a CSV file into this directory and set `ENABLE_CSV=true` and
+`CSV_FILE=/app/<your-file>.csv` in `docker-compose.yml`.
 
 ### 2. SSL Certificates (Optional for WSS)
 
@@ -191,8 +200,8 @@ docker-compose up -d --build
 - For Cloudflare, use Flexible SSL mode or Origin Certificates
 
 ### No Data Broadcasting
-- Verify CSV file exists and is readable
-- Check logs for parsing errors: `docker-compose logs`
+- If using CSV: verify the CSV file exists, `ENABLE_CSV=true`, and `CSV_FILE` points to the correct path
+- If using only simulators: check logs to confirm the accumulator, standard CAN, and charger simulators started
 
 ## Environment Variables
 

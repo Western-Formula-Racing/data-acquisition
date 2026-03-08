@@ -78,7 +78,7 @@ BO_ 768 Wheel_Speeds: 8 Vector__XXX
  SG_ RL_Speed : 32|16@1+ (1,0) [0|3000] "rpm" Vector__XXX
  SG_ RR_Speed : 48|16@1+ (1,0) [0|3000] "rpm" Vector__XXX
 
-BO_ 2048 IMU_Data: 8 Vector__XXX
+BO_ 1024 IMU_Data: 8 Vector__XXX
  SG_ AccelX : 0|16@1- (0.001,0) [-4|4] "g" Vector__XXX
  SG_ AccelY : 16|16@1- (0.001,0) [-4|4] "g" Vector__XXX
  SG_ AccelZ : 32|16@1- (0.001,0) [-4|4] "g" Vector__XXX
@@ -213,7 +213,7 @@ BO_ 1023 TORCH_M4_V3: 8 CUSTOMBMS
  SG_ M4_Cell11_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
  SG_ M4_Cell12_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
 
-BO_ 1024 TORCH_M4_V4: 8 CUSTOMBMS
+BO_ 1056 TORCH_M4_V4: 8 CUSTOMBMS
  SG_ M4_Cell13_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
  SG_ M4_Cell14_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
  SG_ M4_Cell15_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
