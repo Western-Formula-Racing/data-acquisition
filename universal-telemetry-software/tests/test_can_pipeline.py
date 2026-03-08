@@ -19,6 +19,7 @@ from tests.test_helpers import (
     DockerHelper,
     wait_for_service,
 )
+from tests.dbc_utils import encode_charger_command, encode_charger_status
 
 CONTAINER = "daq-can-test"
 WS_URL = "ws://localhost:9080"
@@ -190,6 +191,149 @@ class TestMultipleCANIDs:
 
         missing = DBC_IDS.keys() - seen_ids
         assert not missing, f"These DBC IDs never appeared in Redis: {missing}"
+
+
+# ── TestExtendedCANIDs ──────────────────────────────────────────────────────
+
+class TestExtendedCANIDs:
+    """
+    Send 29-bit (extended) CAN frames onto can0 and verify they traverse the
+    full pipeline to Redis and the WebSocket bridge.
+
+    Frame IDs are derived from example.dbc via dbc_utils so the payload is
+    structurally valid and the assertions are DBC-driven rather than magic
+    numbers.
+
+    Extended frames require an 8-hex-char ID in cansend, e.g.:
+        cansend can0 1806E5F4#6810640000000000
+    can-utils automatically sets the EFF (extended-frame) flag when the ID
+    field is more than 3 hex characters long.
+    """
+
+    def test_extended_charger_command_reaches_redis(
+        self, redis_helper, container_uses_real_can
+    ):
+        """Send Charger_Command (extended) and verify it appears in Redis."""
+        frame_id, data_bytes, data_hex = encode_charger_command(
+            max_voltage=420.0, max_current=10.0, control=0
+        )
+        redis_helper.subscribe(REDIS_CHANNEL)
+
+        # 8-char hex ID → cansend sends extended frame
+        cansend(f"{frame_id:08X}", data_hex)
+
+        found = False
+        for _ in range(30):
+            msg = redis_helper.get_message(timeout=2)
+            if msg is None:
+                continue
+            for entry in msg:
+                if entry["canId"] == frame_id:
+                    assert entry["data"] == list(data_bytes), (
+                        f"Extended frame data mismatch: {entry['data']} != {list(data_bytes)}"
+                    )
+                    found = True
+                    break
+            if found:
+                break
+
+        assert found, (
+            f"Charger_Command extended frame (canId={frame_id} / "
+            f"0x{frame_id:08X}) never appeared in Redis"
+        )
+
+    def test_extended_charger_status_reaches_redis(
+        self, redis_helper, container_uses_real_can
+    ):
+        """Send Charger_Status (extended) and verify it appears in Redis."""
+        frame_id, data_bytes, data_hex = encode_charger_status(
+            output_voltage=415.0, output_current=8.5
+        )
+        redis_helper.subscribe(REDIS_CHANNEL)
+
+        cansend(f"{frame_id:08X}", data_hex)
+
+        found = False
+        for _ in range(30):
+            msg = redis_helper.get_message(timeout=2)
+            if msg is None:
+                continue
+            for entry in msg:
+                if entry["canId"] == frame_id:
+                    assert entry["data"] == list(data_bytes), (
+                        f"Extended frame data mismatch: {entry['data']} != {list(data_bytes)}"
+                    )
+                    found = True
+                    break
+            if found:
+                break
+
+        assert found, (
+            f"Charger_Status extended frame (canId={frame_id} / "
+            f"0x{frame_id:08X}) never appeared in Redis"
+        )
+
+    @pytest.mark.asyncio
+    async def test_extended_charger_command_reaches_websocket(
+        self, container_uses_real_can
+    ):
+        """Send Charger_Command (extended) and verify it arrives at a WebSocket client."""
+        frame_id, _, data_hex = encode_charger_command(
+            max_voltage=420.0, max_current=10.0, control=0
+        )
+        ws = WebSocketHelper(WS_URL)
+        await ws.connect()
+
+        try:
+            cansend(f"{frame_id:08X}", data_hex)
+
+            found = False
+            for _ in range(30):
+                data = await ws.receive_message(timeout=2)
+                if data is None:
+                    continue
+                entries = data if isinstance(data, list) else [data]
+                if any(m.get("canId") == frame_id for m in entries):
+                    found = True
+                    break
+
+            assert found, (
+                f"Charger_Command extended frame (canId={frame_id} / "
+                f"0x{frame_id:08X}) never arrived via WebSocket"
+            )
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_extended_charger_status_reaches_websocket(
+        self, container_uses_real_can
+    ):
+        """Send Charger_Status (extended) and verify it arrives at a WebSocket client."""
+        frame_id, _, data_hex = encode_charger_status(
+            output_voltage=415.0, output_current=8.5
+        )
+        ws = WebSocketHelper(WS_URL)
+        await ws.connect()
+
+        try:
+            cansend(f"{frame_id:08X}", data_hex)
+
+            found = False
+            for _ in range(30):
+                data = await ws.receive_message(timeout=2)
+                if data is None:
+                    continue
+                entries = data if isinstance(data, list) else [data]
+                if any(m.get("canId") == frame_id for m in entries):
+                    found = True
+                    break
+
+            assert found, (
+                f"Charger_Status extended frame (canId={frame_id} / "
+                f"0x{frame_id:08X}) never arrived via WebSocket"
+            )
+        finally:
+            await ws.close()
 
 
 # ── TestEventLoopNotBlocked ─────────────────────────────────────────────────

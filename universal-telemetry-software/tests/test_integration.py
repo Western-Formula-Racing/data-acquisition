@@ -165,7 +165,12 @@ class TestRedisPublishing:
 
 class TestWebSocketBroadcast:
     """Test WebSocket broadcasting to PECAN dashboard."""
-    
+
+    # Extended (29-bit) CAN arbitration IDs added to the simulation in data.py.
+    # These are the raw frame IDs as python-can reports them (no EFF bit set).
+    # DBC entries: Charger_Command (2550588916) and Charger_Status (2566869221).
+    EXTENDED_IDS = frozenset({403105268, 419385573})
+
     @pytest.mark.asyncio
     async def test_websocket_connection(self):
         """Verify WebSocket server is accessible."""
@@ -212,6 +217,54 @@ class TestWebSocketBroadcast:
                 assert 'data' in first_msg, "Message missing 'data' field"
             
             logger.info(f"✓ WebSocket received CAN data: {len(msg)} messages")
+        finally:
+            await ws_helper.close()
+
+
+    @pytest.mark.asyncio
+    async def test_extended_can_ids_arrive_via_websocket(self):
+        """
+        Verify that extended (29-bit) CAN frames emitted by the simulation
+        mode in data.py propagate through the full pipeline and appear in
+        WebSocket messages with the correct numeric canId values.
+
+        The simulation was updated to include:
+            403105268  (0x1806E5F4)  Charger_Command
+            419385573  (0x18FF50E5)  Charger_Status
+
+        PECAN-side decoding of those IDs is covered by the TypeScript
+        canProcessor unit tests (canProcessor.test.ts).
+        """
+        ws_helper = WebSocketHelper(WS_URL)
+
+        try:
+            await ws_helper.connect()
+
+            found: set[int] = set()
+            # The simulation fires at ~100 Hz across 6 IDs; we expect to see
+            # both extended IDs within ~30 s.
+            deadline = asyncio.get_event_loop().time() + 30
+            while asyncio.get_event_loop().time() < deadline:
+                data = await ws_helper.receive_message(timeout=2)
+                if data is None:
+                    break
+                entries = data if isinstance(data, list) else [data]
+                for entry in entries:
+                    can_id = entry.get("canId")
+                    if can_id in self.EXTENDED_IDS:
+                        found.add(can_id)
+                if found >= self.EXTENDED_IDS:
+                    break
+
+            assert len(found) > 0, (
+                f"No extended CAN IDs arrived via WebSocket. "
+                f"Expected at least one of {self.EXTENDED_IDS}. "
+                "Check that data.py simulation includes extended IDs."
+            )
+            logger.info(
+                f"✓ Extended CAN IDs received via WebSocket: "
+                + ", ".join(f"0x{i:08X}" for i in sorted(found))
+            )
         finally:
             await ws_helper.close()
 
