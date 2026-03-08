@@ -10,7 +10,6 @@ function FloatingTools() {
   const location = useLocation();
 
   const isOnTracePage = location.pathname.endsWith("/trace");
-  const isOnDashboard = location.pathname.endsWith("/dashboard");
 
   return (
     <>
