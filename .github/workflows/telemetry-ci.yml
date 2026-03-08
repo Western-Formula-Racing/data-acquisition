@@ -568,4 +568,5 @@ jobs:
           projectName: 'pecan-dev'
           directory: './pecan/dist'
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: dev
 
