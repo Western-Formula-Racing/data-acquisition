@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router";
-import { Orbit, Activity, Terminal, HelpCircle } from "lucide-react";
+import { Orbit, Activity, Terminal } from "lucide-react";
 import TracePanel from "./TracePanel";
 
 function FloatingTools() {
@@ -62,19 +62,6 @@ function FloatingTools() {
               >
                 <span>CAN TRACE (full)</span>
                 <Terminal className="w-3 h-3 text-slate-300" />
-              </button>
-            )}
-
-            {isOnDashboard && (
-              <button
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent("dashboard-tour-start"));
-                  setMenuOpen(false);
-                }}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#070615]/95 border border-blue-500/50 shadow-lg text-[11px] font-mono text-slate-100 hover:bg-[#10213a] transition-colors"
-              >
-                <span>Dashboard tour</span>
-                <HelpCircle className="w-3 h-3 text-blue-300" />
               </button>
             )}
           </div>

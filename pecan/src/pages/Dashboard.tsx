@@ -154,15 +154,6 @@ function Dashboard() {
   const frameCountRef = useRef(0);
   const lastFpsUpdateRef = useRef(Date.now());
 
-  // Allow global tools button to start the dashboard tour
-  useEffect(() => {
-    const handler = () => {
-      handleStartTour();
-    };
-    window.addEventListener("dashboard-tour-start", handler);
-    return () => window.removeEventListener("dashboard-tour-start", handler);
-  }, []);
-
   // TEMPORARY: Expose dataStore to console for testing
   useEffect(() => {
     (window as any).dataStore = dataStore;
@@ -466,9 +457,7 @@ function Dashboard() {
 
             {/* View selection options */}
             <div className="col-span-1 flex items-center justify-end gap-1 p-3">
-              <div className="flex flex-row">
-
-
+              <div className="flex flex-row items-center gap-1">
                 {/* Filter button and dropdown  */}
                 <div id="dash-sort-btn" className="relative">
                   <button
@@ -517,23 +506,35 @@ function Dashboard() {
                     </div>
                   )}
                 </div>
-              </div>
 
-              {/* Hide view toggle buttons on mobile, only show list view */}
-              <div id="dash-view-toggle" className="hidden md:flex">
+                {/* Hide view toggle buttons on mobile, only show list view */}
+                <div id="dash-view-toggle" className="hidden md:flex">
+                  <button
+                    onClick={() => setViewMode("list")}
+                    className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
+                    aria-pressed={viewMode === "list"}
+                  >
+                    <img src={listViewIcon} alt="List view" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode("cards")}
+                    className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
+                    aria-pressed={viewMode === "cards"}
+                  >
+                    <img src={gridViewIcon} alt="Grid view" />
+                  </button>
+                </div>
+
+                {/* Dashboard tour start button */}
                 <button
-                  onClick={() => setViewMode("list")}
-                  className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
-                  aria-pressed={viewMode === "list"}
+                  id="dash-tour-start"
+                  type="button"
+                  onClick={handleStartTour}
+                  className="ml-1 w-8 h-8 rounded-full border border-blue-500/60 bg-blue-500/10 text-xs font-mono text-blue-200 flex items-center justify-center hover:bg-blue-500/20 transition-colors"
+                  title="Start dashboard tour"
+                  aria-label="Start dashboard tour"
                 >
-                  <img src={listViewIcon} alt="List view" />
-                </button>
-                <button
-                  onClick={() => setViewMode("cards")}
-                  className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
-                  aria-pressed={viewMode === "cards"}
-                >
-                  <img src={gridViewIcon} alt="Grid view" />
+                  ?
                 </button>
               </div>
             </div>
@@ -634,11 +635,20 @@ function Dashboard() {
                   );
 
                   // Tour Targeting Logic:
-                  // Try to find message 1024 for AccelX signal (dynamic plot).
+                  // Try to find message 1031 (0x407) for M1_Thermistor1 signal.
+                  // Handles both decimal (e.g. "1031") and hex (e.g. "0x407") IDs.
                   // If not found, default to the first message (index 0).
-                  const targetId = "1024";
-                  const targetSignal = "AccelX";
-                  const foundIndex = filteredMsgs.findIndex(([id]) => id === targetId);
+                  const targetNumericId = 1031;
+                  const parseCanId = (id: string): number | null => {
+                    if (id.startsWith("0x") || id.startsWith("0X")) {
+                      const n = parseInt(id, 16);
+                      return Number.isNaN(n) ? null : n;
+                    }
+                    const n = Number(id);
+                    return Number.isNaN(n) ? null : n;
+                  };
+                  const targetSignal = "M1_Thermistor1";
+                  const foundIndex = filteredMsgs.findIndex(([id]) => parseCanId(id) === targetNumericId);
 
                   // If found, target that index. If not, target 0.
                   const tourTargetIndex = foundIndex !== -1 ? foundIndex : 0;

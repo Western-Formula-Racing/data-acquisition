@@ -54,7 +54,7 @@ const features: FeatureCard[] = [
     },
     {
         title: "CAN Trace",
-        description: "Live timestamped log of every raw CAN frame — Kvaser-style trace with scroll, fixed-position, delta timing, and CSV export.",
+      description: "Live timestamped log of every raw CAN frame, with scroll and fixed views, delta timing, and CSV export.",
         icon: ScrollText,
         path: "/trace",
         gradient: "from-cyan-500/20 to-teal-600/20",

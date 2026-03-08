@@ -7,6 +7,7 @@ import {
 } from "react";
 import { useTraceBuffer } from "../lib/useDataStore";
 import type { TelemetrySample } from "../lib/DataStore";
+import TourGuide, { type TourStep } from "../components/TourGuide";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -296,12 +297,61 @@ function FixedTable({ rows }: FixedTableProps) {
 
 // ─── Trace page ──────────────────────────────────────────────────────────────
 
+const TRACE_TOUR_STEPS: TourStep[] = [
+  {
+    targetId: "trace-toolbar-title",
+    title: "CAN Trace Console",
+    content:
+      "This view shows a live stream of CAN frames captured from your data source.",
+    position: "bottom",
+  },
+  {
+    targetId: "trace-pause-main",
+    title: "Pause & Resume",
+    content:
+      "Use this button to freeze the buffer when you want to inspect frames without new data pushing them away.",
+    position: "bottom",
+  },
+  {
+    targetId: "trace-view-toggle",
+    title: "Scroll vs Fixed View",
+    content:
+      "Scroll mode shows every frame over time, while Fixed mode shows one row per CAN ID with the latest sample.",
+    position: "bottom",
+  },
+  {
+    targetId: "trace-filter-input",
+    title: "Filter Frames",
+    content:
+      "Filter by CAN ID or message name. Use commas to apply multiple filters at once (e.g. \"1031, TORCH_M1_T1\").",
+    position: "bottom",
+  },
+  {
+    targetId: "trace-table-header",
+    title: "Frame Columns",
+    content:
+      "Columns show timestamp, delta, CAN ID, direction, DLC, raw data bytes, and decoded message name.",
+    position: "top",
+  },
+  {
+    targetId: "trace-status-bar",
+    title: "Buffer Status",
+    content:
+      "The status bar shows buffer usage, auto-scroll state, and either total rows or unique IDs depending on view.",
+    position: "top",
+  },
+];
+
 function Trace() {
   const { frames, clearTrace } = useTraceBuffer(50);
   const [paused, setPaused] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("scroll");
   const [filter, setFilter] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
+
+  // Tour state
+  const [tourOpen, setTourOpen] = useState(false);
+  const [currentTourStep, setCurrentTourStep] = useState(0);
 
   // Frozen copy while paused
   const frozenRef = useRef<TelemetrySample[]>([]);
@@ -349,12 +399,29 @@ function Trace() {
       {/* ── Toolbar ── */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-white/10 bg-[#100f1a] flex-shrink-0 flex-wrap">
         {/* Title */}
-        <span className="font-heading text-lg font-semibold text-white tracking-wide mr-2">
+        <span
+          id="trace-toolbar-title"
+          className="font-heading text-lg font-semibold text-white tracking-wide mr-2"
+        >
           CAN TRACE
         </span>
 
+        {/* Tour start button */}
+        <button
+          id="trace-tour-start"
+          onClick={() => {
+            setCurrentTourStep(0);
+            setTourOpen(true);
+          }}
+          className="px-2 py-1 rounded-full border border-blue-500/60 bg-blue-500/10 text-[10px] font-mono text-blue-200 hover:bg-blue-500/20 transition-colors"
+          title="Start CAN Trace tour"
+        >
+          ?
+        </button>
+
         {/* Pause / Resume */}
         <button
+          id="trace-pause-main"
           onClick={handlePause}
           className={`px-3 py-1 rounded text-xs font-mono font-semibold border transition-colors ${
             paused
@@ -374,7 +441,10 @@ function Trace() {
         </button>
 
         {/* View mode toggle */}
-        <div className="flex rounded overflow-hidden border border-white/10">
+        <div
+          id="trace-view-toggle"
+          className="flex rounded overflow-hidden border border-white/10"
+        >
           <button
             onClick={() => setViewMode("scroll")}
             className={`px-3 py-1 text-xs font-mono transition-colors ${
@@ -399,6 +469,7 @@ function Trace() {
 
         {/* Filter */}
         <input
+          id="trace-filter-input"
           type="text"
           placeholder="Filter by ID or name (comma-separated)…"
           value={filter}
@@ -431,7 +502,10 @@ function Trace() {
 
       {/* ── Column header ── */}
       {viewMode === "scroll" ? (
-        <div className="flex items-center font-mono text-[10px] uppercase tracking-widest text-slate-600 bg-[#0a0912] border-b border-white/[0.06] flex-shrink-0 px-0 py-1">
+        <div
+          id="trace-table-header"
+          className="flex items-center font-mono text-[10px] uppercase tracking-widest text-slate-600 bg-[#0a0912] border-b border-white/[0.06] flex-shrink-0 px-0 py-1"
+        >
           <span className="w-14 shrink-0 px-2 text-right">#</span>
           <span className="w-32 shrink-0 px-2">Timestamp</span>
           <span className="w-24 shrink-0 px-2 text-right">Delta</span>
@@ -442,7 +516,10 @@ function Trace() {
           <span className="flex-1 px-2">Message</span>
         </div>
       ) : (
-        <div className="flex items-center font-mono text-[10px] uppercase tracking-widest text-slate-600 bg-[#0a0912] border-b border-white/[0.06] flex-shrink-0 px-0 py-1">
+        <div
+          id="trace-table-header"
+          className="flex items-center font-mono text-[10px] uppercase tracking-widest text-slate-600 bg-[#0a0912] border-b border-white/[0.06] flex-shrink-0 px-0 py-1"
+        >
           <span className="w-32 shrink-0 px-2">CAN ID</span>
           <span className="flex-1 px-2">Message</span>
           <span className="w-32 shrink-0 px-2">Last Seen</span>
@@ -474,7 +551,10 @@ function Trace() {
       )}
 
       {/* ── Status bar ── */}
-      <div className="flex items-center gap-4 px-4 py-1 border-t border-white/[0.06] bg-[#0a0912] text-[10px] font-mono text-slate-600 flex-shrink-0">
+      <div
+        id="trace-status-bar"
+        className="flex items-center gap-4 px-4 py-1 border-t border-white/[0.06] bg-[#0a0912] text-[10px] font-mono text-slate-600 flex-shrink-0"
+      >
         <span>
           Buffer: {Math.min(totalFrames, 10000).toLocaleString()} / 10,000
         </span>
@@ -496,6 +576,14 @@ function Trace() {
             : `${enriched.length.toLocaleString()} rows`}
         </span>
       </div>
+
+      <TourGuide
+        steps={TRACE_TOUR_STEPS}
+        isOpen={tourOpen}
+        onClose={() => setTourOpen(false)}
+        currentStepIndex={currentTourStep}
+        onStepChange={setCurrentTourStep}
+      />
     </div>
   );
 }
