@@ -5,6 +5,7 @@ import {
   useMemo,
   useCallback,
 } from "react";
+import { Link, useSearchParams } from "react-router";
 import { useTraceBuffer } from "../lib/useDataStore";
 import type { TelemetrySample } from "../lib/DataStore";
 import TourGuide, { type TourStep } from "../components/TourGuide";
@@ -233,8 +234,14 @@ function VirtualList({ rows, autoScroll, onScrollUp, maxRows }: VirtualListProps
               {/* Message name */}
               <span className="flex-1 px-2 text-purple-300 truncate">
                 {f.messageName}
-              </span>
-            </div>
+              </span>              {/* Dashboard link */}
+              <Link
+                to="/dashboard"
+                className="shrink-0 mr-2 px-2 py-0.5 rounded text-[10px] font-mono font-semibold border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/25 transition-colors whitespace-nowrap"
+                title="View in Dashboard"
+              >
+                DASH ↗
+              </Link>            </div>
           ))}
         </div>
       </div>
@@ -289,6 +296,14 @@ function FixedTable({ rows }: FixedTableProps) {
           <span className="w-56 shrink-0 px-2 text-slate-300 tracking-wider uppercase">
             {sample.rawData}
           </span>
+          {/* Dashboard link */}
+          <Link
+            to="/dashboard"
+            className="shrink-0 mr-2 px-2 py-0.5 rounded text-[10px] font-mono font-semibold border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/25 transition-colors whitespace-nowrap"
+            title="View in Dashboard"
+          >
+            DASH ↗
+          </Link>
         </div>
       ))}
     </div>
@@ -344,9 +359,10 @@ const TRACE_TOUR_STEPS: TourStep[] = [
 
 function Trace() {
   const { frames, clearTrace } = useTraceBuffer(50);
+  const [searchParams] = useSearchParams();
   const [paused, setPaused] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("scroll");
-  const [filter, setFilter] = useState("");
+  const [filter, setFilter] = useState(() => searchParams.get("filter") || "");
   const [autoScroll, setAutoScroll] = useState(true);
 
   // Tour state
@@ -514,6 +530,7 @@ function Trace() {
           <span className="w-10 shrink-0 px-2 text-center">DLC</span>
           <span className="w-56 shrink-0 px-2">Data</span>
           <span className="flex-1 px-2">Message</span>
+          <span className="w-16 shrink-0 px-2"></span>
         </div>
       ) : (
         <div
@@ -527,6 +544,7 @@ function Trace() {
           <span className="w-10 shrink-0 px-1 text-center">Dir</span>
           <span className="w-20 shrink-0 px-2 text-right">Count</span>
           <span className="w-56 shrink-0 px-2">Latest Data</span>
+          <span className="w-16 shrink-0 px-2"></span>
         </div>
       )}
 
