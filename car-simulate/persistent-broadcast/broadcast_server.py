@@ -27,6 +27,18 @@ ENABLE_ACCU = os.getenv('ENABLE_ACCU', 'true').lower() == 'true'
 # Global set to track connected clients
 connected_clients: Set[WebSocketServerProtocol] = set()
 
+# Page locks: page_name -> {"holder": client_id, "ws": websocket, "name": display_name}
+_page_locks: dict[str, dict] = {}
+
+# Map websocket -> client_id (assigned on connect)
+_client_ids: dict = {}
+
+# Monotonic counter for client IDs
+_next_client_id = 0
+
+# Allowed page names for locking
+_LOCKABLE_PAGES = {"can-transmitter", "throttle-mapper"}
+
 # ============================================================================
 # Accumulator Simulation Parameters
 # ============================================================================
@@ -386,20 +398,143 @@ def load_can_data(file_path: str) -> List[dict]:
     return data
 
 
+async def _broadcast_page_lock_state():
+    """Send current page lock state to all connected clients."""
+    locks = {}
+    for page, info in _page_locks.items():
+        locks[page] = {"holder": info["holder"], "name": info["name"]}
+
+    payload = json.dumps({"type": "page_lock_state", "locks": locks})
+    if connected_clients:
+        await asyncio.gather(
+            *[c.send(payload) for c in connected_clients],
+            return_exceptions=True,
+        )
+
+
+async def _handle_page_lock(websocket, msg: dict):
+    """Handle page_lock messages: acquire, release, query."""
+    action = msg.get("action")
+    page = msg.get("page")
+    client_id = _client_ids.get(websocket)
+
+    if action == "query":
+        locks = {}
+        for p, info in _page_locks.items():
+            locks[p] = {"holder": info["holder"], "name": info["name"]}
+        await websocket.send(json.dumps({
+            "type": "page_lock_state",
+            "locks": locks,
+            "clientId": client_id,
+        }))
+        return
+
+    if not page or page not in _LOCKABLE_PAGES:
+        await websocket.send(json.dumps({
+            "type": "error",
+            "code": "INVALID_PAGE",
+            "message": f"Invalid page. Must be one of: {', '.join(sorted(_LOCKABLE_PAGES))}",
+        }))
+        return
+
+    if action == "acquire":
+        display_name = msg.get("name", "")
+        if not isinstance(display_name, str):
+            display_name = ""
+        display_name = display_name[:50]
+
+        current = _page_locks.get(page)
+        if current and current["holder"] != client_id:
+            await websocket.send(json.dumps({
+                "type": "page_lock_result",
+                "page": page,
+                "success": False,
+                "holder": current["holder"],
+                "name": current["name"],
+            }))
+            return
+
+        _page_locks[page] = {
+            "holder": client_id,
+            "ws": websocket,
+            "name": display_name,
+        }
+        print(f"Page lock acquired: {page} by {client_id} ({display_name})")
+
+        await websocket.send(json.dumps({
+            "type": "page_lock_result",
+            "page": page,
+            "success": True,
+        }))
+        await _broadcast_page_lock_state()
+
+    elif action == "release":
+        current = _page_locks.get(page)
+        if current and current["holder"] == client_id:
+            del _page_locks[page]
+            print(f"Page lock released: {page} by {client_id}")
+            await _broadcast_page_lock_state()
+
+    else:
+        await websocket.send(json.dumps({
+            "type": "error",
+            "code": "INVALID_ACTION",
+            "message": "page_lock action must be 'acquire', 'release', or 'query'",
+        }))
+
+
+def _release_client_locks(websocket):
+    """Release all page locks held by a disconnecting client."""
+    to_remove = [page for page, info in _page_locks.items() if info["ws"] is websocket]
+    for page in to_remove:
+        del _page_locks[page]
+        print(f"Page lock auto-released: {page} (client disconnected)")
+
+
+async def _handle_client_message(websocket, raw: str):
+    """Process an inbound message from a WebSocket client."""
+    try:
+        msg = json.loads(raw)
+    except json.JSONDecodeError:
+        return
+
+    if not isinstance(msg, dict):
+        return
+
+    msg_type = msg.get("type")
+
+    if msg_type == "ping":
+        await websocket.send(json.dumps({
+            "type": "pong",
+            "timestamp": msg.get("timestamp"),
+            "serverTime": int(time.time() * 1000),
+        }))
+    elif msg_type == "page_lock":
+        await _handle_page_lock(websocket, msg)
+
+
 async def handle_client(websocket: WebSocketServerProtocol):
+    global _next_client_id
     connected_clients.add(websocket)
     client_info = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-    print(f"Client connected: {client_info} (Total: {len(connected_clients)})")
+    client_id = f"client_{_next_client_id}"
+    _next_client_id += 1
+    _client_ids[websocket] = client_id
+    print(f"Client connected: {client_info} ({client_id}) (Total: {len(connected_clients)})")
     
     try:
         async for message in websocket:
-            print(f"Received from {client_info}: {message[:100]}")
+            await _handle_client_message(websocket, message)
     except websockets.exceptions.ConnectionClosed:
-        # Connection closed by client; ignore and proceed to cleanup in finally block
         print(f"Connection closed by client: {client_info}")
     finally:
         connected_clients.discard(websocket)
-        print(f"Client disconnected: {client_info} (Total: {len(connected_clients)})")
+        had_locks = any(info["ws"] is websocket for info in _page_locks.values())
+        _release_client_locks(websocket)
+        _client_ids.pop(websocket, None)
+        print(f"Client disconnected: {client_info} ({client_id}) (Total: {len(connected_clients)})")
+        if had_locks:
+            await _broadcast_page_lock_state()
 
 
 async def broadcast_data(can_data: List[dict], accu_sim: AccumulatorSimulator):
