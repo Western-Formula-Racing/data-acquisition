@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useSearchParams } from "react-router";
 import DataCard from "../components/DataCard";
 import DataRow from "../components/DataRow";
 import PlotManager from "../components/PlotManager";
@@ -61,6 +62,10 @@ const TOUR_STEPS: TourStep[] = [
 function Dashboard() {
   // Sorting and View State
   // =====================================================================
+  const [searchParams] = useSearchParams();
+  const highlightMsgID = searchParams.get("msgID");
+  const shouldExpand = searchParams.get("expand") === "true";
+
   const [sortingMethod, setSortingMethod] = useState("name");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [tickUpdate, setTickUpdate] = useState(Date.now());
@@ -561,6 +566,7 @@ function Dashboard() {
               <div className="block">
                 <div className="columns-2 gap-4">
                   {filteredMsgs.map(([canId, sample]) => {
+                    const isUnknown = sample.messageName.startsWith("Unknown_CAN_");
                     const data = Object.entries(sample.data).map(
                       ([key, value]) => ({
                         [key]: `${value.sensorReading} ${value.unit}`,
@@ -578,7 +584,7 @@ function Dashboard() {
                               ? data
                               : [
                                 {
-                                  "No Data": "Waiting for messages...",
+                                  "No Data": isUnknown ? "not defined in DBC" : "Waiting for messages...",
                                 },
                               ]
                           }
@@ -644,6 +650,7 @@ function Dashboard() {
                 {/* Rows */}
 
                 {filteredMsgs.map(([canId, sample], i) => {
+                  const isUnknown = sample.messageName.startsWith("Unknown_CAN_");
                   const data = Object.entries(sample.data).map(
                     ([key, value]) => ({
                       [key]: `${value.sensorReading} ${value.unit}`,
@@ -683,7 +690,7 @@ function Dashboard() {
                           ? data
                           : [
                             {
-                              "No Data": "Waiting for messages...",
+                              "No Data": isUnknown ? "not defined in DBC" : "Waiting for messages...",
                             },
                           ]
                       }
@@ -694,7 +701,8 @@ function Dashboard() {
                       onTraceClick={handleTraceClick}
                       isTourRow={tourOpen && isTarget}
                       tourSignal={tourSignalName}
-                      initialOpen={tourOpen && isTarget}
+                      initialOpen={(tourOpen && isTarget) || (shouldExpand && canId === highlightMsgID)}
+                      isHighlighted={canId === highlightMsgID}
                     />
                   );
                 })}
@@ -708,8 +716,8 @@ function Dashboard() {
       <div
         id="dash-plot-sidebar"
         className={`md:col-span-1 bg-sidebar overflow-hidden flex flex-col transition-all duration-300 ${plotPanelOpen
-            ? 'flex-1 md:h-full p-4'
-            : `fixed ${showPerfOverlay ? 'bottom-8' : 'bottom-0'} left-0 right-0 h-12 z-20 md:relative md:h-full md:p-4`
+          ? 'flex-1 md:h-full p-4'
+          : `fixed ${showPerfOverlay ? 'bottom-8' : 'bottom-0'} left-0 right-0 h-12 z-20 md:relative md:h-full md:p-4`
           } ${desktopPanelOpen ? '' : 'md:hidden'}`}
       >
         {/* Desktop collapse button - hidden on mobile */}

@@ -1,11 +1,14 @@
 import { useState, useMemo } from "react";
 import { Search, Zap, Send, Info } from "lucide-react";
 import { packMessage } from "../utils/packMessage";
+import { usePageLock } from "../lib/usePageLock";
+import { PageLockBanner } from "../components/PageLockBanner";
 // Assuming you have a hook or utility to get your DBC messages
 import localDbc from "../assets/dbc.dbc?raw";
 import { Dbc } from "candied";
 
 const DataTransmitter = () => {
+  const lock = usePageLock('can-transmitter');
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedMsgId, setSelectedMsgId] = useState<number | null>(null);
   const [signalValues, setSignalValues] = useState<Record<string, number>>({});
@@ -39,7 +42,10 @@ const DataTransmitter = () => {
   }, [selectedMsgId, signalValues]);
 
   return (
-    <div className="relative flex h-full gap-6 p-6 text-white overflow-hidden">
+    <div className="relative flex flex-col h-full gap-6 p-6 text-white overflow-hidden">
+      <PageLockBanner lock={lock} />
+
+      <div className="flex flex-1 gap-6 overflow-hidden">
 
       {/* --- LEFT COLUMN: Floating Sidebar --- */}
       <div className="w-80 flex flex-col gap-4 bg-slate-900/50 rounded-2xl border border-blue-500/20 p-4 backdrop-blur-md shadow-2xl">
@@ -168,7 +174,14 @@ const DataTransmitter = () => {
                 />
                 <span className="text-[10px] text-slate-600 pr-2 font-bold">MS</span>
               </div>
-              <button className="h-12 px-10 bg-blue-600 hover:bg-blue-500 text-white font-bold !rounded-2xl shadow-lg flex items-center gap-3 transition-all">
+              <button
+                disabled={lock.isLockedByOther}
+                className={`h-12 px-10 font-bold !rounded-2xl shadow-lg flex items-center gap-3 transition-all ${
+                  lock.isLockedByOther
+                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-500 text-white'
+                }`}
+              >
                 <Send className="w-4 h-4" /> TRANSMIT
               </button>
             </div>
@@ -179,6 +192,7 @@ const DataTransmitter = () => {
             <p className="text-lg italic">Select a message from the sidebar to begin</p>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

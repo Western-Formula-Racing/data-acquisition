@@ -68,6 +68,9 @@ export class SerialService {
             this.isConnected = true;
             if (this.onConnectionChange) this.onConnectionChange(true);
 
+            // Apply orange theme for local CAN mode
+            document.body.classList.add("theme-local-can");
+
             console.log('Serial port opened');
 
             // Initialize the CAN interface via slcan protocol
@@ -149,6 +152,9 @@ export class SerialService {
                 await this.port.close();
                 this.port = null;
             }
+
+            // Revert orange theme
+            document.body.classList.remove("theme-local-can");
 
             console.log('Serial port disconnected');
             if (this.onConnectionChange) this.onConnectionChange(false);

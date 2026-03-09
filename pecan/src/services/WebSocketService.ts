@@ -9,6 +9,8 @@ export const DIAG_MSG_IDS = {
   LINK_RADIO: '__link_radio__',
 } as const;
 
+export type MessageHandler = (data: any) => void;
+
 export class WebSocketService {
   private ws: WebSocket | null = null;
   private processor: any = null;
@@ -16,6 +18,7 @@ export class WebSocketService {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 2000; // Start with 2 seconds
   private messageCount = 0; // Track message count for logging
+  private messageListeners = new Map<string, Set<MessageHandler>>();
 
   async initialize() {
     // Initialize CAN processor
@@ -69,6 +72,11 @@ export class WebSocketService {
         console.log('WebSocket connected');
         this.reconnectAttempts = 0; // Reset reconnect counter on successful connection
         this.messageCount = 0; // Reset message count on new connection
+        // Notify listeners waiting for connection (e.g. page lock query)
+        const connectListeners = this.messageListeners.get('__connect__');
+        if (connectListeners) {
+          connectListeners.forEach(handler => handler({}));
+        }
       };
 
       this.ws.onmessage = (event) => {
@@ -79,6 +87,14 @@ export class WebSocketService {
           }
 
           const messageData = JSON.parse(event.data);
+
+          // Dispatch to typed message listeners
+          if (messageData && typeof messageData === 'object' && messageData.type) {
+            const listeners = this.messageListeners.get(messageData.type);
+            if (listeners) {
+              listeners.forEach(handler => handler(messageData));
+            }
+          }
 
           // Intercept diagnostic messages BEFORE the CAN processor
           if (this.handleDiagnosticMessage(messageData)) {
@@ -218,6 +234,23 @@ export class WebSocketService {
     }
 
     return false;
+  }
+
+  send(data: Record<string, unknown>) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data));
+    }
+  }
+
+  on(type: string, handler: MessageHandler) {
+    if (!this.messageListeners.has(type)) {
+      this.messageListeners.set(type, new Set());
+    }
+    this.messageListeners.get(type)!.add(handler);
+  }
+
+  off(type: string, handler: MessageHandler) {
+    this.messageListeners.get(type)?.delete(handler);
   }
 
   disconnect() {

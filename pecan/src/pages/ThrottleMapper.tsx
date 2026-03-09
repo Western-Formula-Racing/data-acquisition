@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createCanProcessor } from "../utils/canProcessor";
 import { packMessage } from "../utils/packMessage";
 import { dataStore } from "../lib/DataStore";
+import { usePageLock } from "../lib/usePageLock";
+import { PageLockBanner } from "../components/PageLockBanner";
 
 import {
     Settings, Activity, Zap, AlertTriangle, Save, 
@@ -80,6 +82,8 @@ const parseCanId = (canId: string): number => {
 };
 
 const Throttle_Mapper: React.FC = () => {
+    const lock = usePageLock('throttle-mapper');
+
     // Canvas ref
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -356,6 +360,8 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                 </div>
 
                 <hr className="h-1 bg-option border-0 rounded-sm mb-4 opacity-100"/>
+
+                <PageLockBanner lock={lock} />
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                     {/* LEFT COLUMN */}
@@ -660,7 +666,12 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                                         </label>
                                         <button 
                                             onClick={() => setShowConfirm(true)}
-                                            className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-bold !rounded-xl shadow-[0_8px_20px_-4px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-3 group"
+                                            disabled={lock.isLockedByOther}
+                                            className={`w-full h-12 font-bold !rounded-xl transition-all flex items-center justify-center gap-3 group ${
+                                                lock.isLockedByOther
+                                                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                                                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow-[0_8px_20px_-4px_rgba(37,99,235,0.4)]'
+                                            }`}
                                         >
                                             <Send className="w-4 h-4 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
                                             Transmit Command

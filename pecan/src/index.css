@@ -33,8 +33,25 @@
     --font-footer: "Days One", sans-serif;
 }
 
+/* Local CAN Mode Mid-Blue Theme */
+body.theme-local-can {
+    --color-background: #0c0e11;
+
+    --color-sidebar: #171c26;
+    --color-sidebarfg: #8aa1c9;
+    --color-option: #1e2636;
+    --color-option-select: #2d3b52;
+
+    --color-data-module-bg: #1e2636;
+    --color-dropdown-menu-bg: #8aa1c9;
+    --color-dropdown-menu-secondary: #627ba8;
+    --color-data-textbox-bg: #2d3b52;
+    --color-banner-button: #2d3b52;
+    --color-banner-button-hover: #3d4e6d;
+}
+
 body {
-    background-color: #0d0c11;
+    background-color: var(--color-background);
 }
 
 p {
@@ -107,6 +124,20 @@ p {
 
     .animate-warning-pulse {
         animation: warning-pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes flash-highlight {
+        0% {
+            background-color: rgba(34, 211, 238, 0.4);
+        }
+
+        100% {
+            background-color: transparent;
+        }
+    }
+
+    .animate-flash-highlight {
+        animation: flash-highlight 2s ease-out forwards;
     }
 }
 

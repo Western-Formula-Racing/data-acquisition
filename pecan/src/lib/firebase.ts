@@ -45,6 +45,7 @@ export interface UserConfig {
         sortingMethod?: string;
         monitorPresets?: MonitorPreset[];
         activeMonitorPreset?: string | null;
+        categoryConfig?: string;
     };
     updated_at: string;
 }

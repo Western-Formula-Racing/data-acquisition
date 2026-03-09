@@ -217,9 +217,8 @@ function VirtualList({ rows, autoScroll, onScrollUp, maxRows }: VirtualListProps
               </span>
               {/* Dir */}
               <span
-                className={`w-10 shrink-0 px-1 text-center uppercase text-[10px] font-bold tracking-widest ${
-                  f.direction === "tx" ? "text-amber-400" : "text-emerald-400"
-                }`}
+                className={`w-10 shrink-0 px-1 text-center uppercase text-[10px] font-bold tracking-widest ${f.direction === "tx" ? "text-amber-400" : "text-emerald-400"
+                  }`}
               >
                 {f.direction ?? "rx"}
               </span>
@@ -236,7 +235,7 @@ function VirtualList({ rows, autoScroll, onScrollUp, maxRows }: VirtualListProps
                 {f.messageName}
               </span>              {/* Dashboard link */}
               <Link
-                to="/dashboard"
+                to={`/dashboard?msgID=${f.msgID}&expand=true`}
                 className="shrink-0 mr-2 px-2 py-0.5 rounded text-[10px] font-mono font-semibold border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/25 transition-colors whitespace-nowrap"
                 title="View in Dashboard"
               >
@@ -282,9 +281,8 @@ function FixedTable({ rows }: FixedTableProps) {
           </span>
           {/* Dir */}
           <span
-            className={`w-10 shrink-0 px-1 text-center uppercase text-[10px] font-bold tracking-widest ${
-              sample.direction === "tx" ? "text-amber-400" : "text-emerald-400"
-            }`}
+            className={`w-10 shrink-0 px-1 text-center uppercase text-[10px] font-bold tracking-widest ${sample.direction === "tx" ? "text-amber-400" : "text-emerald-400"
+              }`}
           >
             {sample.direction ?? "rx"}
           </span>
@@ -298,7 +296,7 @@ function FixedTable({ rows }: FixedTableProps) {
           </span>
           {/* Dashboard link */}
           <Link
-            to="/dashboard"
+            to={`/dashboard?msgID=${sample.msgID}&expand=true`}
             className="shrink-0 mr-2 px-2 py-0.5 rounded text-[10px] font-mono font-semibold border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/25 transition-colors whitespace-nowrap"
             title="View in Dashboard"
           >
@@ -439,11 +437,10 @@ function Trace() {
         <button
           id="trace-pause-main"
           onClick={handlePause}
-          className={`px-3 py-1 rounded text-xs font-mono font-semibold border transition-colors ${
-            paused
+          className={`px-3 py-1 rounded text-xs font-mono font-semibold border transition-colors ${paused
               ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30"
               : "bg-yellow-500/20 border-yellow-500/50 text-yellow-300 hover:bg-yellow-500/30"
-          }`}
+            }`}
         >
           {paused ? "▶ RESUME" : "⏸ PAUSE"}
         </button>
@@ -463,21 +460,19 @@ function Trace() {
         >
           <button
             onClick={() => setViewMode("scroll")}
-            className={`px-3 py-1 text-xs font-mono transition-colors ${
-              viewMode === "scroll"
+            className={`px-3 py-1 text-xs font-mono transition-colors ${viewMode === "scroll"
                 ? "bg-purple-600/40 text-purple-200"
                 : "bg-white/5 text-slate-400 hover:bg-white/10"
-            }`}
+              }`}
           >
             SCROLL
           </button>
           <button
             onClick={() => setViewMode("fixed")}
-            className={`px-3 py-1 text-xs font-mono transition-colors ${
-              viewMode === "fixed"
+            className={`px-3 py-1 text-xs font-mono transition-colors ${viewMode === "fixed"
                 ? "bg-purple-600/40 text-purple-200"
                 : "bg-white/5 text-slate-400 hover:bg-white/10"
-            }`}
+              }`}
           >
             FIXED
           </button>
@@ -579,11 +574,10 @@ function Trace() {
         {viewMode === "scroll" && !paused && (
           <button
             onClick={() => setAutoScroll(true)}
-            className={`transition-colors ${
-              autoScroll
+            className={`transition-colors ${autoScroll
                 ? "text-emerald-600"
                 : "text-yellow-500 hover:text-yellow-400"
-            }`}
+              }`}
           >
             {autoScroll ? "● Auto-scroll ON" : "↓ Click to resume auto-scroll"}
           </button>
