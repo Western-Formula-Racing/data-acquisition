@@ -38,17 +38,24 @@ export function usePageLock(page: string, displayName?: string): PageLockState {
   }, [displayName]);
 
   useEffect(() => {
+    const query = () => {
+      webSocketService.send({ type: 'page_lock', action: 'query' });
+    };
+
     const handleLockState = (msg: any) => {
       if (msg.locks) {
         setLocks(msg.locks);
       }
       if (msg.clientId) {
-        setClientId(msg.clientId);
+        setClientId(id => id ?? msg.clientId);
       }
     };
 
     const handleLockResult = (msg: any) => {
-      // If acquire failed we'll get the updated state via broadcast anyway
+      // Grab our clientId from the first successful result (acquire/query response)
+      if (msg.clientId) {
+        setClientId(id => id ?? msg.clientId);
+      }
       if (!msg.success) {
         console.warn(`[PageLock] Lock denied for ${msg.page} — held by ${msg.name || msg.holder}`);
       }
@@ -56,13 +63,18 @@ export function usePageLock(page: string, displayName?: string): PageLockState {
 
     webSocketService.on('page_lock_state', handleLockState);
     webSocketService.on('page_lock_result', handleLockResult);
+    // Re-query whenever the WebSocket (re)connects — this is how we get our clientId
+    webSocketService.on('__connect__', query);
 
-    // Query current state on mount
-    webSocketService.send({ type: 'page_lock', action: 'query' });
+    // Query now if already connected, otherwise the __connect__ handler above will fire
+    if (webSocketService.isConnected()) {
+      query();
+    }
 
     return () => {
       webSocketService.off('page_lock_state', handleLockState);
       webSocketService.off('page_lock_result', handleLockResult);
+      webSocketService.off('__connect__', query);
     };
   }, []);
 

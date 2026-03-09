@@ -72,6 +72,11 @@ export class WebSocketService {
         console.log('WebSocket connected');
         this.reconnectAttempts = 0; // Reset reconnect counter on successful connection
         this.messageCount = 0; // Reset message count on new connection
+        // Notify listeners waiting for connection (e.g. page lock query)
+        const connectListeners = this.messageListeners.get('__connect__');
+        if (connectListeners) {
+          connectListeners.forEach(handler => handler({}));
+        }
       };
 
       this.ws.onmessage = (event) => {

@@ -192,6 +192,7 @@ async def _handle_page_lock(websocket, msg: dict):
             "type": "page_lock_result",
             "page": page,
             "success": True,
+            "clientId": client_id,
         }))
         await _broadcast_page_lock_state()
 
