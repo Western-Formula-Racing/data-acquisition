@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { determineCategory, getCategoryColor } from "../config/categories";
+import { useIntersectionObserver } from "../utils/useIntersectionObserver";
 
 const CAN_STD_MAX = 0x7FF;
 
@@ -37,11 +38,14 @@ interface DataRowProps {
 export default function DataRow({ msgID, name, category, data, rawData, lastUpdated, index, initialOpen = false, isTourRow = false, tourSignal, onSignalClick }: Readonly<DataRowProps>) {
 
     const [currentTime, setCurrentTime] = useState(Date.now());
+    const [ref, isIntersecting] = useIntersectionObserver('200px'); // Pre-load slightly offscreen
 
     useEffect(() => {
+        if (!isIntersecting) return;
+
         const interval = setInterval(() => setCurrentTime(Date.now()), 100);
         return () => clearInterval(interval);
-    }, []);
+    }, [isIntersecting]);
 
     const timeDiff = lastUpdated ? currentTime - lastUpdated : 0;
 
@@ -78,7 +82,7 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
     const toggle = () => setOpen((v) => !v);
 
     return (
-        <div className="w-full">
+        <div className="w-full" ref={ref}>
             <div
                 role="button"
                 tabIndex={0}
