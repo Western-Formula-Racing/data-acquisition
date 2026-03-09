@@ -10,6 +10,7 @@ import ReactFlow, {
   Position,
   ConnectionMode,
   useReactFlow,
+  useEdges,
   type Connection,
   type Edge,
   type NodeTypes,
@@ -19,16 +20,25 @@ import 'reactflow/dist/style.css';
 import { useSignal, useAllSignals } from '../lib/useDataStore';
 import { useRemoteConfig } from '../lib/useRemoteConfig';
 import type { MonitorPreset } from '../lib/firebase';
+import { DataFlowProvider, useDataFlow } from '../context/DataFlowContext';
+import { Plus, Minus, X, Divide, Sigma, Activity, Sliders, Cpu } from 'lucide-react';
 
 // Custom Node Component
 const SensorNode = ({ id, data }: { id: string; data: { msgID: string; signalName: string } }) => {
   const { setNodes } = useReactFlow();
+  const { updateNodeValue } = useDataFlow();
   const signalData = useSignal(data.msgID, data.signalName);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
+    if (signalData) {
+      updateNodeValue(id, signalData.sensorReading);
+    }
+  }, [id, signalData, updateNodeValue]);
+
+  useEffect(() => {
     if (showDeleteConfirm) {
-      const timer = setTimeout(() => setShowDeleteConfirm(false), 3000);
+      const timer = setTimeout(() => setShowDeleteConfirm(false), 1500);
       return () => clearTimeout(timer);
     }
   }, [showDeleteConfirm]);
@@ -47,10 +57,10 @@ const SensorNode = ({ id, data }: { id: string; data: { msgID: string; signalNam
       className={`relative p-4 rounded-md shadow-lg border text-white min-w-[180px] max-w-[250px] transition-all duration-300 cursor-pointer ${showDeleteConfirm ? 'bg-red-900/80 border-red-500 scale-105' : 'bg-data-module-bg border-gray-600'}`}
       onClick={handleNodeClick}
     >
-      <Handle type="source" position={Position.Top} id="top" className="!bg-white w-4 h-4" />
-      <Handle type="source" position={Position.Right} id="right" className="!bg-white w-4 h-4" />
-      <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-white w-4 h-4" />
-      <Handle type="source" position={Position.Left} id="left" className="!bg-white w-4 h-4" />
+      <Handle type="source" position={Position.Top} id="top" className="!bg-blue-500 w-4 h-4 border-2 border-white" />
+      <Handle type="source" position={Position.Right} id="right" className="!bg-blue-500 w-4 h-4 border-2 border-white" />
+      <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-blue-500 w-4 h-4 border-2 border-white" />
+      <Handle type="source" position={Position.Left} id="left" className="!bg-blue-500 w-4 h-4 border-2 border-white" />
 
       {showDeleteConfirm && (
         <div className="absolute inset-0 flex items-center justify-center bg-red-600/20 rounded-md z-20 pointer-events-none">
@@ -74,7 +84,7 @@ const RangeNode = ({ id, data }: { id: string, data: { msgID: string; signalName
 
   useEffect(() => {
     if (showDeleteConfirm) {
-      const timer = setTimeout(() => setShowDeleteConfirm(false), 3000);
+      const timer = setTimeout(() => setShowDeleteConfirm(false), 1500);
       return () => clearTimeout(timer);
     }
   }, [showDeleteConfirm]);
@@ -156,9 +166,313 @@ const RangeNode = ({ id, data }: { id: string, data: { msgID: string; signalName
   );
 };
 
+const MathNode = ({ id, data }: { id: string; data: { operation: string } }) => {
+  const { setNodes } = useReactFlow();
+  const edges = useEdges();
+  const { getNodeValue, updateNodeValue } = useDataFlow();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Find source nodes connected to this node
+  const inputA_Edge = edges.find((e) => e.target === id && e.targetHandle === 'a');
+  const inputB_Edge = edges.find((e) => e.target === id && e.targetHandle === 'b');
+
+  const valA = inputA_Edge ? getNodeValue(inputA_Edge.source) : undefined;
+  const valB = inputB_Edge ? getNodeValue(inputB_Edge.source) : undefined;
+
+  let result = 0;
+  const op = data.operation || 'sum';
+
+  if (valA !== undefined && valB !== undefined) {
+    if (op === 'sum') result = valA + valB;
+    else if (op === 'sub') result = valA - valB;
+    else if (op === 'mul') result = valA * valB;
+    else if (op === 'div') result = valB !== 0 ? valA / valB : 0;
+  } else if (valA !== undefined) {
+    result = valA;
+  }
+
+  useEffect(() => {
+    updateNodeValue(id, result);
+  }, [id, result, updateNodeValue]);
+
+  useEffect(() => {
+    if (showDeleteConfirm) {
+      const timer = setTimeout(() => setShowDeleteConfirm(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [showDeleteConfirm]);
+
+  const updateOp = (op: string) => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === id) {
+          return { ...node, data: { ...node.data, operation: op } };
+        }
+        return node;
+      })
+    );
+  };
+
+  const handleNodeClick = (e: React.MouseEvent | React.TouchEvent) => {
+    // If clicking a button, don't trigger deletion logic
+    if ((e.target as HTMLElement).tagName === 'BUTTON' || (e.target as HTMLElement).closest('button')) return;
+
+    e.stopPropagation();
+    if (showDeleteConfirm) {
+      setNodes((nodes) => nodes.filter((node) => node.id !== id));
+    } else {
+      setShowDeleteConfirm(true);
+    }
+  };
+
+  return (
+    <div
+      className={`relative p-4 rounded-md shadow-lg border text-white min-w-[180px] transition-all duration-300 cursor-pointer ${showDeleteConfirm ? 'bg-red-900/80 border-red-500 scale-105' : 'bg-gray-800 border-gray-600'}`}
+      onClick={handleNodeClick}
+    >
+      {showDeleteConfirm && (
+        <div className="absolute inset-0 flex items-center justify-center bg-red-600/20 rounded-md z-20 pointer-events-none text-center">
+          <span className="text-[10px] font-bold uppercase tracking-tighter text-white drop-shadow-md px-2">Tap again to delete</span>
+        </div>
+      )}
+
+      <Handle type="target" position={Position.Left} id="a" style={{ top: '30%' }} className="!bg-blue-400 w-3 h-3" />
+      <div className="absolute left-[-20px] top-[22%] text-[8px] text-gray-400">A</div>
+
+      <Handle type="target" position={Position.Left} id="b" style={{ top: '70%' }} className="!bg-blue-400 w-3 h-3" />
+      <div className="absolute left-[-20px] top-[62%] text-[8px] text-gray-400">B</div>
+
+      <Handle type="source" position={Position.Right} id="output" className="!bg-green-500 w-4 h-4 border-2 border-white" />
+
+      <div className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider flex items-center gap-1">
+        <Sigma size={12} /> Math Block
+      </div>
+
+      <div className="flex gap-1 mb-3">
+        <button onClick={() => updateOp('sum')} className={`p-1 rounded ${op === 'sum' ? 'bg-blue-600' : 'bg-gray-700'}`} title="Add"><Plus size={14} /></button>
+        <button onClick={() => updateOp('sub')} className={`p-1 rounded ${op === 'sub' ? 'bg-blue-600' : 'bg-gray-700'}`} title="Subtract"><Minus size={14} /></button>
+        <button onClick={() => updateOp('mul')} className={`p-1 rounded ${op === 'mul' ? 'bg-blue-600' : 'bg-gray-700'}`} title="Multiply"><X size={14} /></button>
+        <button onClick={() => updateOp('div')} className={`p-1 rounded ${op === 'div' ? 'bg-blue-600' : 'bg-gray-700'}`} title="Divide"><Divide size={14} /></button>
+      </div>
+
+      <div className="text-2xl font-mono font-bold text-blue-400">
+        {result.toFixed(2)}
+      </div>
+    </div>
+  );
+};
+
+const AverageNode = ({ id, data }: { id: string; data: { windowSize?: string } }) => {
+  const { setNodes } = useReactFlow();
+  const edges = useEdges();
+  const { getNodeValue, updateNodeValue } = useDataFlow();
+  const [history, setHistory] = useState<number[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const windowSize = data.windowSize ? parseInt(data.windowSize) : 10;
+  const inputEdge = edges.find((e) => e.target === id);
+  const currentVal = inputEdge ? getNodeValue(inputEdge.source) : undefined;
+
+  useEffect(() => {
+    if (currentVal !== undefined) {
+      setHistory((prev) => {
+        const next = [...prev, currentVal].slice(-windowSize);
+        return next;
+      });
+    }
+  }, [currentVal, windowSize]);
+
+  const avg = history.length > 0 ? history.reduce((a, b) => a + b, 0) / history.length : 0;
+
+  useEffect(() => {
+    updateNodeValue(id, avg);
+  }, [id, avg, updateNodeValue]);
+
+  useEffect(() => {
+    if (showDeleteConfirm) {
+      const timer = setTimeout(() => setShowDeleteConfirm(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [showDeleteConfirm]);
+
+  const updateWindow = (val: string) => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === id) {
+          return { ...node, data: { ...node.data, windowSize: val } };
+        }
+        return node;
+      })
+    );
+  };
+
+  const handleNodeClick = (e: React.MouseEvent | React.TouchEvent) => {
+    // If clicking input, don't trigger deletion logic
+    if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).closest('input')) return;
+
+    e.stopPropagation();
+    if (showDeleteConfirm) {
+      setNodes((nodes) => nodes.filter((node) => node.id !== id));
+    } else {
+      setShowDeleteConfirm(true);
+    }
+  };
+
+  return (
+    <div
+      className={`relative p-4 rounded-md shadow-lg border text-white min-w-[180px] transition-all duration-300 cursor-pointer ${showDeleteConfirm ? 'bg-red-900/80 border-red-500 scale-105' : 'bg-gray-800 border-gray-600'}`}
+      onClick={handleNodeClick}
+    >
+      {showDeleteConfirm && (
+        <div className="absolute inset-0 flex items-center justify-center bg-red-600/20 rounded-md z-20 pointer-events-none text-center">
+          <span className="text-[10px] font-bold uppercase tracking-tighter text-white drop-shadow-md px-2">Tap again to delete</span>
+        </div>
+      )}
+
+      <Handle type="target" position={Position.Left} className="!bg-blue-400 w-3 h-3" />
+      <Handle type="source" position={Position.Right} className="!bg-green-500 w-4 h-4 border-2 border-white" />
+
+      <div className="text-xs font-bold text-gray-400 mb-2 uppercase tracking-wider flex items-center gap-1">
+        <Activity size={12} /> Moving Average
+      </div>
+
+      <div className="flex flex-col mb-3">
+        <label className="text-[10px] text-gray-500">Samples Window</label>
+        <input
+          type="number"
+          className="bg-black/40 border border-gray-700 rounded px-2 py-1 text-xs nodrag text-white"
+          value={data.windowSize || '10'}
+          onChange={(e) => updateWindow(e.target.value)}
+        />
+      </div>
+
+      <div className="text-2xl font-mono font-bold text-purple-400">
+        {avg.toFixed(2)}
+      </div>
+      <div className="text-[10px] text-gray-500 mt-1">
+        Buffering: {history.length}/{windowSize}
+      </div>
+    </div>
+  );
+};
+
+const AdvancedMathNode = ({ id, data }: { id: string; data: { expression?: string } }) => {
+  const { setNodes } = useReactFlow();
+  const edges = useEdges();
+  const { getNodeValue, updateNodeValue } = useDataFlow();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const expression = data.expression || 'A + B';
+  const inputs = ['a', 'b', 'c', 'd'].map(h => {
+    const edge = edges.find(e => e.target === id && e.targetHandle === h);
+    return edge ? getNodeValue(edge.source) || 0 : 0;
+  });
+
+  const [A, B, C, D] = inputs;
+  let result = 0;
+  let error = null;
+
+  try {
+    // Basic Sandboxing: Shadow global objects to prevent accidental or malicious access
+    // eslint-disable-next-line no-new-func
+    const fn = new Function('A', 'B', 'C', 'D', 'window', 'document', 'location', 'fetch', 'localStorage', 'sessionStorage', `
+      "use strict";
+      return ${expression};
+    `);
+    // Pass null for global objects
+    result = fn(A, B, C, D, null, null, null, null, null, null);
+    if (typeof result !== 'number' || isNaN(result)) result = 0;
+  } catch (e: any) {
+    error = e.message;
+  }
+
+  useEffect(() => {
+    updateNodeValue(id, result);
+  }, [id, result, updateNodeValue]);
+
+  useEffect(() => {
+    if (showDeleteConfirm) {
+      const timer = setTimeout(() => setShowDeleteConfirm(false), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [showDeleteConfirm]);
+
+  const updateExpression = (val: string) => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === id) {
+          return { ...node, data: { ...node.data, expression: val } };
+        }
+        return node;
+      })
+    );
+  };
+
+  const handleNodeClick = (e: React.MouseEvent | React.TouchEvent) => {
+    if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).closest('input')) return;
+    e.stopPropagation();
+    if (showDeleteConfirm) {
+      setNodes((nodes) => nodes.filter((node) => node.id !== id));
+    } else {
+      setShowDeleteConfirm(true);
+    }
+  };
+
+  return (
+    <div
+      className={`relative p-4 rounded-md shadow-lg border text-white min-w-[220px] transition-all duration-300 cursor-pointer ${showDeleteConfirm ? 'bg-red-900/80 border-red-500 scale-105' : 'bg-gray-800 border-indigo-600 shadow-indigo-500/20'}`}
+      onClick={handleNodeClick}
+    >
+      {showDeleteConfirm && (
+        <div className="absolute inset-0 flex items-center justify-center bg-red-600/20 rounded-md z-20 pointer-events-none text-center">
+          <span className="text-[10px] font-bold uppercase tracking-tighter text-white drop-shadow-md px-2">Tap again to delete</span>
+        </div>
+      )}
+
+      {/* Inputs A, B, C, D */}
+      <Handle type="target" position={Position.Left} id="a" style={{ top: '20%' }} className="!bg-blue-400 w-3 h-3" />
+      <div className="absolute left-[-15px] top-[14%] text-[8px] text-gray-400 font-bold">A</div>
+
+      <Handle type="target" position={Position.Left} id="b" style={{ top: '40%' }} className="!bg-blue-400 w-3 h-3" />
+      <div className="absolute left-[-15px] top-[34%] text-[8px] text-gray-400 font-bold">B</div>
+
+      <Handle type="target" position={Position.Left} id="c" style={{ top: '60%' }} className="!bg-blue-400 w-3 h-3" />
+      <div className="absolute left-[-15px] top-[54%] text-[8px] text-gray-400 font-bold">C</div>
+
+      <Handle type="target" position={Position.Left} id="d" style={{ top: '80%' }} className="!bg-blue-400 w-3 h-3" />
+      <div className="absolute left-[-15px] top-[74%] text-[8px] text-gray-400 font-bold">D</div>
+
+      <Handle type="source" position={Position.Right} id="output" className="!bg-green-500 w-4 h-4 border-2 border-white" />
+
+      <div className="text-xs font-bold text-indigo-400 mb-2 uppercase tracking-wider flex items-center gap-1">
+        <Cpu size={12} /> Advanced Block
+      </div>
+
+      <div className="flex flex-col mb-3">
+        <label className="text-[10px] text-gray-500 mb-1">JS Formula (A, B, C, D)</label>
+        <input
+          type="text"
+          className="bg-black/40 border border-indigo-700/50 rounded px-2 py-1 text-xs nodrag text-indigo-200 font-mono"
+          value={data.expression || 'A + B'}
+          onChange={(e) => updateExpression(e.target.value)}
+          placeholder="e.g. (A + B) / C"
+        />
+        {error && <div className="text-[8px] text-red-400 mt-1 truncate max-w-[180px]">{error}</div>}
+      </div>
+
+      <div className="text-3xl font-mono font-bold text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.3)]">
+        {result.toFixed(3)}
+      </div>
+    </div>
+  );
+};
+
 const nodeTypes: NodeTypes = {
   sensor: SensorNode,
   range: RangeNode,
+  math: MathNode,
+  average: AverageNode,
+  advanced: AdvancedMathNode,
 };
 
 const MonitorBuilder = () => {
@@ -166,7 +480,7 @@ const MonitorBuilder = () => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
-  const [dragMode, setDragMode] = useState<'sensor' | 'range'>('sensor');
+  const [dragMode, setDragMode] = useState<'sensor' | 'range' | 'math' | 'average' | 'advanced'>('sensor');
 
   // Preset Management
   const { session, saveConfig, loadConfig } = useRemoteConfig();
@@ -352,7 +666,13 @@ const MonitorBuilder = () => {
         id: `${type}-${msgID}-${signalName}-${Date.now()}`,
         type,
         position,
-        data: { msgID, signalName },
+        data: {
+          msgID,
+          signalName,
+          ...(type === 'math' ? { operation: 'sum' } : {}),
+          ...(type === 'average' ? { windowSize: '10' } : {}),
+          ...(type === 'advanced' ? { expression: 'A + B' } : {}),
+        },
       };
 
       setNodes((nds) => nds.concat(newNode));
@@ -379,7 +699,13 @@ const MonitorBuilder = () => {
         id: `${dragMode}-${selectedSignal.msgID}-${selectedSignal.signalName}-${Date.now()}`,
         type: dragMode,
         position,
-        data: { msgID: selectedSignal.msgID, signalName: selectedSignal.signalName },
+        data: {
+          msgID: selectedSignal.msgID,
+          signalName: selectedSignal.signalName,
+          ...(dragMode === 'math' ? { operation: 'sum' } : {}),
+          ...(dragMode === 'average' ? { windowSize: '10' } : {}),
+          ...(dragMode === 'advanced' ? { expression: 'A + B' } : {}),
+        },
       };
 
       setNodes((nds) => nds.concat(newNode));
@@ -396,18 +722,46 @@ const MonitorBuilder = () => {
           <div className="p-4 pb-2 flex-shrink-0">
             <h2 className="text-xl font-bold mb-4">Available Signals</h2>
 
-            <div className="flex gap-2 mb-4 p-1 bg-data-textbox-bg rounded border border-gray-600">
+            <div className="grid grid-cols-3 gap-1 mb-4 p-1 bg-data-textbox-bg rounded border border-gray-600">
               <button
-                className={`flex-1 py-1 text-xs rounded transition-colors ${dragMode === 'sensor' ? 'bg-blue-600 text-white font-semibold' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                className={`flex flex-col items-center justify-center p-2 text-[10px] rounded transition-colors ${dragMode === 'sensor' ? 'bg-blue-600 text-white font-semibold' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                title="Simple Sensor"
                 onClick={() => setDragMode('sensor')}
               >
+                <Activity size={16} className="mb-1" />
                 Simple
               </button>
               <button
-                className={`flex-1 py-1 text-xs rounded transition-colors ${dragMode === 'range' ? 'bg-blue-600 text-white font-semibold' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                className={`flex flex-col items-center justify-center p-2 text-[10px] rounded transition-colors ${dragMode === 'range' ? 'bg-blue-600 text-white font-semibold' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                title="Range Monitor"
                 onClick={() => setDragMode('range')}
               >
-                Range Monitor
+                <Sliders size={16} className="mb-1" />
+                Range
+              </button>
+              <button
+                className={`flex flex-col items-center justify-center p-2 text-[10px] rounded transition-colors ${dragMode === 'math' ? 'bg-blue-600 text-white font-semibold' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                title="Math Operation"
+                onClick={() => setDragMode('math')}
+              >
+                <Sigma size={16} className="mb-1" />
+                Math
+              </button>
+              <button
+                className={`flex flex-col items-center justify-center p-2 text-[10px] rounded transition-colors ${dragMode === 'average' ? 'bg-blue-600 text-white font-semibold' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                title="Moving Average"
+                onClick={() => setDragMode('average')}
+              >
+                <Activity size={16} className="mb-1" />
+                Avg
+              </button>
+              <button
+                className={`flex flex-col items-center justify-center p-2 text-[10px] rounded transition-colors ${dragMode === 'advanced' ? 'bg-blue-600 text-white font-semibold' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
+                title="Advanced JS Math"
+                onClick={() => setDragMode('advanced')}
+              >
+                <Cpu size={16} className="mb-1" />
+                Adv
               </button>
             </div>
 
@@ -433,7 +787,29 @@ const MonitorBuilder = () => {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 pt-0 flex flex-col gap-2">
-            {filteredSignals.map((signal, index) => (
+            {dragMode === 'math' || dragMode === 'average' || dragMode === 'advanced' ? (
+              <div className="p-4 bg-blue-600/10 border border-blue-500/30 rounded-md">
+                <div className="text-sm font-semibold mb-1">Computing Block</div>
+                <div className="text-xs text-gray-400 mb-3">Drag into workspace or tap selection mode.</div>
+                <div
+                  className="p-3 bg-gray-800 border-2 border-dashed border-gray-600 rounded cursor-grab hover:border-blue-400 flex items-center justify-center gap-2"
+                  draggable
+                  onDragStart={(e) => {
+                    const label = dragMode === 'math' ? 'Math Node' : dragMode === 'average' ? 'Average Node' : 'Advanced Math';
+                    e.dataTransfer.setData('application/reactflow', dragMode);
+                    e.dataTransfer.setData('application/msgID', 'CALC');
+                    e.dataTransfer.setData('application/signalName', label);
+                  }}
+                  onClick={() => {
+                    const label = dragMode === 'math' ? 'Math Node' : dragMode === 'average' ? 'Average Node' : 'Advanced Math';
+                    setSelectedSignal({ msgID: 'CALC', signalName: label });
+                  }}
+                >
+                  {dragMode === 'math' ? <Sigma size={16} /> : dragMode === 'average' ? <Activity size={16} /> : <Cpu size={16} />}
+                  <span className="text-sm uppercase font-bold tracking-wider">Place {dragMode}</span>
+                </div>
+              </div>
+            ) : filteredSignals.map((signal, index) => (
               <div
                 key={`${signal.msgID}-${signal.signalName}-${index}`} // Use a unique key
                 className={`p-2 rounded cursor-grab transition-colors border ${selectedSignal?.msgID === signal.msgID && selectedSignal?.signalName === signal.signalName
@@ -527,4 +903,10 @@ const MonitorBuilder = () => {
   );
 };
 
-export default MonitorBuilder;
+const WrappedMonitorBuilder = () => (
+  <DataFlowProvider>
+    <MonitorBuilder />
+  </DataFlowProvider>
+);
+
+export default WrappedMonitorBuilder;
