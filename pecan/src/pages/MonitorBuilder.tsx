@@ -22,6 +22,7 @@ import { useRemoteConfig } from '../lib/useRemoteConfig';
 import type { MonitorPreset } from '../lib/firebase';
 import { DataFlowProvider, useDataFlow } from '../context/DataFlowContext';
 import { Plus, Minus, X, Divide, Sigma, Activity, Sliders, Cpu } from 'lucide-react';
+import NotNotGame from '../components/NotNotGame';
 
 // Custom Node Component
 const SensorNode = ({ id, data }: { id: string; data: { msgID: string; signalName: string } }) => {
@@ -398,6 +399,9 @@ const AdvancedMathNode = ({ id, data }: { id: string; data: { expression?: strin
   }, [showDeleteConfirm]);
 
   const updateExpression = (val: string) => {
+    if (val.trim() === '!!') {
+      window.dispatchEvent(new CustomEvent('trigger-not-not'));
+    }
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === id) {
@@ -481,6 +485,7 @@ const MonitorBuilder = () => {
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
   const [dragMode, setDragMode] = useState<'sensor' | 'range' | 'math' | 'average' | 'advanced'>('sensor');
+  const [isGameOpen, setIsGameOpen] = useState(false);
 
   // Preset Management
   const { session, saveConfig, loadConfig } = useRemoteConfig();
@@ -491,6 +496,13 @@ const MonitorBuilder = () => {
   const [selectedSignal, setSelectedSignal] = useState<{ msgID: string; signalName: string } | null>(null);
 
   const LOCAL_STORAGE_KEY = 'pecan_monitor_presets';
+
+  // Listen for easter egg trigger
+  useEffect(() => {
+    const handleTrigger = () => setIsGameOpen(true);
+    window.addEventListener('trigger-not-not', handleTrigger);
+    return () => window.removeEventListener('trigger-not-not', handleTrigger);
+  }, []);
 
   // Load presets from localStorage on mount
   useEffect(() => {
@@ -715,7 +727,14 @@ const MonitorBuilder = () => {
   );
 
   return (
-    <div className="flex h-full w-full bg-sidebar text-white">
+    <div className="flex h-full w-full bg-sidebar text-white relative">
+      {isGameOpen && (
+        <div className="absolute inset-0 z-[1000] flex items-center justify-center bg-black/80 backdrop-blur-md p-10 animate-in fade-in duration-300">
+          <div className="w-full max-w-2xl h-[80%] shadow-2xl border border-gray-700 rounded-2xl overflow-hidden">
+            <NotNotGame onClose={() => setIsGameOpen(false)} />
+          </div>
+        </div>
+      )}
       <ReactFlowProvider>
         {/* Sidebar for Drag and Drop */}
         <div className="w-64 bg-data-module-bg flex flex-col border-r border-gray-700 h-full">
