@@ -25,6 +25,7 @@ interface DataRowProps {
     index: number; // for alternating row colors
     initialOpen?: boolean;
     isTourRow?: boolean;
+    isHighlighted?: boolean;
     tourSignal?: string;
     onSignalClick?: (
         msgID: string,
@@ -36,7 +37,7 @@ interface DataRowProps {
     onTraceClick?: (msgID: string) => void;
 }
 
-export default function DataRow({ msgID, name, category, data, rawData, lastUpdated, index, initialOpen = false, isTourRow = false, tourSignal, onSignalClick, onTraceClick }: Readonly<DataRowProps>) {
+export default function DataRow({ msgID, name, category, data, rawData, lastUpdated, index, initialOpen = false, isTourRow = false, isHighlighted = false, tourSignal, onSignalClick, onTraceClick }: Readonly<DataRowProps>) {
 
     const [currentTime, setCurrentTime] = useState(Date.now());
     const [ref, isIntersecting] = useIntersectionObserver('200px'); // Pre-load slightly offscreen
@@ -70,6 +71,15 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
         }
     }, [initialOpen, isTourRow]);
 
+    useEffect(() => {
+        if (isHighlighted && ref.current) {
+            // Slight timeout to ensure row expansion has started before scrolling
+            setTimeout(() => {
+                ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }, 100);
+        }
+    }, [isHighlighted, ref]);
+
     const rows = useMemo(() => {
         if (!data || !data.length) return [] as [string, string][];
         return data.map((obj) => {
@@ -90,7 +100,7 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
                 aria-expanded={open}
                 onClick={toggle}
                 id={isTourRow ? "tour-row-header" : undefined}
-                className={`grid grid-cols-10 md:grid-cols-12 text-white text-sm h-[50px] ${rowBg} cursor-pointer transition hover:bg-data-textbox-bg/50`}
+                className={`grid grid-cols-10 md:grid-cols-12 text-white text-sm h-[50px] ${rowBg} cursor-pointer transition hover:bg-data-textbox-bg/50 ${isHighlighted ? "animate-flash-highlight" : ""}`}
             >
 
                 {/* Msg ID column */}
@@ -101,16 +111,16 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
                 {/* Message name column */}
                 <div className="col-span-4 md:col-span-4 flex items-center px-3 gap-2 overflow-hidden">
                     <span className="truncate flex-1">
-                    {isUnknown ? (
-                        <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 text-[11px] font-bold text-white bg-rose-600 rounded" title="Not defined in DBC">
-                                UNKNOWN
-                            </span>
-                            <span className="text-sidebarfg opacity-80 text-sm font-mono">{formatMsgId(msgID)}</span>
-                        </div>
-                    ) : (
-                        name
-                    )}
+                        {isUnknown ? (
+                            <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 text-[11px] font-bold text-white bg-rose-600 rounded" title="Not defined in DBC">
+                                    UNKNOWN
+                                </span>
+                                <span className="text-sidebarfg opacity-80 text-sm font-mono">{formatMsgId(msgID)}</span>
+                            </div>
+                        ) : (
+                            name
+                        )}
                     </span>
                     <button
                         type="button"

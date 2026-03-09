@@ -108,6 +108,19 @@ p {
     .animate-warning-pulse {
         animation: warning-pulse 2s ease-in-out infinite;
     }
+
+    @keyframes flash-highlight {
+        0% {
+            background-color: rgba(34, 211, 238, 0.4);
+        }
+        100% {
+            background-color: transparent;
+        }
+    }
+
+    .animate-flash-highlight {
+        animation: flash-highlight 2s ease-out forwards;
+    }
 }
 
 .avoid-break {
