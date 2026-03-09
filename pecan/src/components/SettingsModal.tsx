@@ -4,8 +4,10 @@ import { useState, useEffect } from "react";
 import { Button } from "./Button";
 import { useAllSignals } from "../lib/useDataStore";
 import { loadPinnedSensors, savePinnedSensors, type CommsSensorConfig } from "./CommsSensorStrip";
-import { Plus, X, Activity, Usb, Unplug } from "lucide-react";
+import { Plus, X, Activity, Usb, Unplug, Save } from "lucide-react";
 import { serialService } from "../services/SerialService";
+import { useRemoteConfig } from "../lib/useRemoteConfig";
+import { getCategoryConfigString, updateCategories } from "../config/categories";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -128,6 +130,10 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
     );
     const [isSerialConnected, setIsSerialConnected] = useState(serialService.getConnectionStatus());
 
+    const { session, loadConfig, saveConfig } = useRemoteConfig();
+    const [categoryText, setCategoryText] = useState("");
+    const [isSavingCategory, setIsSavingCategory] = useState(false);
+
     useEffect(() => {
         // Subscribe to serial connection changes
         serialService.onConnectionChange = (connected) => {
@@ -137,6 +143,45 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
             serialService.onConnectionChange = null;
         };
     }, []);
+
+    useEffect(() => {
+        if (isOpen) {
+            setCategoryText(getCategoryConfigString());
+            if (session?.user) {
+                loadConfig().then(config => {
+                    if (config?.categoryConfig) {
+                        setCategoryText(config.categoryConfig);
+                    }
+                });
+            }
+        }
+    }, [isOpen, session, loadConfig]);
+
+    const handleSaveCategory = async () => {
+        setIsSavingCategory(true);
+        try {
+            updateCategories(categoryText);
+
+            if (session?.user) {
+                const currentConfig = await loadConfig();
+                await saveConfig({
+                    ...currentConfig,
+                    categoryConfig: categoryText
+                });
+
+                // Slight delay to allow debounced save to fire before optional reload if needed.
+                // We don't force a reload here so it's seamless, but components might need one to reflect historic data changes.
+                setTimeout(() => {
+                    setIsSavingCategory(false);
+                }, 2000);
+            } else {
+                setIsSavingCategory(false);
+            }
+        } catch (e) {
+            console.error(e);
+            setIsSavingCategory(false);
+        }
+    };
 
     if (!isOpen) return null;
 
@@ -301,6 +346,30 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                 </Button>
                             )}
                         </div>
+                    </div>
+
+                    {/* Category Configuration Area */}
+                    <div className="w-full rounded-lg text-white bg-option p-4">
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm font-medium block">Category Configuration</span>
+                            <Button
+                                onClick={handleSaveCategory}
+                                variant="primary"
+                                disabled={isSavingCategory}
+                                className="flex items-center gap-1.5 py-1 px-3 text-sm h-8"
+                            >
+                                <Save className="w-4 h-4" /> {isSavingCategory ? "Saving..." : "Apply & Save"}
+                            </Button>
+                        </div>
+                        <p className="text-gray-400 text-xs mb-3">
+                            Format: <code>CategoryName,TailwindColorClass,MessageIDs</code> (e.g., <code>BMS,bg-orange-400,256-300</code>). Automatically synced via Firebase.
+                        </p>
+                        <textarea
+                            className="w-full h-32 bg-zinc-800 text-slate-300 text-xs font-mono p-3 rounded border border-gray-600 focus:border-blue-500 outline-none resize-y"
+                            value={categoryText}
+                            onChange={(e) => setCategoryText(e.target.value)}
+                            spellCheck={false}
+                        />
                     </div>
 
                     {/* Comms Pinned Sensors */}

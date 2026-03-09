@@ -54,28 +54,28 @@ function parseRange(range: string): number[] {
 function parseCategories(configText: string): Category[] {
   const categories: Category[] = [];
   const lines = configText.split('\n');
-  
+
   for (const line of lines) {
     // Skip empty lines and comments
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) {
       continue;
     }
-    
+
     const parts = trimmed.split(',').map(p => p.trim());
     if (parts.length < 3) {
       console.warn(`Invalid category line: ${line}`);
       continue;
     }
-    
+
     const name = parts[0];
     const color = parts[1];
     const messageIds = new Set<number>();
-    
+
     // Parse message IDs (parts[2] onwards)
     for (let i = 2; i < parts.length; i++) {
       const part = parts[i];
-      
+
       // Check if it's a range (e.g., "100-110")
       if (part.includes('-')) {
         const rangeIds = parseRange(part);
@@ -88,17 +88,35 @@ function parseCategories(configText: string): Category[] {
         }
       }
     }
-    
+
     categories.push({ name, color, messageIds });
   }
-  
+
   return categories;
 }
 
 /**
  * Loaded categories from configuration file
  */
-export const CATEGORIES: Category[] = parseCategories(categoryConfig);
+export let CATEGORIES: Category[] = parseCategories(categoryConfig);
+let currentCategoryConfigText = categoryConfig;
+
+/**
+ * Returns the raw text representation currently driving the categories
+ */
+export function getCategoryConfigString(): string {
+  return currentCategoryConfigText;
+}
+
+/**
+ * Overrides the internal category configurations with a new text string
+ * @param configText - The raw category configuration text
+ */
+export function updateCategories(configText: string) {
+  currentCategoryConfigText = configText;
+  CATEGORIES = parseCategories(configText);
+}
+
 
 /**
  * Determine the category for a CAN message
@@ -112,20 +130,20 @@ export function determineCategory(
 ): string {
   // If explicit category is provided, use it
   if (explicitCategory) return explicitCategory;
-  
+
   // Parse hex ("0x1A3") or decimal ID strings
   const numericId = msgID.startsWith("0x") || msgID.startsWith("0X")
     ? parseInt(msgID, 16)
     : parseInt(msgID, 10);
   if (isNaN(numericId)) return DEFAULT_CATEGORY.name;
-  
+
   // Find first matching category
   for (const category of CATEGORIES) {
     if (category.messageIds.has(numericId)) {
       return category.name;
     }
   }
-  
+
   // No match found, return default
   return DEFAULT_CATEGORY.name;
 }
