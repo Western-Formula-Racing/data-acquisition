@@ -566,6 +566,7 @@ function Dashboard() {
               <div className="block">
                 <div className="columns-2 gap-4">
                   {filteredMsgs.map(([canId, sample]) => {
+                    const isUnknown = sample.messageName.startsWith("Unknown_CAN_");
                     const data = Object.entries(sample.data).map(
                       ([key, value]) => ({
                         [key]: `${value.sensorReading} ${value.unit}`,
@@ -583,7 +584,7 @@ function Dashboard() {
                               ? data
                               : [
                                 {
-                                  "No Data": "Waiting for messages...",
+                                  "No Data": isUnknown ? "not defined in DBC" : "Waiting for messages...",
                                 },
                               ]
                           }
@@ -649,6 +650,7 @@ function Dashboard() {
                 {/* Rows */}
 
                 {filteredMsgs.map(([canId, sample], i) => {
+                  const isUnknown = sample.messageName.startsWith("Unknown_CAN_");
                   const data = Object.entries(sample.data).map(
                     ([key, value]) => ({
                       [key]: `${value.sensorReading} ${value.unit}`,
@@ -688,7 +690,7 @@ function Dashboard() {
                           ? data
                           : [
                             {
-                              "No Data": "Waiting for messages...",
+                              "No Data": isUnknown ? "not defined in DBC" : "Waiting for messages...",
                             },
                           ]
                       }
