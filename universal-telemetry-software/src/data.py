@@ -108,8 +108,11 @@ class TelemetryNode:
                 logger.warning(f"CAN Interface unavailable ({e}). Starting simulation mode.")
                 import random
                 
-                # IDs from example.dbc: 192 (VCU), 256 (MC), 512 (BMS), 768 (Wheels)
-                sim_ids = [192, 256, 512, 768]
+                # Standard IDs from example.dbc: 192 (VCU), 256 (MC), 512 (BMS), 768 (Wheels)
+                # Extended IDs from example.dbc (actual 29-bit arbitration IDs, no EFF bit):
+                #   403105268 = 0x1806E5F4  Charger_Command  (DBC ID 2550588916)
+                #   419385573 = 0x18FF50E5  Charger_Status   (DBC ID 2566869221)
+                sim_ids = [192, 256, 512, 768, 403105268, 419385573]
                 
                 while True:
                     # Generate a fake message every ~10ms (100Hz)

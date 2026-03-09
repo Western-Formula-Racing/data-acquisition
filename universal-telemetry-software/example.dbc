@@ -104,3 +104,30 @@ CM_ BO_ 768 "Wheel Speed Sensors";
 CM_ BO_ 1024 "IMU 6-DOF Data";
 CM_ BO_ 1280 "Cooling System Status";
 CM_ BO_ 1999 "Pipeline Heartbeat";
+
+BO_ 2550588916 Charger_Command: 8 Vector__XXX
+ SG_ Max_charge_voltage : 0|16@1+ (0.1,0) [0|655.3] "V" Vector__XXX
+ SG_ Max_charge_current : 16|8@1+ (0.1,0) [0|25.5] "A" Vector__XXX
+ SG_ Control : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 2566869221 Charger_Status: 8 Vector__XXX
+ SG_ Output_voltage : 0|16@1+ (0.1,0) [0|655.3] "V" Vector__XXX
+ SG_ Output_current : 16|8@1+ (0.1,0) [0|25.5] "A" Vector__XXX
+ SG_ Hardware_failure_flag : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Overheat_flag : 25|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Input_voltage_flag : 26|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Starting_state : 27|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Communication_state : 28|1@1+ (1,0) [0|1] "" Vector__XXX
+
+CM_ BO_ 2550588916 "Charger command message (J1939 extended 29-bit frame)";
+CM_ SG_ 2550588916 Max_charge_voltage "Max allowable charging terminal voltage";
+CM_ SG_ 2550588916 Max_charge_current "Max allowable charging current";
+CM_ SG_ 2550588916 Control "Toggle charging. 0 = start charging, 1 = stop charging";
+CM_ BO_ 2566869221 "Charger status message (J1939 extended 29-bit frame)";
+CM_ SG_ 2566869221 Output_voltage "Charger output voltage";
+CM_ SG_ 2566869221 Output_current "Charger output current";
+CM_ SG_ 2566869221 Hardware_failure_flag "0 = good, 1 = hardware failure";
+CM_ SG_ 2566869221 Overheat_flag "0 = good, 1 = charger overheated and stopped charging";
+CM_ SG_ 2566869221 Input_voltage_flag "0 = input voltage OK, 1 = input voltage wrong and charger halted";
+CM_ SG_ 2566869221 Starting_state "0 = charger detects battery voltage and starts, 1 = stays off (anti-reverse-polarity)";
+CM_ SG_ 2566869221 Communication_state "0 = communication OK, 1 = communication receive timeout";

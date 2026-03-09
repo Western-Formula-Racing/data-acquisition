@@ -13,17 +13,31 @@ from websockets.server import WebSocketServerProtocol
 # Configuration from environment variables
 WS_PORT = int(os.getenv('WS_PORT', '9080'))
 WSS_PORT = int(os.getenv('WSS_PORT', '9443'))
-CSV_FILE = os.getenv('CSV_FILE', '2025-01-01-00-07-00.csv')
+CSV_FILE = os.getenv('CSV_FILE', '2025-01-01-00-00-00.csv')
 SSL_CERT = os.getenv('SSL_CERT', '/app/ssl/cert.pem')
 SSL_KEY = os.getenv('SSL_KEY', '/app/ssl/key.pem')
 DOMAIN = os.getenv('DOMAIN', 'ws-wfr.0001200.xyz')
 
 # Feature flags
-ENABLE_CSV = os.getenv('ENABLE_CSV', 'true').lower() == 'true'
+# Default to simulation-only for standard IDs; CSV replay can still be
+# enabled explicitly via ENABLE_CSV=true if desired.
+ENABLE_CSV = os.getenv('ENABLE_CSV', 'false').lower() == 'true'
 ENABLE_ACCU = os.getenv('ENABLE_ACCU', 'true').lower() == 'true'
 
 # Global set to track connected clients
 connected_clients: Set[WebSocketServerProtocol] = set()
+
+# Page locks: page_name -> {"holder": client_id, "ws": websocket, "name": display_name}
+_page_locks: dict[str, dict] = {}
+
+# Map websocket -> client_id (assigned on connect)
+_client_ids: dict = {}
+
+# Monotonic counter for client IDs
+_next_client_id = 0
+
+# Allowed page names for locking
+_LOCKABLE_PAGES = {"can-transmitter", "throttle-mapper"}
 
 # ============================================================================
 # Accumulator Simulation Parameters
@@ -145,6 +159,210 @@ class AccumulatorSimulator:
         return messages
 
 
+class StandardCanSimulator:
+    """
+    Simulates core vehicle CAN messages defined in example.dbc using standard
+    11-bit IDs:
+
+      - 192  VCU_Status
+      - 193  Pedal_Sensors
+      - 512  BMS_Status
+      - 768  Wheel_Speeds
+
+    Encoding follows the DBC scale/offset so PECAN and Influx decoding remain
+    consistent with the rest of the system.
+    """
+
+    VCU_ID = 192
+    PEDAL_ID = 193
+    BMS_ID = 512
+    WHEEL_ID = 768
+
+    def __init__(self) -> None:
+        self.start_time = time.time()
+
+    def _elapsed(self) -> float:
+        return time.time() - self.start_time
+
+    def _encode_vcu_status(self) -> list[int]:
+        # Simple state machine over time: 0=Idle, 3=Drive enabled, etc.
+        t = self._elapsed()
+        if t % 60 < 5:
+            vcu_state = 0  # idle
+        elif t % 60 < 10:
+            vcu_state = 2  # precharge
+        else:
+            vcu_state = 5  # drive
+        safety_loop = 0
+        inverter_enabled = 1 if vcu_state >= 5 else 0
+        b0 = (vcu_state & 0x0F) | ((safety_loop & 0x01) << 4) | (
+            (inverter_enabled & 0x01) << 5
+        )
+        return [b0] + [0x00] * 7
+
+    def _encode_pedal_sensors(self) -> list[int]:
+        # Pedal position oscillates between 0–100 % over ~10 s
+        period = 10.0
+        phase = (self._elapsed() % period) / period
+        apps1 = 100.0 * phase
+        apps2 = max(0.0, apps1 - 5.0)  # second sensor slightly lower
+
+        def to_raw(percent: float) -> int:
+            # factor 0.1 %, 16-bit
+            raw = int(max(0.0, min(100.0, percent)) / 0.1)
+            return max(0, min(65535, raw))
+
+        raw1 = to_raw(apps1)
+        raw2 = to_raw(apps2)
+        b0 = raw1 & 0xFF
+        b1 = (raw1 >> 8) & 0xFF
+        b2 = raw2 & 0xFF
+        b3 = (raw2 >> 8) & 0xFF
+        # Simple fixed brake pressures
+        raw_front = int(50.0 / 0.1)  # 50 bar
+        raw_rear = int(30.0 / 0.1)   # 30 bar
+        b4 = raw_front & 0xFF
+        b5 = (raw_front >> 8) & 0xFF
+        b6 = raw_rear & 0xFF
+        b7 = (raw_rear >> 8) & 0xFF
+        return [b0, b1, b2, b3, b4, b5, b6, b7]
+
+    def _encode_bms_status(self) -> list[int]:
+        # PackVoltage around 380–420 V, PackCurrent around -50–150 A
+        t = self._elapsed()
+        import math
+
+        pack_v = 400.0 + 20.0 * math.sin(t / 15.0)
+        pack_i = 50.0 * math.sin(t / 5.0)  # positive during charge, negative discharge
+        soc = 50.0 + 30.0 * math.sin(t / 60.0)
+
+        # factor 0.1 V / 0.1 A / 0.5 %
+        raw_v = int(max(0.0, min(600.0, pack_v)) / 0.1)
+        raw_i = int(max(-300.0, min(300.0, pack_i)) / 0.1) & 0xFFFF
+        raw_soc = int(max(0.0, min(100.0, soc)) / 0.5)
+
+        b0 = raw_v & 0xFF
+        b1 = (raw_v >> 8) & 0xFF
+        b2 = raw_i & 0xFF
+        b3 = (raw_i >> 8) & 0xFF
+        b4 = raw_soc & 0xFF
+        b5 = 0x00  # Fault_Code low
+        b6 = 0x00
+        b7 = 0x00
+        return [b0, b1, b2, b3, b4, b5, b6, b7]
+
+    def _encode_wheel_speeds(self) -> list[int]:
+        # Speed oscillates between 0–120 km/h (converted to ~0–3000 rpm)
+        import math
+
+        t = self._elapsed()
+        speed_rpm = 1500.0 + 1500.0 * math.sin(t / 8.0)
+        speed_rpm = max(0.0, min(3000.0, speed_rpm))
+
+        raw = int(speed_rpm)  # factor 1 rpm/bit
+
+        def pack(raw_val: int) -> tuple[int, int]:
+            rv = max(0, min(65535, int(raw_val)))
+            return rv & 0xFF, (rv >> 8) & 0xFF
+
+        fl0, fl1 = pack(raw)
+        fr0, fr1 = pack(raw)
+        rl0, rl1 = pack(raw * 0.98)
+        rr0, rr1 = pack(raw * 1.02)
+        return [fl0, fl1, fr0, fr1, rl0, rl1, rr0, rr1]
+
+    def generate_messages(self, now_ms: int) -> list[dict]:
+        return [
+            {"time": now_ms, "canId": self.VCU_ID, "data": self._encode_vcu_status()},
+            {"time": now_ms, "canId": self.PEDAL_ID, "data": self._encode_pedal_sensors()},
+            {"time": now_ms, "canId": self.BMS_ID, "data": self._encode_bms_status()},
+            {"time": now_ms, "canId": self.WHEEL_ID, "data": self._encode_wheel_speeds()},
+        ]
+
+
+class ChargerSimulator:
+    """
+    Simulates an off-board charger using the extended CAN IDs that are also
+    defined in example.dbc and used throughout CI:
+
+        0x1806E5F4  (403105268)  Charger_Command
+        0x18FF50E5  (419385573)  Charger_Status
+
+    Encoding matches the DBC scaling:
+      - Max_charge_voltage / Output_voltage: factor 0.1 V/bit
+      - Max_charge_current / Output_current: factor 0.1 A/bit
+      - Flags packed into a single status byte.
+    """
+
+    CMD_ID = 0x1806E5F4
+    STS_ID = 0x18FF50E5
+
+    def __init__(self):
+        self.start_time = time.time()
+        self.base_voltage = 350.0
+        self.amp = 100.0  # 350–450 V swing
+        self.period_s = 60.0
+
+    def _phase(self) -> float:
+        elapsed = time.time() - self.start_time
+        return (elapsed % self.period_s) / self.period_s
+
+    @staticmethod
+    def _encode_voltage_current(voltage: float, current: float) -> list[int]:
+        # Factor 0.1 => raw = phys / 0.1, clamped to 16-bit for voltage, 8-bit for current.
+        raw_v = int(max(0.0, min(6553.5, voltage)) / 0.1)
+        raw_i = int(max(0.0, min(25.5, current)) / 0.1)
+        v_lo = raw_v & 0xFF
+        v_hi = (raw_v >> 8) & 0xFF
+        i_byte = raw_i & 0xFF
+        return [v_lo, v_hi, i_byte]
+
+    @staticmethod
+    def _encode_flags(
+        hardware_failure: int,
+        overheat: int,
+        input_voltage: int,
+        starting_state: int,
+        comm_state: int,
+    ) -> int:
+        # Pack 5 boolean flags into the low bits of one byte.
+        flags = 0
+        flags |= (1 if hardware_failure else 0) << 0
+        flags |= (1 if overheat else 0) << 1
+        flags |= (1 if input_voltage else 0) << 2
+        flags |= (1 if starting_state else 0) << 3
+        flags |= (1 if comm_state else 0) << 4
+        return flags & 0xFF
+
+    def generate_messages(self, now_ms: int) -> list[dict]:
+        phase = self._phase()
+        cmd_voltage = self.base_voltage + self.amp * phase        # 350–450 V
+        cmd_current = 10.0                                        # 10 A
+
+        sts_voltage = cmd_voltage - 5.0                           # 5 V lower
+        sts_current = 8.5                                         # 8.5 A
+
+        # Command payload
+        cmd_prefix = self._encode_voltage_current(cmd_voltage, cmd_current)
+        cmd_data = cmd_prefix + [0x00] * (8 - len(cmd_prefix))
+
+        # Status payload
+        sts_prefix = self._encode_voltage_current(sts_voltage, sts_current)
+        flags_byte = self._encode_flags(
+            hardware_failure=0,
+            overheat=0,
+            input_voltage=0,
+            starting_state=0,
+            comm_state=0,
+        )
+        sts_data = sts_prefix + [flags_byte] + [0x00] * (8 - len(sts_prefix) - 1)
+
+        return [
+            {"time": now_ms, "canId": self.CMD_ID, "data": cmd_data},
+            {"time": now_ms, "canId": self.STS_ID, "data": sts_data},
+        ]
+
+
 def load_can_data(file_path: str) -> List[dict]:
     """Load CAN data from CSV file and format as JSON objects."""
     data = []
@@ -180,40 +398,174 @@ def load_can_data(file_path: str) -> List[dict]:
     return data
 
 
+async def _broadcast_page_lock_state():
+    """Send current page lock state to all connected clients."""
+    locks = {}
+    for page, info in _page_locks.items():
+        locks[page] = {"holder": info["holder"], "name": info["name"]}
+
+    payload = json.dumps({"type": "page_lock_state", "locks": locks})
+    if connected_clients:
+        await asyncio.gather(
+            *[c.send(payload) for c in connected_clients],
+            return_exceptions=True,
+        )
+
+
+async def _handle_page_lock(websocket, msg: dict):
+    """Handle page_lock messages: acquire, release, query."""
+    action = msg.get("action")
+    page = msg.get("page")
+    client_id = _client_ids.get(websocket)
+
+    if action == "query":
+        locks = {}
+        for p, info in _page_locks.items():
+            locks[p] = {"holder": info["holder"], "name": info["name"]}
+        await websocket.send(json.dumps({
+            "type": "page_lock_state",
+            "locks": locks,
+            "clientId": client_id,
+        }))
+        return
+
+    if not page or page not in _LOCKABLE_PAGES:
+        await websocket.send(json.dumps({
+            "type": "error",
+            "code": "INVALID_PAGE",
+            "message": f"Invalid page. Must be one of: {', '.join(sorted(_LOCKABLE_PAGES))}",
+        }))
+        return
+
+    if action == "acquire":
+        display_name = msg.get("name", "")
+        if not isinstance(display_name, str):
+            display_name = ""
+        display_name = display_name[:50]
+
+        current = _page_locks.get(page)
+        if current and current["holder"] != client_id:
+            await websocket.send(json.dumps({
+                "type": "page_lock_result",
+                "page": page,
+                "success": False,
+                "holder": current["holder"],
+                "name": current["name"],
+            }))
+            return
+
+        _page_locks[page] = {
+            "holder": client_id,
+            "ws": websocket,
+            "name": display_name,
+        }
+        print(f"Page lock acquired: {page} by {client_id} ({display_name})")
+
+        await websocket.send(json.dumps({
+            "type": "page_lock_result",
+            "page": page,
+            "success": True,
+            "clientId": client_id,
+        }))
+        await _broadcast_page_lock_state()
+
+    elif action == "release":
+        current = _page_locks.get(page)
+        if current and current["holder"] == client_id:
+            del _page_locks[page]
+            print(f"Page lock released: {page} by {client_id}")
+            await _broadcast_page_lock_state()
+
+    else:
+        await websocket.send(json.dumps({
+            "type": "error",
+            "code": "INVALID_ACTION",
+            "message": "page_lock action must be 'acquire', 'release', or 'query'",
+        }))
+
+
+def _release_client_locks(websocket):
+    """Release all page locks held by a disconnecting client."""
+    to_remove = [page for page, info in _page_locks.items() if info["ws"] is websocket]
+    for page in to_remove:
+        del _page_locks[page]
+        print(f"Page lock auto-released: {page} (client disconnected)")
+
+
+async def _handle_client_message(websocket, raw: str):
+    """Process an inbound message from a WebSocket client."""
+    try:
+        msg = json.loads(raw)
+    except json.JSONDecodeError:
+        return
+
+    if not isinstance(msg, dict):
+        return
+
+    msg_type = msg.get("type")
+
+    if msg_type == "ping":
+        await websocket.send(json.dumps({
+            "type": "pong",
+            "timestamp": msg.get("timestamp"),
+            "serverTime": int(time.time() * 1000),
+        }))
+    elif msg_type == "page_lock":
+        await _handle_page_lock(websocket, msg)
+
+
 async def handle_client(websocket: WebSocketServerProtocol):
+    global _next_client_id
     connected_clients.add(websocket)
     client_info = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-    print(f"Client connected: {client_info} (Total: {len(connected_clients)})")
+    client_id = f"client_{_next_client_id}"
+    _next_client_id += 1
+    _client_ids[websocket] = client_id
+    print(f"Client connected: {client_info} ({client_id}) (Total: {len(connected_clients)})")
     
     try:
         async for message in websocket:
-            print(f"Received from {client_info}: {message[:100]}")
+            await _handle_client_message(websocket, message)
     except websockets.exceptions.ConnectionClosed:
-        # Connection closed by client; ignore and proceed to cleanup in finally block
         print(f"Connection closed by client: {client_info}")
     finally:
         connected_clients.discard(websocket)
-        print(f"Client disconnected: {client_info} (Total: {len(connected_clients)})")
+        had_locks = any(info["ws"] is websocket for info in _page_locks.values())
+        _release_client_locks(websocket)
+        _client_ids.pop(websocket, None)
+        print(f"Client disconnected: {client_info} ({client_id}) (Total: {len(connected_clients)})")
+        if had_locks:
+            await _broadcast_page_lock_state()
 
 
 async def broadcast_data(can_data: List[dict], accu_sim: AccumulatorSimulator):
-    """Continuously broadcast CAN data + accumulator data to all connected clients."""
+    """Continuously broadcast CAN data + accumulator + standard + charger data."""
     batch_size = 100
-    csv_interval = 0.2  # 5 Hz for CSV
-    accu_interval = 0.1  # 10 Hz for accumulator
+    csv_interval = 0.2      # 5 Hz for CSV (optional)
+    accu_interval = 0.1     # 10 Hz for accumulator
+    standard_interval = 0.05  # 20 Hz for standard IDs
+    charger_interval = 0.2  # 5 Hz for charger extended IDs
     
     index = 0
     last_csv_time = time.time()
     last_accu_time = time.time()
+    last_standard_time = time.time()
+    last_charger_time = time.time()
     msg_count = 0
+    standard_sim = StandardCanSimulator()
+    charger_sim = ChargerSimulator()
     
-    print(f"Starting broadcast (CSV: {ENABLE_CSV}, Accu: {ENABLE_ACCU})")
+    print(
+        f"Starting broadcast "
+        f"(CSV: {ENABLE_CSV}, Accu: {ENABLE_ACCU}, "
+        f"Standard: enabled, Charger: extended IDs enabled)"
+    )
     
     while True:
         now = time.time()
         messages = []
         
-        # CSV replay at 5 Hz
+        # CSV replay at 5 Hz (optional)
         if ENABLE_CSV and can_data and (now - last_csv_time) >= csv_interval:
             last_csv_time = now
             batch = can_data[index:index + batch_size]
@@ -228,6 +580,18 @@ async def broadcast_data(can_data: List[dict], accu_sim: AccumulatorSimulator):
             last_accu_time = now
             accu_sim.update(dt)
             messages.extend(accu_sim.generate_messages())
+
+        # Standard CAN IDs at 20 Hz (disabled when CSV replay is enabled)
+        if not ENABLE_CSV and (now - last_standard_time) >= standard_interval:
+            last_standard_time = now
+            now_ms = int(time.time() * 1000)
+            messages.extend(standard_sim.generate_messages(now_ms))
+
+        # Charger extended CAN IDs at 5 Hz (disabled when CSV replay is enabled)
+        if not ENABLE_CSV and (now - last_charger_time) >= charger_interval:
+            last_charger_time = now
+            now_ms = int(time.time() * 1000)
+            messages.extend(charger_sim.generate_messages(now_ms))
         
         # Broadcast if we have clients and messages
         if connected_clients and messages:

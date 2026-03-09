@@ -5,6 +5,8 @@
  * for the 5-module accumulator pack monitoring system.
  */
 
+import { formatCanId } from '../../utils/canProcessor';
+
 // Module identifiers
 export const MODULE_IDS = ['M1', 'M2', 'M3', 'M4', 'M5'] as const;
 export type ModuleId = typeof MODULE_IDS[number];
@@ -51,7 +53,7 @@ export function getCellSignalInfo(module: ModuleId, cellIndex: number): { msgId:
     const msgNum = Math.ceil(cellIndex / CELLS_PER_VOLTAGE_MSG) - 1; // 0-indexed offset
     const canId = VOLTAGE_BASE_ID[module] + msgNum;
     const signalName = `${module}_Cell${cellIndex}_Voltage`;
-    return { msgId: String(canId), signalName };
+    return { msgId: formatCanId(canId), signalName };
 }
 
 /**
@@ -66,7 +68,7 @@ export function getThermistorSignalInfo(module: ModuleId, thermistorIndex: numbe
     const msgNum = Math.ceil(thermistorIndex / THERMISTORS_PER_TEMP_MSG) - 1; // 0-indexed offset
     const canId = TEMP_BASE_ID[module] + msgNum;
     const signalName = `${module}_Thermistor${thermistorIndex}`;
-    return { msgId: String(canId), signalName };
+    return { msgId: formatCanId(canId), signalName };
 }
 
 // Legacy functions for backwards compatibility

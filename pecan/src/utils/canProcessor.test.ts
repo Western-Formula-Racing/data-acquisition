@@ -118,7 +118,7 @@ describe('CAN Processor Unit Tests', () => {
 
             expect(result).not.toBeNull();
             expect(result?.canId).toBe(9999);
-            expect(result?.messageName).toBe('Unknown_CAN_9999');
+            expect(result?.messageName).toBe('Unknown_CAN_0x0000270F');
             expect(result?.signals).toEqual({});
         });
 
@@ -293,7 +293,7 @@ describe('CAN Processor Unit Tests', () => {
             expect(Array.isArray(result)).toBe(true);
             expect(result?.length).toBe(2); // M192 and an unknown message
             expect(result?.[0]?.messageName).toBe('M192_Command_Message');
-            expect(result?.[1]?.messageName).toBe('Unknown_CAN_512');
+            expect(result?.[1]?.messageName).toBe('Unknown_CAN_0x200');
         });
 
         it('should process batch messages', async () => {
@@ -328,7 +328,7 @@ describe('CAN Processor Unit Tests', () => {
 
             expect(Array.isArray(result)).toBe(true);
             expect(result.length).toBe(3); // 2 valid CAN messages + 1 unknown CAN message
-            expect(result[1].messageName).toBe('Unknown_CAN_9999');
+            expect(result[1].messageName).toBe('Unknown_CAN_0x0000270F');
         });
     });
 
@@ -337,6 +337,130 @@ describe('CAN Processor Unit Tests', () => {
             // This test verifies the function runs without errors
             // Actual cache behavior depends on browser environment
             await expect(loadDBCFromCache()).resolves.not.toThrow();
+        });
+    });
+
+    describe('Extended CAN IDs (29-bit)', () => {
+        // DBC IDs (bit 31 set as per DBC convention):
+        //   Charger_Command: 2550588916 (0x9806E5F4)
+        //   Charger_Status:  2566869221 (0x98FF50E5)
+        //
+        // Actual 29-bit CAN arbitration IDs (as python-can sends them, no EFF bit):
+        //   Charger_Command: 2550588916 & 0x1FFFFFFF = 403105268  (0x1806E5F4)
+        //   Charger_Status:  2566869221 & 0x1FFFFFFF = 419385573  (0x18FF50E5)
+        //
+        // canProcessor.toDbcId() re-adds 0x80000000 for any ID > 0x7FF before
+        // looking up in candied, so the full round-trip is transparent.
+
+        const CHARGER_CMD_DBC_ID   = 2550588916;
+        const CHARGER_CMD_FRAME_ID = CHARGER_CMD_DBC_ID & 0x1FFFFFFF; // 403105268
+        const CHARGER_STS_DBC_ID   = 2566869221;
+        const CHARGER_STS_FRAME_ID = CHARGER_STS_DBC_ID & 0x1FFFFFFF; // 419385573
+
+        let can: Can;
+        let dbcData: any;
+
+        beforeAll(() => {
+            const dbc = new Dbc();
+            dbcData = dbc.load(exampleDbc);
+            can = new Can();
+            can.database = dbcData;
+        });
+
+        it('example.dbc should contain Charger_Command extended message', () => {
+            const messages = getDbcMessages(dbcData);
+            const msg = messages.find(m => m.messageName === 'Charger_Command');
+            expect(msg).toBeDefined();
+            expect(msg?.canId).toBe(CHARGER_CMD_DBC_ID);
+        });
+
+        it('example.dbc should contain Charger_Status extended message', () => {
+            const messages = getDbcMessages(dbcData);
+            const msg = messages.find(m => m.messageName === 'Charger_Status');
+            expect(msg).toBeDefined();
+            expect(msg?.canId).toBe(CHARGER_STS_DBC_ID);
+        });
+
+        it('should decode Charger_Command from 29-bit arbitration ID', () => {
+            // Encoded: Max_charge_voltage=420.0V (raw=4200=0x1068), Max_charge_current=10.0A (raw=100=0x64), Control=0
+            const data = [0x68, 0x10, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00];
+
+            const result = decodeCanMessage(can, CHARGER_CMD_FRAME_ID, data, 1000);
+
+            expect(result).not.toBeNull();
+            expect(result?.messageName).toBe('Charger_Command');
+            expect(result?.signals.Max_charge_voltage).toBeDefined();
+            expect(result?.signals.Max_charge_voltage.sensorReading).toBeCloseTo(420.0, 1);
+            expect(result?.signals.Max_charge_current).toBeDefined();
+            expect(result?.signals.Max_charge_current.sensorReading).toBeCloseTo(10.0, 1);
+            expect(result?.signals.Control).toBeDefined();
+            expect(result?.signals.Control.sensorReading).toBe(0);
+        });
+
+        it('should decode Charger_Status from 29-bit arbitration ID', () => {
+            // Encoded: Output_voltage=415.0V (raw=4150=0x1036), Output_current=8.5A (raw=85=0x55), all flags=0
+            const data = [0x36, 0x10, 0x55, 0x00, 0x00, 0x00, 0x00, 0x00];
+
+            const result = decodeCanMessage(can, CHARGER_STS_FRAME_ID, data, 2000);
+
+            expect(result).not.toBeNull();
+            expect(result?.messageName).toBe('Charger_Status');
+            expect(result?.signals.Output_voltage).toBeDefined();
+            expect(result?.signals.Output_voltage.sensorReading).toBeCloseTo(415.0, 1);
+            expect(result?.signals.Output_current).toBeDefined();
+            expect(result?.signals.Output_current.sensorReading).toBeCloseTo(8.5, 1);
+            expect(result?.signals.Hardware_failure_flag).toBeDefined();
+            expect(result?.signals.Hardware_failure_flag.sensorReading).toBe(0);
+            expect(result?.signals.Overheat_flag).toBeDefined();
+            expect(result?.signals.Overheat_flag.sensorReading).toBe(0);
+        });
+
+        it('should decode Charger_Status fault flags correctly', () => {
+            // Hardware failure + overheat: byte3 bits [0,1] = 0b00000011 = 0x03
+            const data = [0x36, 0x10, 0x55, 0x03, 0x00, 0x00, 0x00, 0x00];
+
+            const result = decodeCanMessage(can, CHARGER_STS_FRAME_ID, data, 3000);
+
+            expect(result).not.toBeNull();
+            expect(result?.messageName).toBe('Charger_Status');
+            expect(result?.signals.Hardware_failure_flag.sensorReading).toBe(1);
+            expect(result?.signals.Overheat_flag.sensorReading).toBe(1);
+            expect(result?.signals.Input_voltage_flag.sensorReading).toBe(0);
+        });
+
+        it('should format unknown extended CAN ID with 8-char hex in message name', () => {
+            // An extended ID not in the DBC — exercises the hex-handling code path
+            const unknownExtendedId = 0x18AABBCC;
+            const data = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+
+            const result = decodeCanMessage(can, unknownExtendedId, data, 4000);
+
+            expect(result).not.toBeNull();
+            // formatCanId strips EFF bit and zero-pads to 8 chars
+            expect(result?.messageName).toBe('Unknown_CAN_0x18AABBCC');
+            expect(result?.signals).toEqual({});
+        });
+
+        it('should decode extended CAN frames in a mixed standard + extended batch', () => {
+            // Use the exampleDbc-loaded `can` instance from beforeAll so the
+            // extended messages are in the DBC (createCanProcessor() loads dbc.dbc in DEV).
+            const batch = [
+                { time: 6000, canId: 192,                 data: [0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00] },
+                { time: 6001, canId: CHARGER_CMD_FRAME_ID, data: [0x68, 0x10, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00] },
+                { time: 6002, canId: CHARGER_STS_FRAME_ID, data: [0x36, 0x10, 0x55, 0x00, 0x00, 0x00, 0x00, 0x00] },
+            ];
+
+            const results = batch.map(m => decodeCanMessage(can, m.canId, m.data, m.time));
+
+            expect(results.length).toBe(3);
+
+            const vcuResult   = results[0];
+            const chargerCmd  = results[1];
+            const chargerSts  = results[2];
+
+            expect(vcuResult?.messageName).toBe('VCU_Status');
+            expect(chargerCmd?.messageName).toBe('Charger_Command');
+            expect(chargerSts?.messageName).toBe('Charger_Status');
         });
     });
 });

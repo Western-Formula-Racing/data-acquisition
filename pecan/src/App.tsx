@@ -10,7 +10,11 @@ import {
 } from "./utils/canProcessor";
 import { Outlet } from "react-router";
 import { webSocketService } from "./services/WebSocketService";
+import { serialService } from "./services/SerialService";
 import { DefaultBanner, CacheBanner } from "./components/AppBanners";
+import FloatingTools from "./components/FloatingTools";
+import { useRemoteConfig } from "./lib/useRemoteConfig";
+import { updateCategories } from "./config/categories";
 
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
@@ -29,6 +33,20 @@ function App() {
     toggleDefault: () => setDisplayDefaultBanner((o) => !o),
     toggleCache: () => setDisplayCacheBanner((o) => !o),
   };
+
+  const { session, loadConfig } = useRemoteConfig();
+
+  useEffect(() => {
+    const fetchConfig = async () => {
+      if (session?.user) {
+        const cloudConfig = await loadConfig();
+        if (cloudConfig?.categoryConfig) {
+          updateCategories(cloudConfig.categoryConfig);
+        }
+      }
+    };
+    fetchConfig();
+  }, [session, loadConfig]);
 
   const openSettings = () => setIsSettingsOpen(true);
   const closeSettings = () => setIsSettingsOpen(false);
@@ -65,6 +83,7 @@ function App() {
     // Cleanup on unmount
     return () => {
       webSocketService.disconnect();
+      serialService.disconnect();
     };
   }, []); // Empty dependency array = runs once on mount
 
@@ -89,6 +108,7 @@ function App() {
         <Outlet context={{ isSidebarOpen, openSettings, ...bannerApi }} />
         <SettingsModal isOpen={isSettingsOpen} onClose={closeSettings} bannerApi={bannerApi} />
         <AuthModal isOpen={isAuthOpen} onClose={closeAuth} />
+        <FloatingTools />
       </main>
 
 

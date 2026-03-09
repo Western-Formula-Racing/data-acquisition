@@ -7,6 +7,8 @@ export interface TourStep {
   content: string;
   position?: "top" | "bottom" | "left" | "right";
   waitForInteraction?: boolean;
+  /** Shift the tooltip by a fraction of the viewport. E.g. xVw: -0.3 moves left by 30vw. */
+  tooltipOffset?: { xVw?: number; yVh?: number };
 }
 
 interface TourGuideProps {
@@ -90,7 +92,7 @@ export default function TourGuide({ steps, isOpen, onClose, currentStepIndex, on
       left = targetRect.left + (targetRect.width / 2) - 150; // Center horizontally
       break;
     case "top":
-      top = targetRect.top - spacing - 150; 
+      top = targetRect.top - spacing - 210;
       left = targetRect.left + (targetRect.width / 2) - 150;
       break;
     case "right":
@@ -103,11 +105,19 @@ export default function TourGuide({ steps, isOpen, onClose, currentStepIndex, on
       break;
   }
 
+  // Apply optional per-step viewport-relative offset before clamping
+  if (currentStep.tooltipOffset) {
+    if (currentStep.tooltipOffset.xVw !== undefined)
+      left += window.innerWidth * currentStep.tooltipOffset.xVw;
+    if (currentStep.tooltipOffset.yVh !== undefined)
+      top += window.innerHeight * currentStep.tooltipOffset.yVh;
+  }
+
   // Boundary checks (keep on screen)
   if (left < 10) left = 10;
   if (left + 300 > window.innerWidth - 10) left = window.innerWidth - 310;
   if (top < 10) top = 10;
-  if (top + 150 > window.innerHeight - 10) top = window.innerHeight - 160; // Basic check
+  if (top + 220 > window.innerHeight - 10) top = window.innerHeight - 230;
 
   tooltipStyle.top = `${top}px`;
   tooltipStyle.left = `${left}px`;
@@ -126,9 +136,11 @@ export default function TourGuide({ steps, isOpen, onClose, currentStepIndex, on
         }}
       />
       
-      {/* Invisible blocker for clicks outside the target */}
-      <div className="fixed inset-0 pointer-events-auto" style={{ 
-        clipPath: `polygon(
+      {/* Invisible overlay (visual only; allow clicks on controls/tooltips) */}
+      <div
+        className="fixed inset-0 pointer-events-none"
+        style={{
+          clipPath: `polygon(
           0% 0%, 
           0% 100%, 
           ${targetRect.left}px 100%, 
@@ -139,8 +151,9 @@ export default function TourGuide({ steps, isOpen, onClose, currentStepIndex, on
           ${targetRect.left}px 100%, 
           100% 100%, 
           100% 0%
-        )` 
-      }} />
+        )`,
+        }}
+      />
 
       {/* Tooltip Card */}
       <div

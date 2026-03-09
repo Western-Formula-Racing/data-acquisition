@@ -78,7 +78,7 @@ BO_ 768 Wheel_Speeds: 8 Vector__XXX
  SG_ RL_Speed : 32|16@1+ (1,0) [0|3000] "rpm" Vector__XXX
  SG_ RR_Speed : 48|16@1+ (1,0) [0|3000] "rpm" Vector__XXX
 
-BO_ 2048 IMU_Data: 8 Vector__XXX
+BO_ 1024 IMU_Data: 8 Vector__XXX
  SG_ AccelX : 0|16@1- (0.001,0) [-4|4] "g" Vector__XXX
  SG_ AccelY : 16|16@1- (0.001,0) [-4|4] "g" Vector__XXX
  SG_ AccelZ : 32|16@1- (0.001,0) [-4|4] "g" Vector__XXX
@@ -213,7 +213,7 @@ BO_ 1023 TORCH_M4_V3: 8 CUSTOMBMS
  SG_ M4_Cell11_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
  SG_ M4_Cell12_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
 
-BO_ 1024 TORCH_M4_V4: 8 CUSTOMBMS
+BO_ 1056 TORCH_M4_V4: 8 CUSTOMBMS
  SG_ M4_Cell13_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
  SG_ M4_Cell14_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
  SG_ M4_Cell15_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
@@ -394,3 +394,30 @@ BO_ 1054 TORCH_M5_T4: 8 CUSTOMBMS
 BO_ 1055 TORCH_M5_T5: 8 CUSTOMBMS
  SG_ M5_Thermistor17 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
  SG_ M5_Thermistor18 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 2550588916 Charger_Command: 8 Vector__XXX
+ SG_ Max_charge_voltage : 0|16@1+ (0.1,0) [0|655.3] "V" Vector__XXX
+ SG_ Max_charge_current : 16|8@1+ (0.1,0) [0|25.5] "A" Vector__XXX
+ SG_ Control : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 2566869221 Charger_Status: 8 Vector__XXX
+ SG_ Output_voltage : 0|16@1+ (0.1,0) [0|655.3] "V" Vector__XXX
+ SG_ Output_current : 16|8@1+ (0.1,0) [0|25.5] "A" Vector__XXX
+ SG_ Hardware_failure_flag : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Overheat_flag : 25|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Input_voltage_flag : 26|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Starting_state : 27|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Communication_state : 28|1@1+ (1,0) [0|1] "" Vector__XXX
+
+CM_ BO_ 2550588916 "Charger command message (J1939 extended 29-bit frame)";
+CM_ SG_ 2550588916 Max_charge_voltage "Max allowable charging terminal voltage";
+CM_ SG_ 2550588916 Max_charge_current "Max allowable charging current";
+CM_ SG_ 2550588916 Control "Toggle charging. 0 = start charging, 1 = stop charging";
+CM_ BO_ 2566869221 "Charger status message (J1939 extended 29-bit frame)";
+CM_ SG_ 2566869221 Output_voltage "Charger output voltage";
+CM_ SG_ 2566869221 Output_current "Charger output current";
+CM_ SG_ 2566869221 Hardware_failure_flag "0 = good, 1 = hardware failure";
+CM_ SG_ 2566869221 Overheat_flag "0 = good, 1 = charger overheated and stopped charging";
+CM_ SG_ 2566869221 Input_voltage_flag "0 = input voltage OK, 1 = input voltage wrong and charger halted";
+CM_ SG_ 2566869221 Starting_state "0 = charger detects battery voltage and starts, 1 = stays off (anti-reverse-polarity)";
+CM_ SG_ 2566869221 Communication_state "0 = communication OK, 1 = communication receive timeout";

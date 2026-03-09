@@ -1,10 +1,13 @@
 import { webSocketService } from "../services/WebSocketService";
 import { forceCache, clearDbcCache } from "../utils/canProcessor";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "./Button";
 import { useAllSignals } from "../lib/useDataStore";
 import { loadPinnedSensors, savePinnedSensors, type CommsSensorConfig } from "./CommsSensorStrip";
-import { Plus, X, Activity } from "lucide-react";
+import { Plus, X, Activity, Usb, Unplug, Save } from "lucide-react";
+import { serialService } from "../services/SerialService";
+import { useRemoteConfig } from "../lib/useRemoteConfig";
+import { getCategoryConfigString, updateCategories } from "../config/categories";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -125,6 +128,60 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
     const [perfOverlayEnabled, setPerfOverlayEnabled] = useState(() =>
         localStorage.getItem("perf-overlay-enabled") === "true"
     );
+    const [isSerialConnected, setIsSerialConnected] = useState(serialService.getConnectionStatus());
+
+    const { session, loadConfig, saveConfig } = useRemoteConfig();
+    const [categoryText, setCategoryText] = useState("");
+    const [isSavingCategory, setIsSavingCategory] = useState(false);
+
+    useEffect(() => {
+        // Subscribe to serial connection changes
+        serialService.onConnectionChange = (connected) => {
+            setIsSerialConnected(connected);
+        };
+        return () => {
+            serialService.onConnectionChange = null;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (isOpen) {
+            setCategoryText(getCategoryConfigString());
+            if (session?.user) {
+                loadConfig().then(config => {
+                    if (config?.categoryConfig) {
+                        setCategoryText(config.categoryConfig);
+                    }
+                });
+            }
+        }
+    }, [isOpen, session, loadConfig]);
+
+    const handleSaveCategory = async () => {
+        setIsSavingCategory(true);
+        try {
+            updateCategories(categoryText);
+
+            if (session?.user) {
+                const currentConfig = await loadConfig();
+                await saveConfig({
+                    ...currentConfig,
+                    categoryConfig: categoryText
+                });
+
+                // Slight delay to allow debounced save to fire before optional reload if needed.
+                // We don't force a reload here so it's seamless, but components might need one to reflect historic data changes.
+                setTimeout(() => {
+                    setIsSavingCategory(false);
+                }, 2000);
+            } else {
+                setIsSavingCategory(false);
+            }
+        } catch (e) {
+            console.error(e);
+            setIsSavingCategory(false);
+        }
+    };
 
     if (!isOpen) return null;
 
@@ -262,6 +319,57 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                             />
                             <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                         </label>
+                    </div>
+
+                    {/* Local USB CAN Adapter Toggle */}
+                    <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
+                        <div className="flex flex-col">
+                            <span className="text-sm font-medium">Local USB CAN Adapter</span>
+                            <span className="text-xs text-gray-400">Connect to slcan compatible device (e.g. Kvaser/CANable) directly via Web Serial</span>
+                        </div>
+                        <div className="flex gap-2 items-center">
+                            {isSerialConnected ? (
+                                <Button
+                                    onClick={() => serialService.disconnect()}
+                                    variant="danger"
+                                    className="flex items-center gap-1.5"
+                                >
+                                    <Unplug className="w-4 h-4" /> Disconnect
+                                </Button>
+                            ) : (
+                                <Button
+                                    onClick={() => serialService.connect()}
+                                    variant="primary"
+                                    className="flex items-center gap-1.5"
+                                >
+                                    <Usb className="w-4 h-4" /> Connect USB CAN
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Category Configuration Area */}
+                    <div className="w-full rounded-lg text-white bg-option p-4">
+                        <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm font-medium block">Category Configuration</span>
+                            <Button
+                                onClick={handleSaveCategory}
+                                variant="primary"
+                                disabled={isSavingCategory}
+                                className="flex items-center gap-1.5 py-1 px-3 text-sm h-8"
+                            >
+                                <Save className="w-4 h-4" /> {isSavingCategory ? "Saving..." : "Apply & Save"}
+                            </Button>
+                        </div>
+                        <p className="text-gray-400 text-xs mb-3">
+                            Format: <code>CategoryName,TailwindColorClass,MessageIDs</code> (e.g., <code>BMS,bg-orange-400,256-300</code>). Automatically synced via Firebase.
+                        </p>
+                        <textarea
+                            className="w-full h-32 bg-zinc-800 text-slate-300 text-xs font-mono p-3 rounded border border-gray-600 focus:border-blue-500 outline-none resize-y"
+                            value={categoryText}
+                            onChange={(e) => setCategoryText(e.target.value)}
+                            spellCheck={false}
+                        />
                     </div>
 
                     {/* Comms Pinned Sensors */}
