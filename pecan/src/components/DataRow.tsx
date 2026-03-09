@@ -32,9 +32,10 @@ interface DataRowProps {
         unit: string,
         event: React.MouseEvent
     ) => void;
+    onTraceClick?: (msgID: string) => void;
 }
 
-export default function DataRow({ msgID, name, category, data, rawData, lastUpdated, index, initialOpen = false, isTourRow = false, tourSignal, onSignalClick }: Readonly<DataRowProps>) {
+export default function DataRow({ msgID, name, category, data, rawData, lastUpdated, index, initialOpen = false, isTourRow = false, tourSignal, onSignalClick, onTraceClick }: Readonly<DataRowProps>) {
 
     const [currentTime, setCurrentTime] = useState(Date.now());
 
@@ -94,7 +95,8 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
                 </div>
 
                 {/* Message name column */}
-                <div className="col-span-4 md:col-span-4 flex items-center px-3 truncate">
+                <div className="col-span-4 md:col-span-4 flex items-center px-3 gap-2 overflow-hidden">
+                    <span className="truncate flex-1">
                     {isUnknown ? (
                         <div className="flex items-center gap-2">
                             <span className="px-2 py-0.5 text-[11px] font-bold text-white bg-rose-600 rounded" title="Not defined in DBC">
@@ -105,6 +107,15 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
                     ) : (
                         name
                     )}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onTraceClick?.(msgID); }}
+                        className="shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-purple-500/15 text-purple-300 hover:bg-purple-500/30 transition-colors whitespace-nowrap"
+                        title="View in CAN Trace panel"
+                    >
+                        ↗
+                    </button>
                 </div>
 
                 {/* Category column with coloured background */}

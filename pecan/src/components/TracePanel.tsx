@@ -8,6 +8,9 @@ type DirectionFilter = "all" | "rx" | "tx";
 interface TracePanelProps {
   direction?: DirectionFilter;
   maxRows?: number;
+  filter?: string;
+  onClose?: () => void;
+  initialOffset?: { x: number; y: number };
 }
 
 const DEFAULT_WIDTH = 420;
@@ -64,6 +67,9 @@ const TRACE_PANEL_TOUR_STEPS: TourStep[] = [
 export default function TracePanel({
   direction = "tx",
   maxRows = 80,
+  filter,
+  onClose,
+  initialOffset = { x: 0, y: 0 },
 }: TracePanelProps) {
   const { frames, clearTrace } = useTraceBuffer(100);
   const [open, setOpen] = useState(true);
@@ -87,20 +93,28 @@ export default function TracePanel({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const padding = 16;
-    const top = Math.max(8, window.innerHeight - DEFAULT_HEIGHT - padding);
-    const left = Math.max(8, window.innerWidth - DEFAULT_WIDTH - padding);
+    const top = Math.max(8, window.innerHeight - DEFAULT_HEIGHT - padding + initialOffset.y);
+    const left = Math.max(8, window.innerWidth - DEFAULT_WIDTH - padding + initialOffset.x);
     setPosition({ top, left });
-  }, []);
+  }, [initialOffset.x, initialOffset.y]);
 
   const activeSource = paused ? snapshot : frames;
 
   const visible = useMemo(() => {
-    const filtered =
+    let filtered =
       direction === "all"
         ? activeSource
         : activeSource.filter((f) => (f.direction ?? "rx") === direction);
+    if (filter) {
+      const term = filter.trim().toLowerCase();
+      filtered = filtered.filter(
+        (f) =>
+          f.msgID.toLowerCase().includes(term) ||
+          f.messageName.toLowerCase().includes(term)
+      );
+    }
     return filtered.slice(-maxRows);
-  }, [activeSource, direction, maxRows]);
+  }, [activeSource, direction, maxRows, filter]);
 
   const handlePause = () => {
     if (!paused) {
@@ -180,7 +194,10 @@ export default function TracePanel({
           id="trace-panel-header-title"
           className="text-[11px] font-mono text-slate-300"
         >
-          CAN TRACE {direction === "tx" ? "(TX only)" : direction === "rx" ? "(RX only)" : ""}
+          CAN TRACE{" "}
+          {filter
+            ? <span className="text-cyan-400">{filter}</span>
+            : direction === "tx" ? "(TX only)" : direction === "rx" ? "(RX only)" : ""}
         </span>
         <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500">
           <button
@@ -218,7 +235,7 @@ export default function TracePanel({
             {visible.length.toString().padStart(2, "0")} rows
           </span>
           <button
-            onClick={() => setOpen(false)}
+            onClick={() => { setOpen(false); onClose?.(); }}
             className="ml-1 px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-300"
             title="Close panel"
           >
