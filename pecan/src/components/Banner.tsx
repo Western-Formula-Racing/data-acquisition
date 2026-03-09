@@ -11,7 +11,7 @@ export function Banner({ open, children, className = "" }: BannerProps) {
 
     return (
         <div
-            className={`fixed bottom-0 left-0 right-0 z-50 flex flex-row w-full bg-dropdown-menu-bg justify-center items-center box-border px-4 py-3 shadow-lg border-t border-gray-600 gap-8 ${className}`}
+            className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-row w-[calc(100%-2rem)] max-w-4xl bg-dropdown-menu-bg justify-center items-center box-border px-6 py-4 shadow-2xl rounded-2xl border border-gray-600/50 backdrop-blur-md gap-8 transition-all duration-300 ${className}`}
         >
             {children}
         </div>
