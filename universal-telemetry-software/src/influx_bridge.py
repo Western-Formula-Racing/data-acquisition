@@ -12,7 +12,6 @@ Measurement / table name is controlled by INFLUX_TABLE (e.g. WFR26_base).
 import asyncio
 import json
 import os
-import signal
 import time
 import logging
 from pathlib import Path
@@ -21,18 +20,18 @@ import cantools
 import redis.asyncio as redis
 from influxdb_client import InfluxDBClient, WriteOptions
 
+from src.config import (
+    REDIS_URL,
+    REDIS_CAN_CHANNEL as REDIS_CHANNEL,
+    LOCAL_INFLUX_URL as INFLUX_URL,
+    LOCAL_INFLUX_TOKEN as INFLUX_TOKEN,
+    LOCAL_INFLUX_ORG as INFLUX_ORG,
+    LOCAL_INFLUX_BUCKET as INFLUX_BUCKET,
+    INFLUX_TABLE,
+)
+from src import redis_utils, utils
+
 logger = logging.getLogger("InfluxBridge")
-
-# ── Redis ──────────────────────────────────────────────────────────────────────
-REDIS_URL       = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-REDIS_CHANNEL   = "can_messages"
-
-# ── Local InfluxDB3 ───────────────────────────────────────────────────────────
-INFLUX_URL      = os.getenv("LOCAL_INFLUX_URL", "http://localhost:8181")
-INFLUX_TOKEN    = os.getenv("LOCAL_INFLUX_TOKEN", "")
-INFLUX_ORG      = os.getenv("LOCAL_INFLUX_ORG", "WFR")
-INFLUX_BUCKET   = os.getenv("LOCAL_INFLUX_BUCKET", "WFR26")
-INFLUX_TABLE    = os.getenv("INFLUX_TABLE", "WFR26_base")
 
 # ── DBC ────────────────────────────────────────────────────────────────────────
 DBC_FILE_PATH   = os.getenv("DBC_FILE_PATH", "/app/example.dbc")
@@ -198,10 +197,7 @@ class InfluxBridge:
                 if message["type"] != "message":
                     continue
 
-                data = message["data"]
-                if isinstance(data, bytes):
-                    data = data.decode("utf-8")
-
+                data = redis_utils.decode_message(message["data"])
                 lines = self.process_message(data)
                 if lines:
                     try:
@@ -240,14 +236,7 @@ class InfluxBridge:
 async def run_influx_bridge():
     """Standalone entry point for the bridge."""
     loop = asyncio.get_running_loop()
-
-    def _shutdown():
-        logger.info("Shutting down InfluxBridge …")
-        shutdown_event.set()
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _shutdown)
-
+    utils.register_shutdown_signals(loop, shutdown_event, "InfluxBridge")
     logger.info("Starting Redis → InfluxDB Bridge …")
     bridge = InfluxBridge()
     await bridge.run()

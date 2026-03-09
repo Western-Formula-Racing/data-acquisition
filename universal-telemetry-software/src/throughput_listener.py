@@ -10,21 +10,21 @@ Added to run_car()'s asyncio.gather() in data.py.
 
 import asyncio
 import json
+import socket
 import struct
 import time
-import os
 import logging
 
-logger = logging.getLogger("ThroughputListener")
+from src.config import THROUGHPUT_PORT
 
-THROUGHPUT_PORT = int(os.getenv("THROUGHPUT_PORT", "5007"))
+logger = logging.getLogger("ThroughputListener")
 
 
 async def throughput_listener_task():
     """Listen for throughput burst probes and ACK each burst."""
     loop = asyncio.get_running_loop()
 
-    sock = __import__("socket").socket(__import__("socket").AF_INET, __import__("socket").SOCK_DGRAM)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("0.0.0.0", THROUGHPUT_PORT))
     sock.setblocking(False)
 
@@ -63,9 +63,10 @@ async def throughput_listener_task():
         received_count += 1
         last_packet_time = now
 
-        # Check if burst is complete or if we should send ACK
         if received_count >= expected_count:
-            # Burst complete, send ACK immediately
+            # Burst complete — ACK immediately.
+            # Note: partial bursts (sender dropped packets) are not ACK'd here;
+            # a separate timeout coroutine would be needed for that case.
             ack = json.dumps({
                 "received": received_count,
                 "ts": int(time.time() * 1000),
@@ -74,19 +75,4 @@ async def throughput_listener_task():
                 await loop.sock_sendto(sock, ack, sender_addr)
             except Exception as e:
                 logger.debug(f"ACK send error: {e}")
-            current_burst_id = None
-
-        # Also check for stale bursts (partial receipt, no more packets coming)
-        # This is handled by checking in a periodic manner
-        elif now - last_packet_time > 1.0 and received_count > 0:
-            # Timeout: send whatever we got
-            ack = json.dumps({
-                "received": received_count,
-                "ts": int(time.time() * 1000),
-            }).encode()
-            try:
-                if sender_addr:
-                    await loop.sock_sendto(sock, ack, sender_addr)
-            except Exception:
-                pass
             current_burst_id = None

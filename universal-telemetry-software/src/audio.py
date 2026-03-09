@@ -3,10 +3,11 @@ import sys
 import os
 import logging
 import threading
-import time
 
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
+
+from src import utils
 
 logger = logging.getLogger("Audio")
 logger.setLevel(logging.INFO)
@@ -184,14 +185,8 @@ def run_audio(role, remote_ip, heartbeat_event=None):
     # For now, read PTT from ENV. In real usage, this would be a GPIO callback.
     ptt_initial = os.getenv("PTT_ENABLED", "false").lower() == "true"
 
-    # Heartbeat thread for LED status
     if heartbeat_event is not None:
-        def _heartbeat():
-            while True:
-                heartbeat_event.set()
-                time.sleep(1)
-        t = threading.Thread(target=_heartbeat, daemon=True)
-        t.start()
+        utils.start_heartbeat_thread(heartbeat_event)
 
     transceiver = AudioTransceiver(remote_ip, ptt_active=ptt_initial)
     transceiver.start()
