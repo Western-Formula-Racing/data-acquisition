@@ -10,6 +10,7 @@ import { Play, Pause, Trash2, HelpCircle } from "lucide-react";
 import { useTraceBuffer } from "../lib/useDataStore";
 import type { TelemetrySample } from "../lib/DataStore";
 import TourGuide, { type TourStep } from "../components/TourGuide";
+import RaceCarGame from "../components/RaceCarGame";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -372,6 +373,9 @@ function Trace() {
   const frozenRef = useRef<TelemetrySample[]>([]);
   const activeFrames = paused ? frozenRef.current : frames;
 
+  // Easter Egg State
+  const [showRaceGame, setShowRaceGame] = useState(false);
+
   // Freeze on pause
   const handlePause = useCallback(() => {
     if (!paused) {
@@ -389,6 +393,17 @@ function Trace() {
     clearTrace();
     frozenRef.current = [];
   }, [clearTrace]);
+
+  // Handle Easter Egg Trigger
+  useEffect(() => {
+    if (filter.trim().toLowerCase() === "race") {
+      setShowRaceGame(true);
+      // Blur any active element to prevent keyboard event capture by the input
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    }
+  }, [filter]);
 
   // Filter logic: match CAN ID or message name (comma-separated terms)
   const filteredFrames = useMemo(() => {
@@ -599,6 +614,16 @@ function Trace() {
         currentStepIndex={currentTourStep}
         onStepChange={setCurrentTourStep}
       />
+
+      {/* Easter Egg Overlay */}
+      {showRaceGame && (
+        <RaceCarGame
+          onClose={() => {
+            setShowRaceGame(false);
+            setFilter("");
+          }}
+        />
+      )}
     </div>
   );
 }

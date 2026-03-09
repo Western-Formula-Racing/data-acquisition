@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Plotly from "plotly.js-dist-min";
 import { dataStore } from "../lib/DataStore";
+import { createGrafanaDashboard } from "../services/GrafanaService";
 
 // Standard Nivo colors (or similar palette) to ensure consistency between plot and list
 const PLOT_COLORS = [
@@ -198,6 +199,25 @@ function PlotManager({
     return () => clearInterval(updateInterval);
   }, [signals, timeWindowMs, isInitialized, plotId]);
 
+  const [grafanaStatus, setGrafanaStatus] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
+  const [grafanaError, setGrafanaError] = useState("");
+
+  const handleOpenInGrafana = async () => {
+    if (signals.length === 0) return;
+    setGrafanaStatus("loading");
+    setGrafanaError("");
+    try {
+      const result = await createGrafanaDashboard(signals);
+      setGrafanaStatus("success");
+      window.open(result.url, "_blank", "noopener");
+    } catch (err: unknown) {
+      setGrafanaStatus("error");
+      setGrafanaError(err instanceof Error ? err.message : "Unknown error");
+    }
+  };
+
   return (
     <div className="bg-data-module-bg rounded-md p-3 mb-3">
       <div className="flex justify-between items-center mb-2">
@@ -244,6 +264,26 @@ function PlotManager({
       {signals.length === 0 && (
         <div className="text-center text-gray-500 py-4 text-sm">
           No signals added to this plot
+        </div>
+      )}
+
+      {/* Open in Grafana */}
+      {signals.length > 0 && (
+        <div className="mt-2">
+          <button
+            onClick={handleOpenInGrafana}
+            disabled={grafanaStatus === "loading"}
+            className="w-full px-3 py-2 rounded text-sm font-medium transition-colors
+              bg-orange-600 hover:bg-orange-500 text-white
+              disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {grafanaStatus === "loading"
+              ? "Creating dashboard…"
+              : "📊 Open in Grafana"}
+          </button>
+          {grafanaStatus === "error" && (
+            <p className="text-red-400 text-xs mt-1">{grafanaError}</p>
+          )}
         </div>
       )}
     </div>
