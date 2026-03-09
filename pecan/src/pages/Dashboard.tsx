@@ -18,6 +18,7 @@ import gridViewIcon from "../assets/grid-view.png";
 import TourGuide from "../components/TourGuide";
 import type { TourStep } from "../components/TourGuide";
 import { useRemoteConfig } from "../lib/useRemoteConfig";
+import { HelpCircle } from "lucide-react";
 
 interface Plot {
   id: string;
@@ -550,11 +551,11 @@ function Dashboard() {
                   id="dash-tour-start"
                   type="button"
                   onClick={handleStartTour}
-                  className="ml-1 w-8 h-8 rounded-full border border-blue-500/60 bg-blue-500/10 text-xs font-mono text-blue-200 flex items-center justify-center hover:bg-blue-500/20 transition-colors"
+                  className="ml-1 w-8 h-8 rounded-full border border-blue-500/60 bg-blue-500/10 text-blue-200 flex items-center justify-center hover:bg-blue-500/20 transition-colors"
                   title="Start dashboard tour"
                   aria-label="Start dashboard tour"
                 >
-                  ?
+                  <HelpCircle size={16} />
                 </button>
               </div>
             </div>

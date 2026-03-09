@@ -6,6 +6,7 @@ import {
   useCallback,
 } from "react";
 import { Link, useSearchParams } from "react-router";
+import { Play, Pause, Trash2, HelpCircle } from "lucide-react";
 import { useTraceBuffer } from "../lib/useDataStore";
 import type { TelemetrySample } from "../lib/DataStore";
 import TourGuide, { type TourStep } from "../components/TourGuide";
@@ -427,29 +428,31 @@ function Trace() {
             setCurrentTourStep(0);
             setTourOpen(true);
           }}
-          className="px-2 py-1 rounded-full border border-blue-500/60 bg-blue-500/10 text-[10px] font-mono text-blue-200 hover:bg-blue-500/20 transition-colors"
+          className="p-1 rounded-full border border-blue-500/60 bg-blue-500/10 text-blue-200 hover:bg-blue-500/20 transition-colors"
           title="Start CAN Trace tour"
         >
-          ?
+          <HelpCircle size={14} />
         </button>
 
         {/* Pause / Resume */}
         <button
           id="trace-pause-main"
           onClick={handlePause}
-          className={`px-3 py-1 rounded text-xs font-mono font-semibold border transition-colors ${paused
-              ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30"
-              : "bg-yellow-500/20 border-yellow-500/50 text-yellow-300 hover:bg-yellow-500/30"
+          className={`flex items-center gap-2 px-3 py-1 rounded text-xs font-mono font-semibold border transition-colors ${paused
+            ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30"
+            : "bg-yellow-500/20 border-yellow-500/50 text-yellow-300 hover:bg-yellow-500/30"
             }`}
         >
-          {paused ? "▶ RESUME" : "⏸ PAUSE"}
+          {paused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
+          {paused ? "RESUME" : "PAUSE"}
         </button>
 
         {/* Clear */}
         <button
           onClick={handleClear}
-          className="px-3 py-1 rounded text-xs font-mono font-semibold border border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 transition-colors"
+          className="flex items-center gap-2 px-3 py-1 rounded text-xs font-mono font-semibold border border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 transition-colors"
         >
+          <Trash2 size={14} />
           CLEAR
         </button>
 
@@ -461,8 +464,8 @@ function Trace() {
           <button
             onClick={() => setViewMode("scroll")}
             className={`px-3 py-1 text-xs font-mono transition-colors ${viewMode === "scroll"
-                ? "bg-purple-600/40 text-purple-200"
-                : "bg-white/5 text-slate-400 hover:bg-white/10"
+              ? "bg-purple-600/40 text-purple-200"
+              : "bg-white/5 text-slate-400 hover:bg-white/10"
               }`}
           >
             SCROLL
@@ -470,8 +473,8 @@ function Trace() {
           <button
             onClick={() => setViewMode("fixed")}
             className={`px-3 py-1 text-xs font-mono transition-colors ${viewMode === "fixed"
-                ? "bg-purple-600/40 text-purple-200"
-                : "bg-white/5 text-slate-400 hover:bg-white/10"
+              ? "bg-purple-600/40 text-purple-200"
+              : "bg-white/5 text-slate-400 hover:bg-white/10"
               }`}
           >
             FIXED
@@ -575,8 +578,8 @@ function Trace() {
           <button
             onClick={() => setAutoScroll(true)}
             className={`transition-colors ${autoScroll
-                ? "text-emerald-600"
-                : "text-yellow-500 hover:text-yellow-400"
+              ? "text-emerald-600"
+              : "text-yellow-500 hover:text-yellow-400"
               }`}
           >
             {autoScroll ? "● Auto-scroll ON" : "↓ Click to resume auto-scroll"}

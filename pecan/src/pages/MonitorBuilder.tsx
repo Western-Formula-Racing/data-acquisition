@@ -21,15 +21,42 @@ import { useRemoteConfig } from '../lib/useRemoteConfig';
 import type { MonitorPreset } from '../lib/firebase';
 
 // Custom Node Component
-const SensorNode = ({ data }: { data: { msgID: string; signalName: string } }) => {
+const SensorNode = ({ id, data }: { id: string; data: { msgID: string; signalName: string } }) => {
+  const { setNodes } = useReactFlow();
   const signalData = useSignal(data.msgID, data.signalName);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  useEffect(() => {
+    if (showDeleteConfirm) {
+      const timer = setTimeout(() => setShowDeleteConfirm(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showDeleteConfirm]);
+
+  const handleNodeClick = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    if (showDeleteConfirm) {
+      setNodes((nodes) => nodes.filter((node) => node.id !== id));
+    } else {
+      setShowDeleteConfirm(true);
+    }
+  };
 
   return (
-    <div className="relative p-4 rounded-md shadow-lg bg-data-module-bg border border-gray-600 text-white min-w-[180px] max-w-[250px]">
+    <div
+      className={`relative p-4 rounded-md shadow-lg border text-white min-w-[180px] max-w-[250px] transition-all duration-300 cursor-pointer ${showDeleteConfirm ? 'bg-red-900/80 border-red-500 scale-105' : 'bg-data-module-bg border-gray-600'}`}
+      onClick={handleNodeClick}
+    >
       <Handle type="source" position={Position.Top} id="top" className="!bg-white w-4 h-4" />
       <Handle type="source" position={Position.Right} id="right" className="!bg-white w-4 h-4" />
       <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-white w-4 h-4" />
       <Handle type="source" position={Position.Left} id="left" className="!bg-white w-4 h-4" />
+
+      {showDeleteConfirm && (
+        <div className="absolute inset-0 flex items-center justify-center bg-red-600/20 rounded-md z-20 pointer-events-none">
+          <span className="text-[10px] font-bold uppercase tracking-tighter text-white drop-shadow-md">Tap again to delete</span>
+        </div>
+      )}
 
       <div className="text-sm font-semibold truncate">{data.signalName}</div>
       <div className="text-xs text-gray-400">{data.msgID}</div>
@@ -43,6 +70,26 @@ const SensorNode = ({ data }: { data: { msgID: string; signalName: string } }) =
 const RangeNode = ({ id, data }: { id: string, data: { msgID: string; signalName: string; min?: string; max?: string } }) => {
   const { setNodes } = useReactFlow();
   const signalData = useSignal(data.msgID, data.signalName);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  useEffect(() => {
+    if (showDeleteConfirm) {
+      const timer = setTimeout(() => setShowDeleteConfirm(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showDeleteConfirm]);
+
+  const handleNodeClick = (e: React.MouseEvent | React.TouchEvent) => {
+    // If clicking input, don't trigger deletion logic
+    if ((e.target as HTMLElement).tagName === 'INPUT') return;
+
+    e.stopPropagation();
+    if (showDeleteConfirm) {
+      setNodes((nodes) => nodes.filter((node) => node.id !== id));
+    } else {
+      setShowDeleteConfirm(true);
+    }
+  };
 
   const updateData = (key: string, value: string) => {
     setNodes((nodes) => nodes.map((node) => {
@@ -60,12 +107,21 @@ const RangeNode = ({ id, data }: { id: string, data: { msgID: string; signalName
   const isAlert = !isNaN(val) && ((!isNaN(minVal) && val < minVal) || (!isNaN(maxVal) && val > maxVal));
 
   return (
-    <div className={`relative p-4 rounded-md shadow-lg border transition-colors duration-300 min-w-[200px] ${isAlert ? 'bg-red-900/90 border-red-500 animate-pulse' : 'bg-data-module-bg border-gray-600'}`}>
+    <div
+      className={`relative p-4 rounded-md shadow-lg border transition-all duration-300 min-w-[200px] cursor-pointer ${showDeleteConfirm ? 'bg-red-900/80 border-red-500 scale-105' : isAlert ? 'bg-red-900/90 border-red-500 animate-pulse' : 'bg-data-module-bg border-gray-600'}`}
+      onClick={handleNodeClick}
+    >
       {/* Handles */}
       <Handle type="source" position={Position.Top} id="top" className="!bg-white w-4 h-4" />
       <Handle type="source" position={Position.Right} id="right" className="!bg-white w-4 h-4" />
       <Handle type="source" position={Position.Bottom} id="bottom" className="!bg-white w-4 h-4" />
       <Handle type="source" position={Position.Left} id="left" className="!bg-white w-4 h-4" />
+
+      {showDeleteConfirm && (
+        <div className="absolute inset-0 flex items-center justify-center bg-red-600/20 rounded-md z-20 pointer-events-none text-center">
+          <span className="text-[10px] font-bold uppercase tracking-tighter text-white drop-shadow-md px-2">Tap again to delete</span>
+        </div>
+      )}
 
       <div className="text-sm font-semibold truncate text-white">{data.signalName}</div>
       <div className="text-xs text-gray-400">{data.msgID}</div>
@@ -118,6 +174,7 @@ const MonitorBuilder = () => {
   const [activePresetName, setActivePresetName] = useState<string | null>(null);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
+  const [selectedSignal, setSelectedSignal] = useState<{ msgID: string; signalName: string } | null>(null);
 
   const LOCAL_STORAGE_KEY = 'pecan_monitor_presets';
 
@@ -303,6 +360,34 @@ const MonitorBuilder = () => {
     [reactFlowInstance, setNodes]
   );
 
+  const onPaneClick = useCallback(
+    (event: React.MouseEvent | React.TouchEvent) => {
+      if (!selectedSignal || !reactFlowInstance || !reactFlowWrapper.current) return;
+
+      const reactFlowBounds = reactFlowWrapper.current.getBoundingClientRect();
+
+      // Handle both mouse and touch events
+      const clientX = 'clientX' in event ? event.clientX : (event as React.TouchEvent).touches[0].clientX;
+      const clientY = 'clientY' in event ? event.clientY : (event as React.TouchEvent).touches[0].clientY;
+
+      const position = reactFlowInstance.project({
+        x: clientX - reactFlowBounds.left,
+        y: clientY - reactFlowBounds.top,
+      });
+
+      const newNode = {
+        id: `${dragMode}-${selectedSignal.msgID}-${selectedSignal.signalName}-${Date.now()}`,
+        type: dragMode,
+        position,
+        data: { msgID: selectedSignal.msgID, signalName: selectedSignal.signalName },
+      };
+
+      setNodes((nds) => nds.concat(newNode));
+      setSelectedSignal(null); // Clear selection after placement
+    },
+    [reactFlowInstance, selectedSignal, dragMode, setNodes]
+  );
+
   return (
     <div className="flex h-full w-full bg-sidebar text-white">
       <ReactFlowProvider>
@@ -334,15 +419,29 @@ const MonitorBuilder = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
 
-            <div className="text-xs text-gray-400 mt-2">Drag to canvas</div>
+            <div className="text-xs text-gray-400 mt-2">
+              {selectedSignal ? 'Tap canvas to place signal' : 'Drag or tap to select'}
+            </div>
+            {selectedSignal && (
+              <button
+                onClick={() => setSelectedSignal(null)}
+                className="mt-2 text-[10px] text-blue-400 hover:text-blue-300 underline"
+              >
+                Clear selection
+              </button>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 pt-0 flex flex-col gap-2">
             {filteredSignals.map((signal, index) => (
               <div
                 key={`${signal.msgID}-${signal.signalName}-${index}`} // Use a unique key
-                className="p-2 bg-data-textbox-bg rounded cursor-grab hover:bg-data-textbox-bg/80 transition-colors border border-transparent hover:border-gray-500"
+                className={`p-2 rounded cursor-grab transition-colors border ${selectedSignal?.msgID === signal.msgID && selectedSignal?.signalName === signal.signalName
+                  ? 'bg-blue-600/30 border-blue-500 text-white'
+                  : 'bg-data-textbox-bg border-transparent hover:bg-data-textbox-bg/80 hover:border-gray-500'
+                  }`}
                 onDragStart={(event) => onDragStart(event, dragMode, signal.msgID, signal.signalName)}
+                onClick={() => setSelectedSignal({ msgID: signal.msgID, signalName: signal.signalName })}
                 draggable
               >
                 <span className="font-semibold">{signal.signalName}</span> <span className="text-gray-400 text-xs">({signal.msgID})</span>
@@ -412,6 +511,7 @@ const MonitorBuilder = () => {
               onInit={setReactFlowInstance}
               onDrop={onDrop}
               onDragOver={onDragOver}
+              onPaneClick={onPaneClick}
               nodeTypes={nodeTypes}
               connectionMode={ConnectionMode.Loose}
               fitView

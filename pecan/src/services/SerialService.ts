@@ -1,4 +1,5 @@
 import { dataStore } from '../lib/DataStore';
+import { webSocketService } from './WebSocketService';
 import { createCanProcessor, decodeAndIngestCanFrame, formatCanId } from '../utils/canProcessor';
 import { Can } from 'candied';
 
@@ -38,8 +39,14 @@ export class SerialService {
     // Hold decoder instance to parse messages
     private canInstance: Can | null = null;
 
-    // Callbacks for UI updates
+    // Callbacks for UI updates (legacy, use event listener for new code)
     public onConnectionChange: ((connected: boolean) => void) | null = null;
+
+    private notifyConnectionChange(connected: boolean) {
+        this.isConnected = connected;
+        if (this.onConnectionChange) this.onConnectionChange(connected);
+        window.dispatchEvent(new CustomEvent('serial-connection-changed', { detail: { connected } }));
+    }
 
     constructor() {
         this.processorPromise = createCanProcessor().then(proc => {
@@ -65,13 +72,16 @@ export class SerialService {
             // E.g., CANable default slcan firmware uses 115200.
             await this.port.open({ baudRate: 115200 });
 
-            this.isConnected = true;
-            if (this.onConnectionChange) this.onConnectionChange(true);
+            this.notifyConnectionChange(true);
 
             // Apply orange theme for local CAN mode
             document.body.classList.add("theme-local-can");
 
             console.log('Serial port opened');
+
+            // Suppression and Clear
+            webSocketService.setSuppressIngestion(true);
+            dataStore.clear();
 
             // Initialize the CAN interface via slcan protocol
             await this.initSlcan();
@@ -82,8 +92,7 @@ export class SerialService {
             return true;
         } catch (error) {
             console.error('Error connecting to serial port:', error);
-            this.isConnected = false;
-            if (this.onConnectionChange) this.onConnectionChange(false);
+            this.notifyConnectionChange(false);
             return false;
         }
     }
@@ -131,7 +140,7 @@ export class SerialService {
      */
     async disconnect() {
         try {
-            this.isConnected = false;
+            this.notifyConnectionChange(false);
 
             // Try to close CAN channel first
             if (this.port && this.port.writable) {
@@ -156,8 +165,10 @@ export class SerialService {
             // Revert orange theme
             document.body.classList.remove("theme-local-can");
 
+            // Resume WebSocket ingestion
+            webSocketService.setSuppressIngestion(false);
+
             console.log('Serial port disconnected');
-            if (this.onConnectionChange) this.onConnectionChange(false);
         } catch (error) {
             console.error('Error disconnecting serial port:', error);
         }

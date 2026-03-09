@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useTraceBuffer } from "../lib/useDataStore";
 import type { TelemetrySample } from "../lib/DataStore";
 import TourGuide, { type TourStep } from "./TourGuide";
+import { Play, Pause, Trash2, X, HelpCircle } from "lucide-react";
 
 type DirectionFilter = "all" | "rx" | "tx";
 
@@ -151,7 +152,7 @@ export default function TracePanel({
       }}
     >
       <div
-        className="flex items-center justify-between px-3 py-1.5 border-b border-white/10 bg-[#0b0a14]/90 cursor-move select-none"
+        className="flex items-center justify-between px-3 py-1.5 border-b border-white/10 bg-[#0b0a14]/90 cursor-move select-none touch-none"
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest("button")) return;
           e.preventDefault();
@@ -206,40 +207,39 @@ export default function TracePanel({
               setTourStep(0);
               setTourOpen(true);
             }}
-            className="px-1.5 py-0.5 rounded-full border border-blue-500/60 bg-blue-500/10 text-[9px] text-blue-200 hover:bg-blue-500/20 transition-colors"
+            className="p-1 rounded-full border border-blue-500/60 bg-blue-500/10 text-blue-200 hover:bg-blue-500/20 transition-colors"
             title="Start CAN trace panel tour"
           >
-            ?
+            <HelpCircle size={12} />
           </button>
           <button
             id="trace-panel-pause-btn"
             onClick={handlePause}
-            className={`px-1.5 py-0.5 rounded border transition-colors ${
-              paused
+            className={`p-1 rounded border transition-colors ${paused
                 ? "border-emerald-500/60 text-emerald-300 bg-emerald-500/10"
                 : "border-yellow-500/60 text-yellow-300 bg-yellow-500/5"
-            }`}
+              }`}
             title={paused ? "Resume" : "Pause"}
           >
-            {paused ? "▶" : "⏸"}
+            {paused ? <Play size={12} fill="currentColor" /> : <Pause size={12} fill="currentColor" />}
           </button>
           <button
             id="trace-panel-clear-btn"
             onClick={handleClear}
-            className="px-1.5 py-0.5 rounded border border-red-500/60 text-red-300 bg-red-500/5 hover:bg-red-500/15 transition-colors"
+            className="p-1 rounded border border-red-500/60 text-red-300 bg-red-500/5 hover:bg-red-500/15 transition-colors"
             title="Clear trace"
           >
-            CLR
+            <Trash2 size={12} />
           </button>
           <span className="ml-1">
             {visible.length.toString().padStart(2, "0")} rows
           </span>
           <button
             onClick={() => { setOpen(false); onClose?.(); }}
-            className="ml-1 px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-300"
+            className="ml-1 p-0.5 rounded bg-white/5 hover:bg-white/10 text-slate-300"
             title="Close panel"
           >
-            ✕
+            <X size={12} />
           </button>
         </div>
       </div>
@@ -303,7 +303,7 @@ export default function TracePanel({
       {/* Resize handle in bottom-right corner */}
       <div
         id="trace-panel-resize-handle"
-        className="absolute right-1 bottom-1 w-3 h-3 cursor-nwse-resize bg-slate-500/60 rounded-sm"
+        className="absolute right-1 bottom-1 w-3 h-3 cursor-nwse-resize bg-slate-500/60 rounded-sm touch-none"
         onPointerDown={(e) => {
           e.preventDefault();
           setIsResizing(true);

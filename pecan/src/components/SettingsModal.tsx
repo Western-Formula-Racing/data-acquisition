@@ -4,10 +4,12 @@ import { useState, useEffect } from "react";
 import { Button } from "./Button";
 import { useAllSignals } from "../lib/useDataStore";
 import { loadPinnedSensors, savePinnedSensors, type CommsSensorConfig } from "./CommsSensorStrip";
-import { Plus, X, Activity, Usb, Unplug, Save } from "lucide-react";
+import { Plus, X, Activity, Usb, Unplug, Save, Terminal } from "lucide-react";
 import { serialService } from "../services/SerialService";
 import { useRemoteConfig } from "../lib/useRemoteConfig";
 import { getCategoryConfigString, updateCategories } from "../config/categories";
+import { useSerialStatus } from "../lib/useSerialStatus";
+import NotNotGame from "./NotNotGame";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -128,21 +130,12 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
     const [perfOverlayEnabled, setPerfOverlayEnabled] = useState(() =>
         localStorage.getItem("perf-overlay-enabled") === "true"
     );
-    const [isSerialConnected, setIsSerialConnected] = useState(serialService.getConnectionStatus());
+    const [isGameOpen, setIsGameOpen] = useState(false);
+    const isSerialConnected = useSerialStatus();
 
     const { session, loadConfig, saveConfig } = useRemoteConfig();
     const [categoryText, setCategoryText] = useState("");
     const [isSavingCategory, setIsSavingCategory] = useState(false);
-
-    useEffect(() => {
-        // Subscribe to serial connection changes
-        serialService.onConnectionChange = (connected) => {
-            setIsSerialConnected(connected);
-        };
-        return () => {
-            serialService.onConnectionChange = null;
-        };
-    }, []);
 
     useEffect(() => {
         if (isOpen) {
@@ -235,151 +228,169 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                 </button>
 
                 {/* Header */}
-                <h2 className="text-2xl font-semibold text-white mb-6">Settings</h2>
+                {!isGameOpen && <h2 className="text-2xl font-semibold text-white mb-6">Settings</h2>}
 
                 {/* Settings content area - scrollable for future settings */}
                 <div className="flex-1 overflow-y-auto space-y-4">
-                    {/* DBC Upload Section - compact single row */}
-                    <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
-                        <span className="text-sm font-medium">Custom DBC File</span>
-                        <div className="flex gap-2 items-center">
-                            <input
-                                className="sr-only"
-                                id="dbc-upload-modal"
-                                type="file"
-                                accept=".dbc"
-                                onChange={handleChange}
-                            />
-                            <Button
-                                onClick={clearDbcCache}
-                                variant="danger"
-                            >
-                                Clear Cache
-                            </Button>
-                            <Button
-                                as="label"
-                                htmlFor="dbc-upload-modal"
-                                variant="primary"
-                            >
-                                Upload DBC
-                            </Button>
+                    {isGameOpen ? (
+                        <NotNotGame onClose={() => setIsGameOpen(false)} />
+                    ) : (
+                        <>
+                            {/* DBC Upload Section - compact single row */}
+                            <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
+                                <span className="text-sm font-medium">Custom DBC File</span>
+                                <div className="flex gap-2 items-center">
+                                    <input
+                                        className="sr-only"
+                                        id="dbc-upload-modal"
+                                        type="file"
+                                        accept=".dbc"
+                                        onChange={handleChange}
+                                    />
+                                    <Button
+                                        onClick={clearDbcCache}
+                                        variant="danger"
+                                    >
+                                        Clear Cache
+                                    </Button>
+                                    <Button
+                                        as="label"
+                                        htmlFor="dbc-upload-modal"
+                                        variant="primary"
+                                    >
+                                        Upload DBC
+                                    </Button>
 
-                        </div>
-                    </div>
+                                </div>
+                            </div>
 
-                    {/* WebSocket URL Section */}
-                    <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
-                        <div className="flex flex-col">
-                            <span className="text-sm font-medium">Custom WebSocket URL</span>
-                            <span className="text-xs text-gray-400">Leave empty to use auto (Local/Cloud)</span>
-                        </div>
-                        <div className="flex gap-2 items-center">
-                            <input
-                                type="text"
-                                placeholder="ws://localhost:9080"
-                                className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none flex-1 min-w-0 md:w-48 h-9"
-                                value={customWsUrl}
-                                onChange={(e) => setCustomWsUrl(e.target.value)}
-                            />
-                            <Button
-                                onClick={() => {
-                                    if (customWsUrl) {
-                                        localStorage.setItem("custom-ws-url", customWsUrl);
-                                    } else {
-                                        localStorage.removeItem("custom-ws-url");
-                                    }
-                                    webSocketService.reconnect();
-                                    onClose();
-                                }}
-                                variant="primary"
-                            >
-                                Apply
-                            </Button>
-                        </div>
-                    </div>
+                            {/* WebSocket URL Section */}
+                            <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium">Custom WebSocket URL</span>
+                                    <span className="text-xs text-gray-400">Leave empty to use auto (Local/Cloud)</span>
+                                </div>
+                                <div className="flex gap-2 items-center">
+                                    <input
+                                        type="text"
+                                        placeholder="ws://localhost:9080"
+                                        className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none flex-1 min-w-0 md:w-48 h-9"
+                                        value={customWsUrl}
+                                        onChange={(e) => setCustomWsUrl(e.target.value)}
+                                    />
+                                    <Button
+                                        onClick={() => {
+                                            if (customWsUrl) {
+                                                localStorage.setItem("custom-ws-url", customWsUrl);
+                                            } else {
+                                                localStorage.removeItem("custom-ws-url");
+                                            }
+                                            webSocketService.reconnect();
+                                            onClose();
+                                        }}
+                                        variant="primary"
+                                    >
+                                        Apply
+                                    </Button>
+                                </div>
+                            </div>
 
-                    {/* Performance Overlay Toggle */}
-                    <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
-                        <div className="flex flex-col">
-                            <span className="text-sm font-medium">Performance Overlay</span>
-                            <span className="text-xs text-gray-400">Show FPS and memory stats at bottom of dashboard</span>
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                                type="checkbox"
-                                className="sr-only peer"
-                                checked={perfOverlayEnabled}
-                                onChange={(e) => {
-                                    const newValue = e.target.checked;
-                                    setPerfOverlayEnabled(newValue);
-                                    localStorage.setItem("perf-overlay-enabled", newValue ? "true" : "false");
-                                    // Dispatch event so Dashboard can react
-                                    window.dispatchEvent(new CustomEvent("perf-overlay-changed"));
-                                }}
-                            />
-                            <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                        </label>
-                    </div>
+                            {/* Performance Overlay Toggle */}
+                            <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium">Performance Overlay</span>
+                                    <span className="text-xs text-gray-400">Show FPS and memory stats at bottom of dashboard</span>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        className="sr-only peer"
+                                        checked={perfOverlayEnabled}
+                                        onChange={(e) => {
+                                            const newValue = e.target.checked;
+                                            setPerfOverlayEnabled(newValue);
+                                            localStorage.setItem("perf-overlay-enabled", newValue ? "true" : "false");
+                                            // Dispatch event so Dashboard can react
+                                            window.dispatchEvent(new CustomEvent("perf-overlay-changed"));
+                                        }}
+                                    />
+                                    <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                </label>
+                            </div>
 
-                    {/* Local USB CAN Adapter Toggle */}
-                    <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
-                        <div className="flex flex-col">
-                            <span className="text-sm font-medium">Local USB CAN Adapter</span>
-                            <span className="text-xs text-gray-400">Connect to slcan compatible device (e.g. Kvaser/CANable) directly via Web Serial</span>
-                        </div>
-                        <div className="flex gap-2 items-center">
-                            {isSerialConnected ? (
-                                <Button
-                                    onClick={() => serialService.disconnect()}
-                                    variant="danger"
-                                    className="flex items-center gap-1.5"
+                            {/* Local USB CAN Adapter Toggle */}
+                            <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium">Local USB CAN Adapter</span>
+                                    <span className="text-xs text-gray-400">Connect to slcan compatible device (e.g. CANable, PCAN-USB) directly via Web Serial</span>
+                                </div>
+                                <div className="flex gap-2 items-center">
+                                    {isSerialConnected ? (
+                                        <Button
+                                            onClick={() => serialService.disconnect()}
+                                            variant="danger"
+                                            className="flex items-center gap-1.5"
+                                        >
+                                            <Unplug className="w-4 h-4" /> Disconnect
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            onClick={() => serialService.connect()}
+                                            variant="primary"
+                                            className="flex items-center gap-1.5"
+                                        >
+                                            <Usb className="w-4 h-4" /> Connect USB CAN
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Category Configuration Area */}
+                            <div className="w-full rounded-lg text-white bg-option p-4">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-sm font-medium block">Category Configuration</span>
+                                    <Button
+                                        onClick={handleSaveCategory}
+                                        variant="primary"
+                                        disabled={isSavingCategory}
+                                        className="flex items-center gap-1.5 py-1 px-3 text-sm h-8"
+                                    >
+                                        <Save className="w-4 h-4" /> {isSavingCategory ? "Saving..." : "Apply & Save"}
+                                    </Button>
+                                </div>
+                                <p className="text-gray-400 text-xs mb-3">
+                                    Format: <code>CategoryName,TailwindColorClass,MessageIDs</code> (e.g., <code>BMS,bg-orange-400,256-300</code>). Automatically synced via Firebase.
+                                </p>
+                                <textarea
+                                    className="w-full h-32 bg-zinc-800 text-slate-300 text-xs font-mono p-3 rounded border border-gray-600 focus:border-blue-500 outline-none resize-y"
+                                    value={categoryText}
+                                    onChange={(e) => setCategoryText(e.target.value)}
+                                    spellCheck={false}
+                                />
+                            </div>
+
+                            {/* Comms Pinned Sensors */}
+                            <div className="w-full rounded-lg text-white bg-option p-4">
+                                <span className="text-sm font-medium block mb-2">Comms Page — Pinned Sensors</span>
+                                <p className="text-gray-400 text-xs mb-3">
+                                    Select CAN signals to display on the Comms page. Click to add or remove.
+                                </p>
+                                <CommsSensorPicker />
+                            </div>
+
+                            {/* Easter Egg Portal */}
+                            <div className="pt-12 pb-8 flex flex-col items-center justify-center opacity-20 hover:opacity-100 transition-opacity duration-500 group">
+                                <button
+                                    onClick={() => setIsGameOpen(true)}
+                                    className="flex flex-col items-center gap-2 text-sidebarfg hover:text-blue-500 transition-colors cursor-pointer"
                                 >
-                                    <Unplug className="w-4 h-4" /> Disconnect
-                                </Button>
-                            ) : (
-                                <Button
-                                    onClick={() => serialService.connect()}
-                                    variant="primary"
-                                    className="flex items-center gap-1.5"
-                                >
-                                    <Usb className="w-4 h-4" /> Connect USB CAN
-                                </Button>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Category Configuration Area */}
-                    <div className="w-full rounded-lg text-white bg-option p-4">
-                        <div className="flex justify-between items-center mb-2">
-                            <span className="text-sm font-medium block">Category Configuration</span>
-                            <Button
-                                onClick={handleSaveCategory}
-                                variant="primary"
-                                disabled={isSavingCategory}
-                                className="flex items-center gap-1.5 py-1 px-3 text-sm h-8"
-                            >
-                                <Save className="w-4 h-4" /> {isSavingCategory ? "Saving..." : "Apply & Save"}
-                            </Button>
-                        </div>
-                        <p className="text-gray-400 text-xs mb-3">
-                            Format: <code>CategoryName,TailwindColorClass,MessageIDs</code> (e.g., <code>BMS,bg-orange-400,256-300</code>). Automatically synced via Firebase.
-                        </p>
-                        <textarea
-                            className="w-full h-32 bg-zinc-800 text-slate-300 text-xs font-mono p-3 rounded border border-gray-600 focus:border-blue-500 outline-none resize-y"
-                            value={categoryText}
-                            onChange={(e) => setCategoryText(e.target.value)}
-                            spellCheck={false}
-                        />
-                    </div>
-
-                    {/* Comms Pinned Sensors */}
-                    <div className="w-full rounded-lg text-white bg-option p-4">
-                        <span className="text-sm font-medium block mb-2">Comms Page — Pinned Sensors</span>
-                        <p className="text-gray-400 text-xs mb-3">
-                            Select CAN signals to display on the Comms page. Click to add or remove.
-                        </p>
-                        <CommsSensorPicker />
-                    </div>
+                                    <Terminal className="w-4 h-4 mb-1 group-hover:animate-pulse" />
+                                    <span className="text-[10px] font-mono uppercase tracking-[0.2em]">Initialize Protocol 42</span>
+                                    <span className="text-[8px] text-sidebarfg/40 font-mono mt-1">Pecan OS v1.0.42-STABLE</span>
+                                </button>
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
         </div>

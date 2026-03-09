@@ -19,6 +19,7 @@ export class WebSocketService {
   private reconnectDelay = 2000; // Start with 2 seconds
   private messageCount = 0; // Track message count for logging
   private messageListeners = new Map<string, Set<MessageHandler>>();
+  private suppressIngestion = false;
 
   async initialize() {
     // Initialize CAN processor
@@ -122,6 +123,14 @@ export class WebSocketService {
             if (msg?.signals) {
               const hexId = formatCanId(msg.canId);
 
+              if (this.suppressIngestion) {
+                // Log suppression only occasionally to avoid spam
+                if (this.messageCount % 100 === 0) {
+                  console.log(`[WebSocketService] Suppressing ingestion for ${msg.messageName} (Local Connection Active)`);
+                }
+                return;
+              }
+
               dataStore.ingestMessage({
                 msgID: hexId,
                 messageName: msg.messageName || `CAN_${hexId}`,
@@ -172,8 +181,8 @@ export class WebSocketService {
         msgID: DIAG_MSG_IDS.SYSTEM_STATS,
         messageName: 'System Stats',
         data: {
-          received:  { sensorReading: Number(msg.received),  unit: 'pkt/s' },
-          missing:   { sensorReading: Number(msg.missing),   unit: 'pkt/s' },
+          received: { sensorReading: Number(msg.received), unit: 'pkt/s' },
+          missing: { sensorReading: Number(msg.missing), unit: 'pkt/s' },
           recovered: { sensorReading: Number(msg.recovered), unit: 'pkt/s' },
         },
         rawData: '',
@@ -204,10 +213,10 @@ export class WebSocketService {
           msgID: DIAG_MSG_IDS.LINK_THROUGHPUT,
           messageName: 'Link Throughput',
           data: {
-            mbps:     { sensorReading: msg.mbps != null ? Number(msg.mbps) : -1, unit: 'Mbps' },
-            loss_pct: { sensorReading: Number(msg.loss_pct ?? 0),                unit: '%'    },
-            sent:     { sensorReading: Number(msg.sent     ?? 0),                unit: 'pkt'  },
-            received: { sensorReading: Number(msg.received ?? 0),                unit: 'pkt'  },
+            mbps: { sensorReading: msg.mbps != null ? Number(msg.mbps) : -1, unit: 'Mbps' },
+            loss_pct: { sensorReading: Number(msg.loss_pct ?? 0), unit: '%' },
+            sent: { sensorReading: Number(msg.sent ?? 0), unit: 'pkt' },
+            received: { sensorReading: Number(msg.received ?? 0), unit: 'pkt' },
           },
           rawData: '',
           timestamp: ts,
@@ -220,11 +229,11 @@ export class WebSocketService {
           msgID: DIAG_MSG_IDS.LINK_RADIO,
           messageName: 'Radio Stats',
           data: {
-            rssi_dbm: { sensorReading: Number(msg.rssi_dbm ?? 0), unit: 'dBm'  },
-            tx_mbps:  { sensorReading: Number(msg.tx_mbps  ?? 0), unit: 'Mbps' },
-            rx_mbps:  { sensorReading: Number(msg.rx_mbps  ?? 0), unit: 'Mbps' },
-            ccq_pct:  { sensorReading: Number(msg.ccq_pct  ?? 0), unit: '%'    },
-            error:    { sensorReading: msg.error ? 1 : 0,         unit: ''     },
+            rssi_dbm: { sensorReading: Number(msg.rssi_dbm ?? 0), unit: 'dBm' },
+            tx_mbps: { sensorReading: Number(msg.tx_mbps ?? 0), unit: 'Mbps' },
+            rx_mbps: { sensorReading: Number(msg.rx_mbps ?? 0), unit: 'Mbps' },
+            ccq_pct: { sensorReading: Number(msg.ccq_pct ?? 0), unit: '%' },
+            error: { sensorReading: msg.error ? 1 : 0, unit: '' },
           },
           rawData: typeof msg.error === 'string' ? msg.error : '',
           timestamp: ts,
@@ -269,6 +278,14 @@ export class WebSocketService {
     this.disconnect();
     this.reconnectAttempts = 0;
     this.connect();
+  }
+
+  /**
+   * Toggle suppression of data ingestion (e.g. when local connection is active)
+   */
+  public setSuppressIngestion(suppress: boolean) {
+    console.log(`[WebSocketService] Ingestion suppression: ${suppress}`);
+    this.suppressIngestion = suppress;
   }
 }
 
