@@ -158,9 +158,12 @@ class DataStore {
    */
   private pruneOldSamples(msgID: string): void {
     const messageBuffer = this.buffer.get(msgID);
-    if (!messageBuffer) return;
+    if (!messageBuffer || messageBuffer.samples.length === 0) return;
 
-    const cutoffTime = Date.now() - this.retentionWindowMs;
+    // Use the newest sample's time as the reference point, NOT Date.now()
+    // This allows recorded data (with old timestamps) to be properly pruned
+    const newestTime = messageBuffer.samples[messageBuffer.samples.length - 1].timestamp;
+    const cutoffTime = newestTime - this.retentionWindowMs;
 
     // Filter out samples older than cutoff
     messageBuffer.samples = messageBuffer.samples.filter(
@@ -203,8 +206,9 @@ class DataStore {
       return [...messageBuffer.samples];
     }
 
-    // Filter samples within the time window
-    const cutoffTime = Date.now() - windowMs;
+    // Use the newest sample's time as the reference point
+    const newestTime = messageBuffer.samples[messageBuffer.samples.length - 1].timestamp;
+    const cutoffTime = newestTime - windowMs;
     return messageBuffer.samples.filter(
       (sample) => sample.timestamp >= cutoffTime
     );
