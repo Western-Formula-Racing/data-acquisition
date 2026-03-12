@@ -88,6 +88,8 @@ interface WebSocketMessage {
   canId?: number;
   id?: number;
   data?: number[];
+  type?: string;
+  messages?: WebSocketMessage[];
 }
 
 type WebSocketInput = string | WebSocketMessage | WebSocketMessage[];
@@ -581,6 +583,11 @@ export async function createCanProcessor(): Promise<any> {
 
       // If it's an object with time, canId/id and data properties
       if (typeof wsMessage === "object") {
+        // Handle Protocol V2 envelope: {"type": "can_data", "messages": [...]}
+        if ((wsMessage as any).type === "can_data" && Array.isArray((wsMessage as any).messages)) {
+          return this.processWebSocketMessage((wsMessage as any).messages);
+        }
+
         const time = wsMessage.time || wsMessage.timestamp || Date.now();
         const canId = wsMessage.canId || wsMessage.id;
         const data = wsMessage.data;

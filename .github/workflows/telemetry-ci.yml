@@ -6,11 +6,13 @@ on:
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
+      - 'flight-recorder/**'
       - '.github/workflows/telemetry-ci.yml'
   pull_request:
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
+      - 'flight-recorder/**'
       - '.github/workflows/telemetry-ci.yml'
 
 jobs:
@@ -19,6 +21,7 @@ jobs:
     outputs:
       telemetry: ${{ steps.filter.outputs.telemetry }}
       pecan: ${{ steps.filter.outputs.pecan }}
+      fdr: ${{ steps.filter.outputs.fdr }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -29,6 +32,8 @@ jobs:
               - 'universal-telemetry-software/**'
             pecan:
               - 'pecan/**'
+            fdr:
+              - 'flight-recorder/**'
 
   # ── Build images once, share via artifact ───────────────────────────────
   build:
@@ -119,6 +124,12 @@ jobs:
 
     - name: Build and typecheck PECAN
       working-directory: ./pecan
+      run: |
+        npm ci
+        npx tsc --noEmit
+
+    - name: Build and typecheck FDR
+      working-directory: ./flight-recorder
       run: |
         npm ci
         npx tsc --noEmit
@@ -569,3 +580,40 @@ jobs:
           directory: './pecan/dist'
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: dev
+
+  deploy-fdr-cloudflare:
+    needs: [unit-tests, integration, vcan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fdr'
+    permissions:
+      contents: read
+      deployments: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: flight-recorder/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: ./flight-recorder
+        run: npm ci
+      
+      - name: Build
+        working-directory: ./flight-recorder
+        run: npm run build
+      
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: 'wfr-fdr'
+          directory: './flight-recorder/dist'
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref_name }}
