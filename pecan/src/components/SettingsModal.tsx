@@ -322,7 +322,7 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                             <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
                                 <div className="flex flex-col">
                                     <span className="text-sm font-medium">Local USB CAN Adapter</span>
-                                    <span className="text-xs text-gray-400">Connect to slcan compatible device (e.g. Kvaser/CANable) directly via Web Serial</span>
+                                    <span className="text-xs text-gray-400">Connect to slcan compatible device (e.g. CANable) directly via Web Serial</span>
                                 </div>
                                 <div className="flex gap-2 items-center">
                                     {isSerialConnected ? (
