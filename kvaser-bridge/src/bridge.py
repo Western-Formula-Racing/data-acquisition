@@ -40,6 +40,67 @@ def _make_ssl_context() -> ssl.SSLContext:
 
 log = logging.getLogger(__name__)
 
+_UDEV_RULE = 'SUBSYSTEM=="net", KERNEL=="can*", GROUP="netdev", MODE="0660"'
+_UDEV_PATH = pathlib.Path('/etc/udev/rules.d/80-can.rules')
+
+
+def _socketcan_setup(channel: str, bitrate: int) -> None:
+    """Bring up a SocketCAN interface, installing udev rule + requesting
+    privilege escalation via pkexec/sudo if needed."""
+    import subprocess, grp, os, shlex
+
+    def _run(cmd: list[str], privileged: bool = False) -> subprocess.CompletedProcess:
+        if privileged:
+            # Try without privilege first; fall back to pkexec (GUI prompt) then sudo
+            r = subprocess.run(cmd, capture_output=True)
+            if r.returncode == 0:
+                return r
+            for elevator in (['pkexec'], ['sudo']):
+                r = subprocess.run(elevator + cmd, capture_output=True)
+                if r.returncode == 0:
+                    return r
+            raise RuntimeError(f"Command failed (tried pkexec/sudo): {' '.join(cmd)}\n{r.stderr.decode()}")
+        return subprocess.run(cmd, capture_output=True)
+
+    # Install udev rule on first run so future plug-ins work without privilege
+    if not _UDEV_PATH.exists():
+        log.info('Installing udev rule for CAN interfaces (one-time setup)...')
+        try:
+            rule_bytes = (_UDEV_RULE + '\n').encode()
+            # Write via tee with privilege
+            r = subprocess.run(
+                ['pkexec', 'tee', str(_UDEV_PATH)],
+                input=rule_bytes, capture_output=True,
+            )
+            if r.returncode != 0:
+                subprocess.run(['sudo', 'tee', str(_UDEV_PATH)], input=rule_bytes, capture_output=True, check=True)
+            subprocess.run(['sudo', 'udevadm', 'control', '--reload-rules'], capture_output=True)
+            subprocess.run(['sudo', 'udevadm', 'trigger'], capture_output=True)
+            # Add user to netdev group
+            try:
+                grp.getgrnam('netdev')
+                subprocess.run(['sudo', 'usermod', '-aG', 'netdev', os.environ.get('USER', os.getlogin())], capture_output=True)
+            except KeyError:
+                pass
+            log.info('udev rule installed.')
+        except Exception as e:
+            log.warning('Could not install udev rule: %s', e)
+
+    # Bring the interface down first (ignore errors if already down)
+    subprocess.run(['ip', 'link', 'set', channel, 'down'], capture_output=True)
+
+    # Bring up with bitrate
+    r = subprocess.run(
+        ['ip', 'link', 'set', channel, 'up', 'type', 'can', 'bitrate', str(bitrate)],
+        capture_output=True,
+    )
+    if r.returncode != 0:
+        log.info('ip link requires privilege, requesting elevation...')
+        _run(['ip', 'link', 'set', channel, 'down'], privileged=True)
+        _run(['ip', 'link', 'set', channel, 'up', 'type', 'can', 'bitrate', str(bitrate)], privileged=True)
+
+    log.info('SocketCAN interface %s up at %d bps', channel, bitrate)
+
 
 class BridgeState(Enum):
     IDLE    = auto()
@@ -94,8 +155,7 @@ class Bridge:
         try:
             if config.DEFAULT_CAN_INTERFACE == 'socketcan':
                 ch = config.DEFAULT_SOCKETCAN_CHANNEL
-                # can0 is expected to be already up (via udev rule or manually).
-                # See README: install /etc/udev/rules.d/80-can.rules to auto-bring up on plug-in.
+                _socketcan_setup(ch, self._bitrate)
                 self._bus = can.interface.Bus(channel=ch, interface='socketcan')
             else:
                 self._bus = can.interface.Bus(
