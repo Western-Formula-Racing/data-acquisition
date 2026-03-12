@@ -462,5 +462,37 @@ describe('CAN Processor Unit Tests', () => {
             expect(chargerCmd?.messageName).toBe('Charger_Command');
             expect(chargerSts?.messageName).toBe('Charger_Status');
         });
+
+        it('should handle IDs that already have the EFF bit set', () => {
+            const CHARGER_CMD_DBC_ID = 2550588916; // 0x9806E5F4
+            const data = [0x68, 0x10, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00];
+            const result = decodeCanMessage(can, CHARGER_CMD_DBC_ID, data, 7000);
+            expect(result).not.toBeNull();
+            expect(result?.messageName).toBe('Charger_Command');
+        });
+
+        it('should handle negative IDs (if bridge sends signed uint32)', () => {
+            const CHARGER_CMD_SIGNED_ID = -1744378380; // 0x9806E5F4 as signed 32-bit
+            const data = [0x68, 0x10, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00];
+            const result = decodeCanMessage(can, CHARGER_CMD_SIGNED_ID, data, 8000);
+            
+            // With the new fallback, this should now be decoded correctly
+            expect(result).not.toBeNull();
+            expect(result?.messageName).toBe('Charger_Command');
+        });
+
+        it('should handle small extended IDs using fallback', () => {
+            // If we have an extended message with ID 0x123 in DBC,
+            // but we send it as standard ID 0x123.
+            // (Note: example.dbc doesn't have this, but we can simulate the logic)
+            // For now, testing that EFF bit toggling works for known IDs.
+            const CHARGER_CMD_WITHOUT_EFF = 0x1806E5F4; // Raw arbitration ID
+            const data = [0x68, 0x10, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00];
+            const result = decodeCanMessage(can, CHARGER_CMD_WITHOUT_EFF, data, 9000);
+            
+            expect(result).not.toBeNull();
+            expect(result?.messageName).toBe('Charger_Command');
+            expect(result?.canId).toBe(2550588916); // Should return the DBC ID
+        });
     });
 });
