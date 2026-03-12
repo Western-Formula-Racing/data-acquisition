@@ -1,0 +1,423 @@
+VERSION ""
+
+NS_ :
+    NS_DESC_
+    CM_
+    BA_DEF_
+    BA_
+    VAL_
+    CAT_DEF_
+    CAT_
+    FILTER
+    BA_DEF_DEF_
+    EV_DATA_
+    ENVVAR_DATA_
+    SGTYPE_
+    SGTYPE_VAL_
+    BA_DEF_SGTYPE_
+    BA_SGTYPE_
+    SIG_TYPE_REF_
+    VAL_TABLE_
+    SIG_GROUP_
+    SIGTYPE_VALTYPE_
+    SIGTYPE_VALTYPE_DATA_
+    BO_TX_BU_
+    BA_DEF_REL_
+    BA_REL_
+    BA_DEF_DEF_REL_
+    BU_SG_REL_
+    BU_EV_REL_
+    BU_BO_REL_
+    SG_MUL_VAL_
+
+BS_:
+
+BU_: Vector__XXX
+
+BO_ 192 VCU_Status: 8 Vector__XXX
+ SG_ VCU_State : 0|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ Safety_Loop_Status : 4|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Inverter_Enabled : 5|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 193 Pedal_Sensors: 8 Vector__XXX
+ SG_ APPS1 : 0|16@1+ (0.1,0) [0|100] "%" Vector__XXX
+ SG_ APPS2 : 16|16@1+ (0.1,0) [0|100] "%" Vector__XXX
+ SG_ BrakePressureFront : 32|16@1+ (0.1,0) [0|200] "bar" Vector__XXX
+ SG_ BrakePressureRear : 48|16@1+ (0.1,0) [0|200] "bar" Vector__XXX
+
+BO_ 194 Steering_Wheel: 8 Vector__XXX
+ SG_ SteeringAngle : 0|16@1- (0.1,0) [-180|180] "deg" Vector__XXX
+ SG_ Button_DRS : 16|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Button_Launch : 17|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 512 BMS_Status: 8 Vector__XXX
+ SG_ PackVoltage : 0|16@1+ (0.1,0) [0|600] "V" Vector__XXX
+ SG_ PackCurrent : 16|16@1- (0.1,0) [-300|300] "A" Vector__XXX
+ SG_ StateOfCharge : 32|8@1+ (0.5,0) [0|100] "%" Vector__XXX
+ SG_ Fault_Code : 40|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 513 BMS_Cell_Stats: 8 Vector__XXX
+ SG_ HighCellVoltage : 0|16@1+ (0.001,0) [0|5] "V" Vector__XXX
+ SG_ LowCellVoltage : 16|16@1+ (0.001,0) [0|5] "V" Vector__XXX
+ SG_ AvgCellVoltage : 32|16@1+ (0.001,0) [0|5] "V" Vector__XXX
+ SG_ MaxCellTemp : 48|8@1+ (1,-40) [-40|150] "C" Vector__XXX
+
+BO_ 256 MC_Command: 8 Vector__XXX
+ SG_ TorqueRequest : 0|16@1- (0.1,0) [-300|300] "Nm" Vector__XXX
+ SG_ SpeedLimit : 16|16@1+ (1,0) [0|10000] "rpm" Vector__XXX
+
+BO_ 257 MC_Feedback: 8 Vector__XXX
+ SG_ MotorSpeed : 0|16@1- (1,0) [-10000|10000] "rpm" Vector__XXX
+ SG_ MotorTorque : 16|16@1- (0.1,0) [-300|300] "Nm" Vector__XXX
+ SG_ DC_Bus_Current : 32|16@1- (0.1,0) [-300|300] "A" Vector__XXX
+ SG_ IGBT_Temperature : 48|8@1+ (1,-40) [-40|150] "C" Vector__XXX
+
+BO_ 768 Wheel_Speeds: 8 Vector__XXX
+ SG_ FL_Speed : 0|16@1+ (1,0) [0|3000] "rpm" Vector__XXX
+ SG_ FR_Speed : 16|16@1+ (1,0) [0|3000] "rpm" Vector__XXX
+ SG_ RL_Speed : 32|16@1+ (1,0) [0|3000] "rpm" Vector__XXX
+ SG_ RR_Speed : 48|16@1+ (1,0) [0|3000] "rpm" Vector__XXX
+
+BO_ 1024 IMU_Data: 8 Vector__XXX
+ SG_ AccelX : 0|16@1- (0.001,0) [-4|4] "g" Vector__XXX
+ SG_ AccelY : 16|16@1- (0.001,0) [-4|4] "g" Vector__XXX
+ SG_ AccelZ : 32|16@1- (0.001,0) [-4|4] "g" Vector__XXX
+ SG_ YawRate : 48|16@1- (0.1,0) [-200|200] "deg/s" Vector__XXX
+
+BO_ 1280 Cooling_Status: 8 Vector__XXX
+ SG_ CoolantTempIn : 0|8@1+ (1,-40) [-40|150] "C" Vector__XXX
+ SG_ CoolantTempOut : 8|8@1+ (1,-40) [-40|150] "C" Vector__XXX
+ SG_ PumpSpeed : 16|8@1+ (1,0) [0|100] "%" Vector__XXX
+ SG_ FanSpeed : 24|8@1+ (1,0) [0|100] "%" Vector__XXX
+
+BO_ 1999 Heartbeat: 8 Vector__XXX
+ SG_ UTCTime : 0|64@1+ (1,0) [0|0] "s" Vector__XXX
+
+CM_ BO_ 192 "Vehicle Control Unit Status";
+CM_ BO_ 193 "Pedal Box Sensor Data";
+CM_ BO_ 194 "Steering Wheel Inputs";
+CM_ BO_ 512 "Battery Management System Main Status";
+CM_ BO_ 513 "Battery Management System Cell Statistics";
+CM_ BO_ 256 "Motor Controller Command (from VCU)";
+CM_ BO_ 257 "Motor Controller Feedback";
+CM_ BO_ 768 "Wheel Speed Sensors";
+CM_ BO_ 1024 "IMU 6-DOF Data";
+CM_ BO_ 1280 "Cooling System Status";
+CM_ BO_ 1999 "Pipeline Heartbeat";
+
+BO_ 1006 TORCH_M1_V1: 8 CUSTOMBMS
+ SG_ M1_Cell1_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell2_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell3_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell4_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1007 TORCH_M1_V2: 8 CUSTOMBMS
+ SG_ M1_Cell5_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell6_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell7_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell8_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1008 TORCH_M1_V3: 8 CUSTOMBMS
+ SG_ M1_Cell9_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell10_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell11_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell12_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1009 TORCH_M1_V4: 8 CUSTOMBMS
+ SG_ M1_Cell13_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell14_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell15_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell16_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1010 TORCH_M1_V5: 8 CUSTOMBMS
+ SG_ M1_Cell17_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell18_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell19_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M1_Cell20_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1011 TORCH_M2_V1: 8 CUSTOMBMS
+ SG_ M2_Cell1_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell2_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell3_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell4_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1012 TORCH_M2_V2: 8 CUSTOMBMS
+ SG_ M2_Cell5_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell6_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell7_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell8_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1013 TORCH_M2_V3: 8 CUSTOMBMS
+ SG_ M2_Cell9_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell10_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell11_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell12_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1014 TORCH_M2_V4: 8 CUSTOMBMS
+ SG_ M2_Cell13_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell14_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell15_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell16_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1015 TORCH_M2_V5: 8 CUSTOMBMS
+ SG_ M2_Cell17_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell18_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell19_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M2_Cell20_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1016 TORCH_M3_V1: 8 CUSTOMBMS
+ SG_ M3_Cell1_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell2_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell3_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell4_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1017 TORCH_M3_V2: 8 CUSTOMBMS
+ SG_ M3_Cell5_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell6_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell7_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell8_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1018 TORCH_M3_V3: 8 CUSTOMBMS
+ SG_ M3_Cell9_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell10_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell11_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell12_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1019 TORCH_M3_V4: 8 CUSTOMBMS
+ SG_ M3_Cell13_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell14_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell15_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell16_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1020 TORCH_M3_V5: 8 CUSTOMBMS
+ SG_ M3_Cell17_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell18_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell19_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M3_Cell20_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1021 TORCH_M4_V1: 8 CUSTOMBMS
+ SG_ M4_Cell1_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell2_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell3_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell4_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1022 TORCH_M4_V2: 8 CUSTOMBMS
+ SG_ M4_Cell5_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell6_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell7_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell8_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1023 TORCH_M4_V3: 8 CUSTOMBMS
+ SG_ M4_Cell9_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell10_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell11_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell12_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1056 TORCH_M4_V4: 8 CUSTOMBMS
+ SG_ M4_Cell13_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell14_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell15_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell16_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1025 TORCH_M4_V5: 8 CUSTOMBMS
+ SG_ M4_Cell17_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell18_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell19_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M4_Cell20_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1026 TORCH_M5_V1: 8 CUSTOMBMS
+ SG_ M5_Cell1_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell2_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell3_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell4_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1027 TORCH_M5_V2: 8 CUSTOMBMS
+ SG_ M5_Cell5_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell6_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell7_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell8_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1028 TORCH_M5_V3: 8 CUSTOMBMS
+ SG_ M5_Cell9_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell10_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell11_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell12_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1029 TORCH_M5_V4: 8 CUSTOMBMS
+ SG_ M5_Cell13_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell14_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell15_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell16_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1030 TORCH_M5_V5: 8 CUSTOMBMS
+ SG_ M5_Cell17_Voltage : 0|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell18_Voltage : 16|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell19_Voltage : 32|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+ SG_ M5_Cell20_Voltage : 48|16@1+ (0.0001,0) [0|65] "V" Vector__XXX
+
+BO_ 1031 TORCH_M1_T1: 8 CUSTOMBMS
+ SG_ M1_Thermistor1 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor2 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor3 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor4 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1032 TORCH_M1_T2: 8 CUSTOMBMS
+ SG_ M1_Thermistor5 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor6 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor7 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor8 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1033 TORCH_M1_T3: 8 CUSTOMBMS
+ SG_ M1_Thermistor9 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor10 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor11 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor12 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1034 TORCH_M1_T4: 8 CUSTOMBMS
+ SG_ M1_Thermistor13 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor14 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor15 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor16 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1035 TORCH_M1_T5: 8 CUSTOMBMS
+ SG_ M1_Thermistor17 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M1_Thermistor18 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1036 TORCH_M2_T1: 8 CUSTOMBMS
+ SG_ M2_Thermistor1 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor2 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor3 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor4 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1037 TORCH_M2_T2: 8 CUSTOMBMS
+ SG_ M2_Thermistor5 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor6 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor7 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor8 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1038 TORCH_M2_T3: 8 CUSTOMBMS
+ SG_ M2_Thermistor9 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor10 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor11 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor12 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1039 TORCH_M2_T4: 8 CUSTOMBMS
+ SG_ M2_Thermistor13 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor14 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor15 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor16 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1040 TORCH_M2_T5: 8 CUSTOMBMS
+ SG_ M2_Thermistor17 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M2_Thermistor18 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1041 TORCH_M3_T1: 8 CUSTOMBMS
+ SG_ M3_Thermistor1 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor2 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor3 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor4 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1042 TORCH_M3_T2: 8 CUSTOMBMS
+ SG_ M3_Thermistor5 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor6 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor7 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor8 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1043 TORCH_M3_T3: 8 CUSTOMBMS
+ SG_ M3_Thermistor9 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor10 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor11 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor12 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1044 TORCH_M3_T4: 8 CUSTOMBMS
+ SG_ M3_Thermistor13 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor14 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor15 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor16 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1045 TORCH_M3_T5: 8 CUSTOMBMS
+ SG_ M3_Thermistor17 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M3_Thermistor18 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1046 TORCH_M4_T1: 8 CUSTOMBMS
+ SG_ M4_Thermistor1 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor2 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor3 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor4 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1047 TORCH_M4_T2: 8 CUSTOMBMS
+ SG_ M4_Thermistor5 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor6 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor7 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor8 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1048 TORCH_M4_T3: 8 CUSTOMBMS
+ SG_ M4_Thermistor9 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor10 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor11 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor12 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1049 TORCH_M4_T4: 8 CUSTOMBMS
+ SG_ M4_Thermistor13 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor14 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor15 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor16 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1050 TORCH_M4_T5: 8 CUSTOMBMS
+ SG_ M4_Thermistor17 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M4_Thermistor18 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1051 TORCH_M5_T1: 8 CUSTOMBMS
+ SG_ M5_Thermistor1 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor2 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor3 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor4 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1052 TORCH_M5_T2: 8 CUSTOMBMS
+ SG_ M5_Thermistor5 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor6 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor7 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor8 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1053 TORCH_M5_T3: 8 CUSTOMBMS
+ SG_ M5_Thermistor9 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor10 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor11 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor12 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1054 TORCH_M5_T4: 8 CUSTOMBMS
+ SG_ M5_Thermistor13 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor14 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor15 : 32|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor16 : 48|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 1055 TORCH_M5_T5: 8 CUSTOMBMS
+ SG_ M5_Thermistor17 : 0|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+ SG_ M5_Thermistor18 : 16|16@1+ (0.001,0) [0|655] "C" Vector__XXX
+
+BO_ 2550588916 Charger_Command: 8 Vector__XXX
+ SG_ Max_charge_voltage : 0|16@1+ (0.1,0) [0|655.3] "V" Vector__XXX
+ SG_ Max_charge_current : 16|8@1+ (0.1,0) [0|25.5] "A" Vector__XXX
+ SG_ Control : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 2566869221 Charger_Status: 8 Vector__XXX
+ SG_ Output_voltage : 0|16@1+ (0.1,0) [0|655.3] "V" Vector__XXX
+ SG_ Output_current : 16|8@1+ (0.1,0) [0|25.5] "A" Vector__XXX
+ SG_ Hardware_failure_flag : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Overheat_flag : 25|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Input_voltage_flag : 26|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Starting_state : 27|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Communication_state : 28|1@1+ (1,0) [0|1] "" Vector__XXX
+
+CM_ BO_ 2550588916 "Charger command message (J1939 extended 29-bit frame)";
+CM_ SG_ 2550588916 Max_charge_voltage "Max allowable charging terminal voltage";
+CM_ SG_ 2550588916 Max_charge_current "Max allowable charging current";
+CM_ SG_ 2550588916 Control "Toggle charging. 0 = start charging, 1 = stop charging";
+CM_ BO_ 2566869221 "Charger status message (J1939 extended 29-bit frame)";
+CM_ SG_ 2566869221 Output_voltage "Charger output voltage";
+CM_ SG_ 2566869221 Output_current "Charger output current";
+CM_ SG_ 2566869221 Hardware_failure_flag "0 = good, 1 = hardware failure";
+CM_ SG_ 2566869221 Overheat_flag "0 = good, 1 = charger overheated and stopped charging";
+CM_ SG_ 2566869221 Input_voltage_flag "0 = input voltage OK, 1 = input voltage wrong and charger halted";
+CM_ SG_ 2566869221 Starting_state "0 = charger detects battery voltage and starts, 1 = stays off (anti-reverse-polarity)";
+CM_ SG_ 2566869221 Communication_state "0 = communication OK, 1 = communication receive timeout";
