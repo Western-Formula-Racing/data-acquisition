@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "./Button";
 import { useAllSignals } from "../lib/useDataStore";
 import { loadPinnedSensors, savePinnedSensors, type CommsSensorConfig } from "./CommsSensorStrip";
-import { Plus, X, Activity, Usb, Unplug, Save, Terminal } from "lucide-react";
+import { Plus, X, Activity, Usb, Unplug, Save, Terminal, Info } from "lucide-react";
 import { serialService } from "../services/SerialService";
 import { useRemoteConfig } from "../lib/useRemoteConfig";
 import { getCategoryConfigString, updateCategories } from "../config/categories";
@@ -131,6 +131,7 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
         localStorage.getItem("perf-overlay-enabled") === "true"
     );
     const [isGameOpen, setIsGameOpen] = useState(false);
+    const [bridgeOs, setBridgeOs] = useState<"linux" | "windows">("linux");
     const isSerialConnected = useSerialStatus();
 
     const { session, loadConfig, saveConfig } = useRemoteConfig();
@@ -342,6 +343,69 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                             <Usb className="w-4 h-4" /> Connect USB CAN
                                         </Button>
                                     )}
+                                </div>
+                            </div>
+
+                            {/* Kvaser Bridge Setup Instructions */}
+                            <div className="w-full rounded-lg text-white bg-option p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <Info className="w-5 h-5 text-blue-400" />
+                                        <span className="text-sm font-medium">Kvaser Bridge Setup</span>
+                                    </div>
+                                    <div className="flex bg-zinc-800 rounded-lg p-0.5 border border-gray-700">
+                                        <button
+                                            onClick={() => setBridgeOs("linux")}
+                                            className={`px-3 py-1 text-[10px] font-medium rounded-md transition-all ${bridgeOs === "linux" ? "bg-blue-600 text-white shadow-lg" : "text-gray-400 hover:text-gray-200"}`}
+                                        >
+                                            LINUX
+                                        </button>
+                                        <button
+                                            onClick={() => setBridgeOs("windows")}
+                                            className={`px-3 py-1 text-[10px] font-medium rounded-md transition-all ${bridgeOs === "windows" ? "bg-blue-600 text-white shadow-lg" : "text-gray-400 hover:text-gray-200"}`}
+                                        >
+                                            WINDOWS
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="space-y-3 text-xs text-gray-400">
+                                    <p>
+                                        Use the <code>kvaser-bridge</code> to stream CAN data from a Kvaser adapter to this dashboard via WebSocket.
+                                    </p>
+                                    <div className="space-y-2">
+                                        <p className="text-gray-300 font-medium">Prerequisites:</p>
+                                        <ul className="list-disc list-inside pl-1 space-y-1">
+                                            <li>Python 3.10+</li>
+                                            <li>Kvaser CANlib SDK installed</li>
+                                            {bridgeOs === "linux" && <li><code>python3-tk</code> (for GUI)</li>}
+                                        </ul>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <p className="text-gray-300 font-medium">Quick Start ({bridgeOs === "linux" ? "Linux" : "Windows"}):</p>
+                                        <div className="bg-zinc-800 p-3 rounded font-mono text-[11px] space-y-1 border border-gray-700">
+                                            <div className="text-emerald-500"># Navigate to bridge directory</div>
+                                            <div>cd kvaser-bridge</div>
+                                            <div className="text-emerald-500 mt-2"># Create and activate virtual environment</div>
+                                            {bridgeOs === "linux" ? (
+                                                <>
+                                                    <div>python3 -m venv .venv</div>
+                                                    <div>source .venv/bin/activate</div>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div>python -m venv .venv</div>
+                                                    <div>.venv\Scripts\activate</div>
+                                                </>
+                                            )}
+                                            <div className="text-emerald-500 mt-2"># Install dependencies</div>
+                                            <div>pip install -r requirements.txt</div>
+                                            <div className="text-emerald-500 mt-2"># Run the bridge</div>
+                                            <div>{bridgeOs === "linux" ? "python3 src/main.py" : "python src/main.py"}</div>
+                                        </div>
+                                    </div>
+                                    <p className="italic">
+                                        Note: Ensure the bridge is pointing to <code>ws://localhost:9081</code> (default).
+                                    </p>
                                 </div>
                             </div>
 
