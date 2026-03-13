@@ -42,7 +42,7 @@ export class SyncService {
     try {
       const total = await loggingService.getUnsyncedCount();
       let processed = 0;
-      const batchSize = 100;
+      const batchSize = 5000;
 
       const processor = await this.getProcessor();
 
