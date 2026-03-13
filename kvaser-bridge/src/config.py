@@ -23,7 +23,7 @@ DEFAULT_SOCKETCAN_CHANNEL = 'can0'
 # ---------------------------------------------------------------------------
 # WebSocket server (bridge runs its own server, dashboard connects to it)
 # ---------------------------------------------------------------------------
-DEFAULT_WS_PORT = 9080
+DEFAULT_WS_PORT = 9081
 
 # ---------------------------------------------------------------------------
 # Config file location
