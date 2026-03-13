@@ -35,7 +35,7 @@ export const router = createBrowserRouter([
       { path: "system-link", element: <SystemLink /> },
       { path: "throttle-mapper", element: <ThrottleMapper /> },
       { path: "trace", element: <Trace /> },
-      // { path: "tx", element: <TxDashboard /> },
+       // { path: "tx", element: <TxDashboard /> },
       { path: "can-transmitter", element: <DataTransmitter /> },
     ],
   },

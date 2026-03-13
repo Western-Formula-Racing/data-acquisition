@@ -101,7 +101,6 @@ def _socketcan_setup(channel: str, bitrate: int) -> None:
 
     log.info('SocketCAN interface %s up at %d bps', channel, bitrate)
 
-
 class BridgeState(Enum):
     IDLE    = auto()
     OPEN    = auto()

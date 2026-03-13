@@ -1,5 +1,4 @@
 import { Dbc, Can } from "candied";
-import { dataStore } from "../lib/DataStore";
 // Import DBC file as raw text - Vite's ?raw suffix loads file content at build time
 // Note: Files in src/assets/ cannot be fetched via URL, they must be imported
 import localDbc from "../assets/dbc.dbc?raw";
@@ -34,20 +33,7 @@ export function ingestCanFrameToStore(params: {
   data: number[];
   messageNameHint?: string;
 }) {
-  const { time, canId, data, messageNameHint } = params;
-  const hexId = formatCanId(canId);
-
-  const rawData = data
-    .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
-    .join(" ");
-
-  dataStore.ingestMessage({
-    msgID: hexId,
-    messageName: messageNameHint ?? `CAN_${hexId}`,
-    data: {},
-    rawData,
-    timestamp: time,
-  });
+  // Standalone version: Ingestion to DataStore disabled
 }
 
 export function decodeAndIngestCanFrame(params: {
@@ -57,22 +43,7 @@ export function decodeAndIngestCanFrame(params: {
   data: number[];
 }) {
   const { canInstance, time, canId, data } = params;
-  const hexId = formatCanId(canId);
-
   const decoded = decodeCanMessage(canInstance, canId, data, time);
-
-  const rawData = data
-    .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
-    .join(" ");
-
-  dataStore.ingestMessage({
-    msgID: hexId,
-    messageName: decoded?.messageName ?? `CAN_${hexId}`,
-    data: decoded?.signals ?? {},
-    rawData,
-    timestamp: time,
-  });
-
   return decoded;
 }
 
@@ -82,23 +53,8 @@ export async function decodeAndIngestUsingDbc(params: {
   data: number[];
 }) {
   const { time, canId, data } = params;
-  const hexId = formatCanId(canId);
-
   const processor = await createCanProcessor();
   const decoded = processor.decode(canId, data, time);
-
-  const rawData = data
-    .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
-    .join(" ");
-
-  dataStore.ingestMessage({
-    msgID: hexId,
-    messageName: decoded?.messageName ?? `CAN_${hexId}`,
-    data: decoded?.signals ?? {},
-    rawData,
-    timestamp: time,
-  });
-
   return decoded;
 }
 
@@ -121,6 +77,7 @@ interface DecodedMessage {
     };
   };
   rawData: string;
+  rawBytes: number[]; // Original byte array — preserved for IndexedDB storage
 }
 
 // Type for batch processing results
@@ -336,7 +293,7 @@ export async function processTestMessages() {
 
           console.log("Signals:", signals);
 
-          dataStore.ingestMessage({
+          /* // dataStore.ingestMessage({
             msgID: formatCanId(testMsg.canId),
             messageName: decoded.name || `CAN_${formatCanId(testMsg.canId)}`,
             data: signals,
@@ -344,7 +301,7 @@ export async function processTestMessages() {
               .map((byte) => byte.toString(16).padStart(2, "0").toUpperCase())
               .join(" "),
             timestamp: testMsg.time,
-          });
+          }); */
         } else {
           console.log("No signals found in decoded message");
         }
@@ -442,6 +399,7 @@ export function decodeCanMessage(
         time: time,
         signals: {},
         rawData: rawDataStr,
+        rawBytes: messageData,
       };
     }
 
@@ -464,6 +422,7 @@ export function decodeCanMessage(
       time: time,
       signals,
       rawData: rawDataStr,
+      rawBytes: messageData,
     };
   } catch (error) {
     console.error(`Error decoding message ${canId}:`, error);
@@ -668,6 +627,115 @@ export async function createCanProcessor(): Promise<any> {
       return foundMessage;
     },
   };
+}
+
+const GITHUB_REPO = 'Western-Formula-Racing/DBC';
+// Fine-grained PAT injected at build time via VITE_GITHUB_TOKEN env var.
+// Needs Contents:read on Western-Formula-Racing/DBC.
+const GITHUB_TOKEN = (import.meta as any).env?.VITE_GITHUB_DBC_READONLY_TOKEN ?? '';
+
+function githubHeaders(raw = false): HeadersInit {
+  const h: HeadersInit = {
+    Accept: raw ? 'application/vnd.github.v3.raw' : 'application/vnd.github.v3+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+  if (GITHUB_TOKEN) (h as Record<string, string>)['Authorization'] = `Bearer ${GITHUB_TOKEN}`;
+  return h;
+}
+
+export interface DBCFileInfo {
+  name: string;
+  path: string;
+  sha: string;
+  size: number;
+}
+
+export interface DBCApplyResult {
+  ok: boolean;
+  message: string;
+  commitSha?: string;
+  commitMessage?: string;
+}
+
+/** List all .dbc files in the Western-Formula-Racing/DBC repo root. */
+export async function listDBCFiles(): Promise<{ ok: boolean; files?: DBCFileInfo[]; message?: string }> {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/`, {
+      headers: githubHeaders(),
+    });
+    if (!res.ok) {
+      return { ok: false, message: `GitHub ${res.status}: ${res.statusText}` };
+    }
+    const items: any[] = await res.json();
+    const files: DBCFileInfo[] = items
+      .filter(f => f.type === 'file' && f.name.toLowerCase().endsWith('.dbc'))
+      .map(f => ({ name: f.name, path: f.path, sha: f.sha, size: f.size }));
+    return { ok: true, files };
+  } catch (err) {
+    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * Fetch a specific DBC file from the repo, cache it locally, and update the
+ * in-memory dbcFile so the next createCanProcessor() call uses it.
+ * Also fetches the latest commit that touched the file for display.
+ */
+export async function fetchAndApplyDBC(filename: string): Promise<DBCApplyResult> {
+  // Fetch raw file content
+  let fileRes: Response;
+  try {
+    fileRes = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/contents/${encodeURIComponent(filename)}`,
+      { headers: githubHeaders(true) }
+    );
+  } catch (err) {
+    return { ok: false, message: `Network error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  if (!fileRes.ok) {
+    return { ok: false, message: `GitHub ${fileRes.status}: ${fileRes.statusText}` };
+  }
+
+  const dbcText = await fileRes.text();
+  if (!dbcText.trim()) {
+    return { ok: false, message: 'Fetched DBC is empty' };
+  }
+
+  // Fetch the most recent commit that touched this file
+  let commitSha = '';
+  let commitMessage = '';
+  try {
+    const commitRes = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/commits?path=${encodeURIComponent(filename)}&per_page=1`,
+      { headers: githubHeaders() }
+    );
+    if (commitRes.ok) {
+      const commits: any[] = await commitRes.json();
+      if (commits.length > 0) {
+        commitSha = commits[0].sha.slice(0, 7);
+        commitMessage = commits[0].commit.message.split('\n')[0];
+      }
+    }
+  } catch { /* non-fatal */ }
+
+  // Update in-memory state immediately
+  dbcFile = dbcText;
+  usingCache = true;
+  localStorage.setItem('dbc-selected-file', filename);
+
+  // Persist to Cache API, fall back to localStorage
+  try {
+    const cache = await caches.open('dbc-files');
+    await cache.put('cache.dbc', new Response(dbcText, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    }));
+  } catch {
+    try { localStorage.setItem('dbc-file-content', dbcText); } catch { /* ignore */ }
+  }
+
+  const sizeKb = (dbcText.length / 1024).toFixed(1);
+  return { ok: true, message: `${filename} — ${sizeKb} KB`, commitSha, commitMessage };
 }
 
 /**

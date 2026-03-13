@@ -69,7 +69,6 @@ export class WebSocketService {
         console.log('[WebSocket] Connected');
         this.reconnectAttempts = 0;
         this.messageCount = 0;
-        this.notify('__connect__', {});
         this.notify('status', { connected: true, url: wsUrl });
       };
 
@@ -155,13 +154,6 @@ export class WebSocketService {
     }
   }
 
-  public reconnect() {
-    console.log('[WebSocket] Forcing reconnection...');
-    this.disconnect();
-    this.reconnectAttempts = 0;
-    this.connect();
-  }
-
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
@@ -177,6 +169,16 @@ export class WebSocketService {
   
   public getMessageCount(): number {
     return this.messageCount;
+  }
+
+  /**
+   * Discard the cached CAN processor so the next message creates a fresh one
+   * from the current dbcFile. Call this after fetching a new DBC.
+   */
+  public async resetProcessor(): Promise<void> {
+    this.processor = null;
+    this.processor = await createCanProcessor();
+    console.log('[WebSocket] CAN processor reloaded with new DBC');
   }
 }
 

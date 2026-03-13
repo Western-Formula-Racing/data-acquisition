@@ -10,6 +10,7 @@ import {
 } from "./utils/canProcessor";
 import { Outlet } from "react-router";
 import { webSocketService } from "./services/WebSocketService";
+import { telemetryHandler } from "./services/TelemetryHandler";
 import { serialService } from "./services/SerialService";
 import { DefaultBanner, CacheBanner } from "./components/AppBanners";
 import FloatingTools from "./components/FloatingTools";
@@ -74,6 +75,7 @@ function App() {
 
       // Initialize WebSocket only after DBC is loaded so the CAN processor
       // is created with the correct DBC file.
+      telemetryHandler.initialize();
       webSocketService.initialize();
     })();
 

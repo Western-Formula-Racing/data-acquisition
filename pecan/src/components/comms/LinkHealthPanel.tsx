@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useMessageHistory, useSignal, useLatestMessage } from '../../lib/useDataStore';
-import { DIAG_MSG_IDS } from '../../services/WebSocketService';
+import { DIAG_MSG_IDS } from '../../services/TelemetryHandler';
 import QualityIndicatorDot, { type QualityLevel } from './QualityIndicatorDot';
 import PingSparkline from './PingSparkline';
 import PacketLossGauge from './PacketLossGauge';

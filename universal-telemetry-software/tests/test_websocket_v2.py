@@ -62,7 +62,16 @@ class TestWebSocketV2PingPong:
             await ws.connect()
             ts = int(time.time() * 1000)
             await ws.send_message({"type": "ping", "timestamp": ts})
-            msg = await ws.receive_message(timeout=5)
+
+            # Server may send CAN batch frames before the pong — skip non-dict messages
+            msg = None
+            for _ in range(10):
+                candidate = await ws.receive_message(timeout=5)
+                if candidate is None:
+                    break
+                if isinstance(candidate, dict) and candidate.get("type") == "pong":
+                    msg = candidate
+                    break
 
             assert msg is not None, "No pong response received"
             assert msg["type"] == "pong"
