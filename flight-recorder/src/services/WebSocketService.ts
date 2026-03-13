@@ -1,7 +1,12 @@
-import { createCanProcessor, formatCanId } from '../utils/canProcessor';
-import { loggingService } from './LoggingService';
+import { createCanProcessor } from '../utils/canProcessor';
 
 export type MessageHandler = (data: any) => void;
+
+export interface ConnectionStatus {
+  connected: boolean;
+  url: string;
+  error?: string;
+}
 
 export class WebSocketService {
   private ws: WebSocket | null = null;
@@ -9,16 +14,20 @@ export class WebSocketService {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 2000;
-  private messageCount = 0;
+  private messageCount = 0; 
   private messageListeners = new Map<string, Set<MessageHandler>>();
   private suppressIngestion = false;
 
   async initialize() {
+    this.disconnect();
+    
     try {
-      this.processor = await createCanProcessor();
-      console.log('CAN processor initialized');
+      if (!this.processor) {
+        this.processor = await createCanProcessor();
+        console.log('[WebSocket] CAN processor initialized');
+      }
     } catch (error) {
-      console.error('Failed to initialize CAN processor:', error);
+      console.error('[WebSocket] Failed to initialize CAN processor:', error);
       return;
     }
     this.connect();
@@ -46,58 +55,66 @@ export class WebSocketService {
       }
     }
 
-    console.log(`Connecting to WebSocket: ${wsUrl}`);
+    console.log(`[WebSocket] Connecting to: ${wsUrl}`);
 
     try {
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected');
+        console.log('[WebSocket] Connected');
         this.reconnectAttempts = 0;
         this.messageCount = 0;
+        this.notify('status', { connected: true, url: wsUrl });
       };
 
       this.ws.onmessage = (event) => {
         try {
-          const messageData = JSON.parse(event.data);
-          
-          if (messageData && typeof messageData === 'object' && messageData.type) {
-            const listeners = this.messageListeners.get(messageData.type);
-            if (listeners) {
-              listeners.forEach(handler => handler(messageData));
-            }
+          // Milestone and initial message logging (replicated from original pecan)
+          if (this.messageCount < 3) {
+            console.log(`[WebSocket] Message #${this.messageCount + 1}:`, event.data);
+          }
+          if (this.messageCount === 10 || this.messageCount === 100 || (this.messageCount > 0 && this.messageCount % 1000 === 0)) {
+            console.log(`[WebSocket] Received ${this.messageCount} messages`);
           }
 
+          const messageData = JSON.parse(event.data);
+          
+          if (messageData?.type) {
+            this.notify(messageData.type, messageData);
+          }
+          this.notify('raw', messageData);
+
           const decoded = this.processor.processWebSocketMessage(messageData);
-          if (!decoded) return;
-
-          this.messageCount++;
-          const messages = Array.isArray(decoded) ? decoded : [decoded];
-
-          messages.forEach(msg => {
-            if (msg?.signals) {
-              if (this.suppressIngestion) return;
-              loggingService.logFrame(msg.time || Date.now(), msg.canId, msg.data);
+          if (decoded) {
+            if (this.messageCount < 3) {
+              console.log(`[WebSocket] Decoded message(s) #${this.messageCount + 1}:`, decoded);
             }
-          });
+            this.notify('decoded', decoded);
+          }
+          
+          this.messageCount++;
         } catch (error) {
-          console.error('Error processing WebSocket message:', error);
+          console.error('[WebSocket] Error processing message:', error);
         }
       };
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error('[WebSocket] Error:', error);
+        this.notify('status', { connected: false, url: wsUrl, error: 'Connection error' });
       };
 
       this.ws.onclose = (event) => {
-        console.log('WebSocket disconnected');
+        console.log('[WebSocket] Disconnected');
+        this.notify('status', { connected: false, url: wsUrl, error: `Socket closed (code: ${event.code})` });
+        
         if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
           this.reconnectAttempts++;
           setTimeout(() => this.connect(), this.reconnectDelay * this.reconnectAttempts);
         }
       };
     } catch (error) {
-      console.error('WebSocket error:', error);
+      console.error('[WebSocket] Connection failed:', error);
+      this.notify('status', { connected: false, url: wsUrl, error: String(error) });
     }
   }
 
@@ -118,15 +135,35 @@ export class WebSocketService {
     this.messageListeners.get(type)?.delete(handler);
   }
 
+  private notify(type: string, data: any) {
+    const listeners = this.messageListeners.get(type);
+    if (listeners) {
+      listeners.forEach(handler => handler(data));
+    }
+  }
+
   disconnect() {
     if (this.ws) {
-      this.ws.close(1000, 'Client disconnect');
+      this.ws.close(1000, 'Manual disconnect');
       this.ws = null;
     }
   }
 
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  public setSuppressIngestion(suppress: boolean) {
+    console.log(`[WebSocket] Ingestion suppression: ${suppress}`);
+    this.suppressIngestion = suppress;
+  }
+
+  public isIngestionSuppressed(): boolean {
+    return this.suppressIngestion;
+  }
+  
+  public getMessageCount(): number {
+    return this.messageCount;
   }
 }
 
