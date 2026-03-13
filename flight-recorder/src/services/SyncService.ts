@@ -60,7 +60,7 @@ export class SyncService {
             
             for (const [sigName, sigData] of Object.entries(decoded.signals)) {
               const value = (sigData as any).sensorReading;
-              if (typeof value !== 'number') continue;
+              if (typeof value !== 'number' || !isFinite(value)) continue;
 
               const tags = `signalName=${this.escapeTag(sigName)},messageName=${this.escapeTag(decoded.messageName)},canId=${frame.canId}`;
               const fields = `sensorReading=${value}`;
@@ -163,6 +163,11 @@ export class SyncService {
       const errorText = await response.text();
       throw new Error(`InfluxDB write failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
+  }
+
+  /** Drop the cached processor so the next sync creates a fresh one from the current dbcFile. */
+  public invalidateProcessor(): void {
+    this.processor = null;
   }
 }
 

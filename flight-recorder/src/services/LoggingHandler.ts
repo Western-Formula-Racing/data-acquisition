@@ -10,12 +10,16 @@ class LoggingHandler {
     webSocketService.on('decoded', (decoded: any) => {
       const messages = Array.isArray(decoded) ? decoded : [decoded];
       
+      // Stamp with wall-clock time at FDR receipt.
+      // The car's msg.time is relative (ms since ECU boot) and has no
+      // meaning as a Unix timestamp — InfluxDB needs absolute epoch ms.
+      const receivedAt = Date.now();
       messages.forEach(msg => {
         if (msg?.signals) {
           loggingService.logFrame(
-            msg.time || Date.now(), 
-            msg.canId, 
-            msg.data // Using raw buffer data from processor
+            receivedAt,
+            msg.canId,
+            msg.rawBytes ?? []
           );
         }
       });

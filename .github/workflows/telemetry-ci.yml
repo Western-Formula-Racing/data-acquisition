@@ -607,7 +607,9 @@ jobs:
       - name: Build
         working-directory: ./flight-recorder
         run: npm run build
-      
+        env:
+          VITE_GITHUB_DBC_READONLY_TOKEN: ${{ secrets.VITE_GITHUB_DBC_READONLY_TOKEN }}
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:

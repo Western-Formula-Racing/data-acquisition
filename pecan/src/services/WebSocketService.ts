@@ -69,6 +69,7 @@ export class WebSocketService {
         console.log('[WebSocket] Connected');
         this.reconnectAttempts = 0;
         this.messageCount = 0;
+        this.notify('__connect__', {});
         this.notify('status', { connected: true, url: wsUrl });
       };
 

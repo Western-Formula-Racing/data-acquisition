@@ -12,7 +12,8 @@ import {
   RefreshCw,
   Wifi,
   WifiOff,
-  FlaskConical
+  FlaskConical,
+  GitCommitHorizontal,
 } from 'lucide-react';
 import { loggingService } from './services/LoggingService';
 import { syncService } from './services/SyncService';
@@ -20,6 +21,12 @@ import type { ConnectionTestResult } from './services/SyncService';
 import { webSocketService } from './services/WebSocketService';
 import type { ConnectionStatus } from './services/WebSocketService';
 import { loggingHandler } from './services/LoggingHandler';
+import {
+  loadDBCFromCache,
+  listDBCFiles,
+  fetchAndApplyDBC,
+} from './utils/canProcessor';
+import type { DBCFileInfo, DBCApplyResult } from './utils/canProcessor';
 
 const FlightDataRecorder: React.FC = () => {
   const [isRecording, setIsRecording] = useState(loggingService.isRecording());
@@ -29,37 +36,68 @@ const FlightDataRecorder: React.FC = () => {
   const [syncProgress, setSyncProgress] = useState({ processed: 0, total: 0 });
   const [connTest, setConnTest] = useState<ConnectionTestResult | null>(null);
   const [isTesting, setIsTesting] = useState(false);
-  
+
   // Connection state
-  const [wsStatus, setWsStatus] = useState<ConnectionStatus>({ 
-    connected: webSocketService.isConnected(), 
-    url: '' 
+  const [wsStatus, setWsStatus] = useState<ConnectionStatus>({
+    connected: webSocketService.isConnected(),
+    url: '',
   });
   const [customWsUrl, setCustomWsUrl] = useState(localStorage.getItem('custom-ws-url') || '');
 
-  // Settings for InfluxDB
+  // InfluxDB settings
   const [influxSettings, setInfluxSettings] = useState({
     url: localStorage.getItem('influx-url') || 'https://influxdb3.westernformularacing.org',
     token: localStorage.getItem('influx-token') || '',
     org: localStorage.getItem('influx-org') || 'WFR',
-    bucket: localStorage.getItem('influx-bucket') || 'WFR26',
+    bucket: localStorage.getItem('influx-bucket') || 'WFR26-fdr',
   });
 
+  // DBC state
+  const [dbcFiles, setDbcFiles] = useState<DBCFileInfo[]>([]);
+  const [selectedDBC, setSelectedDBC] = useState<string>(
+    localStorage.getItem('dbc-selected-file') || ''
+  );
+  const [dbcResult, setDbcResult] = useState<DBCApplyResult | null>(null);
+  const [isLoadingDBC, setIsLoadingDBC] = useState(false);
+  const [dbcListError, setDbcListError] = useState<string | null>(null);
+
   useEffect(() => {
-    // Legacy cleanup: SSO-cookie mode no longer uses CF service-token fields.
+    // Legacy cleanup
     localStorage.removeItem('influx-cfClientId');
     localStorage.removeItem('influx-cfClientSecret');
 
-    // Initialize standard handlers
-    loggingHandler.initialize();
-    webSocketService.initialize();
+    const handleStatusChange = (status: ConnectionStatus) => setWsStatus(status);
+    webSocketService.on('status', handleStatusChange);
 
-    // Listen for connection status changes
-    const handleStatusChange = (status: ConnectionStatus) => {
-      setWsStatus(status);
+    const startup = async () => {
+      // 1. Load cached DBC so processor has something while we fetch
+      await loadDBCFromCache();
+
+      // 2. Fetch DBC file list from GitHub
+      const listResult = await listDBCFiles();
+      if (listResult.ok && listResult.files) {
+        setDbcFiles(listResult.files);
+
+        // Pick previously selected file, else first in list
+        const saved = localStorage.getItem('dbc-selected-file') || '';
+        const target = listResult.files.find(f => f.name === saved) ?? listResult.files[0];
+        if (target) {
+          setSelectedDBC(target.name);
+          setIsLoadingDBC(true);
+          const result = await fetchAndApplyDBC(target.name);
+          setDbcResult(result);
+          setIsLoadingDBC(false);
+        }
+      } else {
+        setDbcListError(listResult.message ?? 'Failed to list DBC files');
+      }
+
+      // 3. Init handlers — processor is now seeded with the fetched DBC
+      loggingHandler.initialize();
+      await webSocketService.initialize();
     };
 
-    webSocketService.on('status', handleStatusChange);
+    startup();
 
     return () => {
       webSocketService.off('status', handleStatusChange);
@@ -72,7 +110,6 @@ const FlightDataRecorder: React.FC = () => {
       setUnsyncedCount(await loggingService.getUnsyncedCount());
       setTotalCount(await loggingService.getTotalCount());
     };
-    
     updateCounts();
     const interval = setInterval(updateCounts, 2000);
     return () => clearInterval(interval);
@@ -89,7 +126,6 @@ const FlightDataRecorder: React.FC = () => {
 
   const handleSync = async () => {
     if (isSyncing) return;
-    
     try {
       setIsSyncing(true);
       await syncService.syncToInflux(
@@ -97,9 +133,7 @@ const FlightDataRecorder: React.FC = () => {
         influxSettings.token,
         influxSettings.org,
         influxSettings.bucket,
-        (processed, total) => {
-          setSyncProgress({ processed, total });
-        }
+        (processed, total) => setSyncProgress({ processed, total })
       );
       alert('Sync completed successfully!');
     } catch (err) {
@@ -121,8 +155,7 @@ const FlightDataRecorder: React.FC = () => {
   };
 
   const updateSetting = (key: string, value: string) => {
-    const newSettings = { ...influxSettings, [key]: value };
-    setInfluxSettings(newSettings);
+    setInfluxSettings(prev => ({ ...prev, [key]: value }));
     localStorage.setItem(`influx-${key}`, value);
   };
 
@@ -144,7 +177,34 @@ const FlightDataRecorder: React.FC = () => {
     } else {
       localStorage.removeItem('custom-ws-url');
     }
-    webSocketService.initialize(); // Trigger reconnect with new settings
+    webSocketService.initialize();
+  };
+
+  const handleSelectDBC = async (filename: string) => {
+    if (isLoadingDBC || filename === selectedDBC) return;
+    setSelectedDBC(filename);
+    setIsLoadingDBC(true);
+    setDbcResult(null);
+    const result = await fetchAndApplyDBC(filename);
+    setDbcResult(result);
+    setIsLoadingDBC(false);
+    if (result.ok) {
+      await webSocketService.resetProcessor();
+      syncService.invalidateProcessor();
+    }
+  };
+
+  const handleRefreshDBC = async () => {
+    if (isLoadingDBC || !selectedDBC) return;
+    setIsLoadingDBC(true);
+    setDbcResult(null);
+    const result = await fetchAndApplyDBC(selectedDBC);
+    setDbcResult(result);
+    setIsLoadingDBC(false);
+    if (result.ok) {
+      await webSocketService.resetProcessor();
+      syncService.invalidateProcessor();
+    }
   };
 
   return (
@@ -162,8 +222,8 @@ const FlightDataRecorder: React.FC = () => {
 
         <div className="flex items-center gap-3">
           <div className={`px-4 py-2 rounded-xl flex items-center gap-3 font-bold text-sm border shadow-2xl transition-all ${
-            wsStatus.connected 
-              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+            wsStatus.connected
+              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
               : 'bg-red-500/10 text-red-400 border-red-500/30'
           }`}>
             {wsStatus.connected ? <Wifi size={18} /> : <WifiOff size={18} />}
@@ -171,8 +231,8 @@ const FlightDataRecorder: React.FC = () => {
           </div>
 
           <div className={`px-4 py-2 rounded-xl flex items-center gap-3 font-bold text-sm border shadow-2xl transition-all ${
-            isRecording 
-              ? 'bg-red-500/10 text-red-500 border-red-500/30' 
+            isRecording
+              ? 'bg-red-500/10 text-red-500 border-red-500/30'
               : 'bg-slate-800 text-slate-500 border-slate-700'
           }`}>
             <div className={`w-2.5 h-2.5 rounded-full ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-slate-600'}`} />
@@ -195,11 +255,11 @@ const FlightDataRecorder: React.FC = () => {
         </div>
 
         <div className="md:col-span-4 bg-slate-800/80 border border-slate-700 p-4 rounded-2xl flex flex-col justify-center shadow-xl">
-          <button 
+          <button
             onClick={toggleRecording}
             className={`flex items-center justify-center gap-3 py-5 px-6 rounded-xl font-black text-lg transition-all transform active:scale-95 ${
-              isRecording 
-                ? 'bg-red-600 hover:bg-red-700 text-white shadow-2xl shadow-red-900/40 ring-4 ring-red-600/20' 
+              isRecording
+                ? 'bg-red-600 hover:bg-red-700 text-white shadow-2xl shadow-red-900/40 ring-4 ring-red-600/20'
                 : 'bg-blue-600 hover:bg-blue-700 text-white shadow-2xl shadow-blue-900/40 ring-4 ring-blue-600/20'
             }`}
           >
@@ -212,6 +272,67 @@ const FlightDataRecorder: React.FC = () => {
         </div>
       </div>
 
+      {/* DBC Selector */}
+      <div className="bg-slate-800/50 border border-slate-700 p-5 rounded-2xl shadow-xl">
+        <div className="flex flex-wrap items-center gap-4">
+          <span className="text-xs font-black text-slate-500 uppercase tracking-widest shrink-0">DBC File</span>
+
+          {dbcListError ? (
+            <div className="flex items-center gap-2 text-red-400 text-sm font-mono">
+              <AlertCircle size={14} />
+              <span>{dbcListError}</span>
+            </div>
+          ) : dbcFiles.length === 0 ? (
+            <div className="flex items-center gap-2 text-slate-500 text-sm">
+              <Activity size={14} className="animate-spin" />
+              <span>Loading DBC list...</span>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3 flex-1">
+              <select
+                value={selectedDBC}
+                onChange={(e) => handleSelectDBC(e.target.value)}
+                disabled={isLoadingDBC}
+                className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 font-mono text-sm focus:ring-2 focus:ring-purple-500 outline-none disabled:opacity-50 text-slate-100"
+              >
+                {dbcFiles.map(f => (
+                  <option key={f.name} value={f.name}>{f.name}</option>
+                ))}
+              </select>
+
+              <button
+                onClick={handleRefreshDBC}
+                disabled={isLoadingDBC || !selectedDBC}
+                className="p-2.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-xl transition-colors"
+                title="Re-fetch from GitHub"
+              >
+                <RefreshCw size={16} className={isLoadingDBC ? 'animate-spin text-purple-400' : 'text-slate-400'} />
+              </button>
+
+              {isLoadingDBC && (
+                <span className="text-slate-500 text-sm font-mono">Fetching...</span>
+              )}
+
+              {dbcResult && !isLoadingDBC && (
+                <div className={`flex items-center gap-2 text-sm font-mono ${dbcResult.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {dbcResult.ok ? <CheckCircle2 size={14} className="shrink-0" /> : <AlertCircle size={14} className="shrink-0" />}
+                  <span>{dbcResult.message}</span>
+                  {dbcResult.ok && dbcResult.commitSha && (
+                    <span className="flex items-center gap-1 text-slate-500 text-xs border border-slate-700 rounded-lg px-2 py-0.5">
+                      <GitCommitHorizontal size={12} />
+                      <span className="font-mono">{dbcResult.commitSha}</span>
+                      {dbcResult.commitMessage && (
+                        <span className="text-slate-600 hidden sm:inline truncate max-w-48">{dbcResult.commitMessage}</span>
+                      )}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Network & WS Config */}
         <div className="lg:col-span-1 bg-slate-800/50 border border-slate-700 p-6 rounded-2xl shadow-xl space-y-6">
@@ -219,21 +340,22 @@ const FlightDataRecorder: React.FC = () => {
             <Globe className="text-blue-400" />
             Network Config
           </h2>
-          
+
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">WebSocket URL (Manual)</label>
               <div className="flex gap-2">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={customWsUrl}
                   onChange={(e) => setCustomWsUrl(e.target.value)}
                   className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none placeholder:text-slate-700"
                   placeholder="ws://192.168.1.100:9080"
                 />
-                <button 
+                <button
                   onClick={saveWsUrl}
-                  className="bg-slate-700 hover:bg-slate-600 p-3 rounded-xl transition-colors title='Apply & Reconnect'"
+                  className="bg-slate-700 hover:bg-slate-600 p-3 rounded-xl transition-colors"
+                  title="Apply & Reconnect"
                 >
                   <RefreshCw size={20} className={!wsStatus.connected ? 'text-blue-400' : 'text-slate-400'} />
                 </button>
@@ -244,10 +366,10 @@ const FlightDataRecorder: React.FC = () => {
             </div>
 
             <div className="pt-4 border-t border-slate-700/50">
-               <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-black text-slate-500 uppercase tracking-widest">Maintenance</span>
-               </div>
-               <button 
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-xs font-black text-slate-500 uppercase tracking-widest">Maintenance</span>
+              </div>
+              <button
                 onClick={handlePurge}
                 className="w-full flex items-center justify-center gap-2 py-3 px-4 border-2 border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white rounded-xl font-black text-sm transition-all uppercase tracking-widest"
               >
@@ -263,13 +385,13 @@ const FlightDataRecorder: React.FC = () => {
             <CloudUpload className="text-emerald-400" />
             InfluxDB Sync
           </h2>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Endpoint URL</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={influxSettings.url}
                   onChange={(e) => updateSetting('url', e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none"
@@ -278,8 +400,8 @@ const FlightDataRecorder: React.FC = () => {
               </div>
               <div>
                 <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Auth Token</label>
-                <input 
-                  type="password" 
+                <input
+                  type="password"
                   value={influxSettings.token}
                   onChange={(e) => updateSetting('token', e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none"
@@ -289,8 +411,8 @@ const FlightDataRecorder: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Organization</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={influxSettings.org}
                   onChange={(e) => updateSetting('org', e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none"
@@ -298,16 +420,21 @@ const FlightDataRecorder: React.FC = () => {
               </div>
               <div>
                 <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Bucket</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={influxSettings.bucket}
                   onChange={(e) => updateSetting('bucket', e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
-              <p className="text-[10px] text-slate-500 leading-relaxed border border-slate-700/60 rounded-xl px-3 py-2 bg-slate-900/60">
-                Ensure your Auth Token is correct and the endpoint is accessible from this network.
-              </p>
+              <div className="space-y-2">
+                <p className="text-[10px] text-amber-400/80 leading-relaxed border border-amber-500/20 rounded-xl px-3 py-2 bg-amber-500/5">
+                  FDR data always goes to <span className="font-mono font-black">WFR26-fdr</span>, not <span className="font-mono">WFR26</span>. Keep the bucket above as-is unless intentionally separating a season.
+                </p>
+                <p className="text-[10px] text-slate-500 leading-relaxed border border-slate-700/60 rounded-xl px-3 py-2 bg-slate-900/60">
+                  Ensure your Auth Token is correct and the endpoint is accessible from this network.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -329,14 +456,14 @@ const FlightDataRecorder: React.FC = () => {
                   <span>{Math.round((syncProgress.processed / syncProgress.total) * 100) || 0}%</span>
                 </div>
                 <div className="w-full h-3 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-700">
-                  <div 
-                    className="h-full bg-emerald-500 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.5)]" 
+                  <div
+                    className="h-full bg-emerald-500 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.5)]"
                     style={{ width: `${(syncProgress.processed / syncProgress.total) * 100}%` }}
                   />
                 </div>
               </div>
             )}
-            
+
             <div className="flex gap-3">
               <button
                 disabled={isTesting || isSyncing}
