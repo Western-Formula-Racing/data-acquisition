@@ -51,8 +51,13 @@ export class WebSocketService {
       if (isRpiNetwork) {
         wsUrl = `${protocol}://${hostname}:${port}`;
       } else {
-        wsUrl = `wss://ws-wfr.0001200.xyz:9443`;
+        wsUrl = `wss://ws-demo.westernformularacing.org`;
       }
+    }
+
+    // Ensure protocol is present (especially for custom URLs)
+    if (wsUrl && !wsUrl.startsWith('ws://') && !wsUrl.startsWith('wss://')) {
+      wsUrl = `${protocol}://${wsUrl}`;
     }
 
     console.log(`[WebSocket] Connecting to: ${wsUrl}`);

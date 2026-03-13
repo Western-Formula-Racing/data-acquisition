@@ -16,7 +16,7 @@ WSS_PORT = int(os.getenv('WSS_PORT', '9443'))
 CSV_FILE = os.getenv('CSV_FILE', '2025-01-01-00-00-00.csv')
 SSL_CERT = os.getenv('SSL_CERT', '/app/ssl/cert.pem')
 SSL_KEY = os.getenv('SSL_KEY', '/app/ssl/key.pem')
-DOMAIN = os.getenv('DOMAIN', 'ws-wfr.0001200.xyz')
+DOMAIN = os.getenv('DOMAIN', 'ws-demo.westernformularacing.org')
 
 # Feature flags
 # Default to simulation-only for standard IDs; CSV replay can still be
