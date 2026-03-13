@@ -10,6 +10,14 @@ export class SyncService {
   private syncing = false;
   private processor: any = null;
 
+  private getEffectiveUrl(url: string): string {
+    // If we've configured a Vite proxy and are running on localhost, use the proxy path
+    if (url.includes('influxdb3.westernformularacing.org') && window.location.hostname === 'localhost') {
+      return '/influx-api';
+    }
+    return url;
+  }
+
   private async getProcessor() {
     if (!this.processor) {
       this.processor = await createCanProcessor();
@@ -94,10 +102,11 @@ export class SyncService {
     token: string,
     bucket: string
   ): Promise<ConnectionTestResult> {
+    const effectiveUrl = this.getEffectiveUrl(url);
     try {
-      const response = await fetch(`${url}/api/v3/query_sql`, {
+      const response = await fetch(`${effectiveUrl}/api/v3/query_sql`, {
         method: 'POST',
-        credentials: 'include',
+        credentials: 'omit',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -108,19 +117,8 @@ export class SyncService {
       if (response.ok) {
         return { ok: true, message: `Connected to ${bucket}` };
       } else {
-        const redirectedToAccess = response.redirected && /cdn-cgi\/access\/login/i.test(response.url);
-        if (redirectedToAccess) {
-          return {
-            ok: false,
-            message: `Cloudflare Access login required. Open ${url} in this browser and sign in with Google, then test again.`,
-          };
-        }
-
         const text = await response.text();
-        const accessHint = response.status === 401 || response.status === 403
-          ? ' Cloudflare Access session may be missing; sign in to Access in this browser.'
-          : '';
-        return { ok: false, message: `${response.status} ${response.statusText}: ${text.slice(0, 120)}${accessHint}` };
+        return { ok: false, message: `${response.status} ${response.statusText}: ${text.slice(0, 120)}` };
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -129,7 +127,7 @@ export class SyncService {
       return {
         ok: false,
         message: isNetworkErr
-          ? `Cannot reach ${url} — check URL/network. If this endpoint is behind Cloudflare Access, sign in to Access in this browser first.`
+          ? `Cannot reach ${url} — check URL/network/CORS.`
           : msg,
       };
     }
@@ -146,12 +144,13 @@ export class SyncService {
     bucket: string,
     lines: string[]
   ) {
+    const effectiveUrl = this.getEffectiveUrl(url);
     // InfluxDB 3 / InfluxDB 2 write endpoint: /api/v2/write
-    const writeUrl = `${url}/api/v2/write?org=${org}&bucket=${bucket}&precision=ns`;
+    const writeUrl = `${effectiveUrl}/api/v2/write?org=${org}&bucket=${bucket}&precision=ns`;
     
     const response = await fetch(writeUrl, {
       method: 'POST',
-      credentials: 'include',
+      credentials: 'omit',
       headers: {
         'Authorization': `Token ${token}`,
         'Content-Type': 'text/plain; charset=utf-8',

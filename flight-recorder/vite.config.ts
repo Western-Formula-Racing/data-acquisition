@@ -34,6 +34,13 @@ export default defineConfig({
     })
   ],
   server: {
-    port: 5174
+    port: 5174,
+    proxy: {
+      '/influx-api': {
+        target: 'https://influxdb3.westernformularacing.org',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/influx-api/, ''),
+      }
+    }
   }
 });

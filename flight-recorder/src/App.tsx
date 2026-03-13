@@ -306,7 +306,7 @@ const FlightDataRecorder: React.FC = () => {
                 />
               </div>
               <p className="text-[10px] text-slate-500 leading-relaxed border border-slate-700/60 rounded-xl px-3 py-2 bg-slate-900/60">
-                Cloudflare Access uses your browser SSO session. Sync requests include cookies automatically.
+                Ensure your Auth Token is correct and the endpoint is accessible from this network.
               </p>
             </div>
           </div>
