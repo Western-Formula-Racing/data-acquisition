@@ -75,6 +75,7 @@ function App() {
 
       // Initialize WebSocket only after DBC is loaded so the CAN processor
       // is created with the correct DBC file.
+      telemetryHandler.initialize();
       webSocketService.initialize();
     })();
 
