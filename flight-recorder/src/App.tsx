@@ -1,21 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Circle, 
-  Square, 
-  CloudUpload, 
-  Trash2, 
-  Database, 
+import {
+  Circle,
+  Square,
+  CloudUpload,
+  Trash2,
+  Database,
   AlertCircle,
   CheckCircle2,
   Activity,
-  Settings,
   Globe,
   RefreshCw,
   Wifi,
-  WifiOff
+  WifiOff,
+  FlaskConical
 } from 'lucide-react';
 import { loggingService } from './services/LoggingService';
 import { syncService } from './services/SyncService';
+import type { ConnectionTestResult } from './services/SyncService';
 import { webSocketService } from './services/WebSocketService';
 import type { ConnectionStatus } from './services/WebSocketService';
 import { loggingHandler } from './services/LoggingHandler';
@@ -26,6 +27,8 @@ const FlightDataRecorder: React.FC = () => {
   const [totalCount, setTotalCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(syncService.isSyncing());
   const [syncProgress, setSyncProgress] = useState({ processed: 0, total: 0 });
+  const [connTest, setConnTest] = useState<ConnectionTestResult | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
   
   // Connection state
   const [wsStatus, setWsStatus] = useState<ConnectionStatus>({ 
@@ -36,13 +39,17 @@ const FlightDataRecorder: React.FC = () => {
 
   // Settings for InfluxDB
   const [influxSettings, setInfluxSettings] = useState({
-    url: localStorage.getItem('influx-url') || 'http://localhost:8181',
+    url: localStorage.getItem('influx-url') || 'https://influxdb3.westernformularacing.org',
     token: localStorage.getItem('influx-token') || '',
     org: localStorage.getItem('influx-org') || 'WFR',
-    bucket: localStorage.getItem('influx-bucket') || 'WFR25'
+    bucket: localStorage.getItem('influx-bucket') || 'WFR26',
   });
 
   useEffect(() => {
+    // Legacy cleanup: SSO-cookie mode no longer uses CF service-token fields.
+    localStorage.removeItem('influx-cfClientId');
+    localStorage.removeItem('influx-cfClientSecret');
+
     // Initialize standard handlers
     loggingHandler.initialize();
     webSocketService.initialize();
@@ -119,6 +126,18 @@ const FlightDataRecorder: React.FC = () => {
     localStorage.setItem(`influx-${key}`, value);
   };
 
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setConnTest(null);
+    const result = await syncService.testConnection(
+      influxSettings.url,
+      influxSettings.token,
+      influxSettings.bucket
+    );
+    setConnTest(result);
+    setIsTesting(false);
+  };
+
   const saveWsUrl = () => {
     if (customWsUrl) {
       localStorage.setItem('custom-ws-url', customWsUrl);
@@ -138,7 +157,7 @@ const FlightDataRecorder: React.FC = () => {
             </div>
             WFR Flight Recorder
           </h1>
-          <p className="text-slate-400 mt-1 font-medium italic">High-Fidelity Telemetry Logging</p>
+          <p className="text-slate-400 mt-1 font-medium italic">ehh we will get our antenna figured out soon</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -286,10 +305,23 @@ const FlightDataRecorder: React.FC = () => {
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
+              <p className="text-[10px] text-slate-500 leading-relaxed border border-slate-700/60 rounded-xl px-3 py-2 bg-slate-900/60">
+                Cloudflare Access uses your browser SSO session. Sync requests include cookies automatically.
+              </p>
             </div>
           </div>
 
           <div className="mt-auto pt-6 border-t border-slate-700/50">
+            {connTest && (
+              <div className={`mb-4 flex items-start gap-2 px-4 py-3 rounded-xl text-sm font-mono border ${
+                connTest.ok
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                  : 'bg-red-500/10 border-red-500/30 text-red-400'
+              }`}>
+                {connTest.ok ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> : <AlertCircle size={16} className="mt-0.5 shrink-0" />}
+                <span>{connTest.message}</span>
+              </div>
+            )}
             {isSyncing && (
               <div className="mb-4">
                 <div className="flex justify-between text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-2">
@@ -305,14 +337,24 @@ const FlightDataRecorder: React.FC = () => {
               </div>
             )}
             
-            <button 
-              disabled={isSyncing || unsyncedCount === 0}
-              onClick={handleSync}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black py-5 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl shadow-emerald-900/20 uppercase tracking-widest text-lg"
-            >
-              {isSyncing ? <Activity className="animate-spin" size={24} /> : <CloudUpload size={24} />}
-              {isSyncing ? 'Synchronizing...' : 'Upload Data to InfluxDB'}
-            </button>
+            <div className="flex gap-3">
+              <button
+                disabled={isTesting || isSyncing}
+                onClick={handleTestConnection}
+                className="flex items-center justify-center gap-2 px-5 py-5 rounded-2xl font-black text-sm uppercase tracking-widest border-2 border-slate-600 hover:border-blue-500 text-slate-400 hover:text-blue-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {isTesting ? <Activity className="animate-spin" size={18} /> : <FlaskConical size={18} />}
+                Test
+              </button>
+              <button
+                disabled={isSyncing || unsyncedCount === 0}
+                onClick={handleSync}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black py-5 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl shadow-emerald-900/20 uppercase tracking-widest text-lg"
+              >
+                {isSyncing ? <Activity className="animate-spin" size={24} /> : <CloudUpload size={24} />}
+                {isSyncing ? 'Synchronizing...' : 'Upload to InfluxDB'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -1,5 +1,10 @@
-import { loggingService, type CanFrame } from './LoggingService';
+import { loggingService } from './LoggingService';
 import { createCanProcessor } from '../utils/canProcessor';
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  message: string;
+}
 
 export class SyncService {
   private syncing = false;
@@ -57,7 +62,13 @@ export class SyncService {
         }
 
         if (lineProtocolBatch.length > 0) {
-          await this.uploadToInflux(url, token, org, bucket, lineProtocolBatch);
+          await this.uploadToInflux(
+            url,
+            token,
+            org,
+            bucket,
+            lineProtocolBatch
+          );
         }
 
         const ids = frames.map(f => f.id!).filter(id => id !== undefined);
@@ -78,6 +89,52 @@ export class SyncService {
     }
   }
 
+  public async testConnection(
+    url: string,
+    token: string,
+    bucket: string
+  ): Promise<ConnectionTestResult> {
+    try {
+      const response = await fetch(`${url}/api/v3/query_sql`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ db: bucket, q: 'SELECT 1' }),
+      });
+
+      if (response.ok) {
+        return { ok: true, message: `Connected to ${bucket}` };
+      } else {
+        const redirectedToAccess = response.redirected && /cdn-cgi\/access\/login/i.test(response.url);
+        if (redirectedToAccess) {
+          return {
+            ok: false,
+            message: `Cloudflare Access login required. Open ${url} in this browser and sign in with Google, then test again.`,
+          };
+        }
+
+        const text = await response.text();
+        const accessHint = response.status === 401 || response.status === 403
+          ? ' Cloudflare Access session may be missing; sign in to Access in this browser.'
+          : '';
+        return { ok: false, message: `${response.status} ${response.statusText}: ${text.slice(0, 120)}${accessHint}` };
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // "Load failed" / "Failed to fetch" means network-level failure (no server, CORS, etc.)
+      const isNetworkErr = /load failed|failed to fetch|network/i.test(msg);
+      return {
+        ok: false,
+        message: isNetworkErr
+          ? `Cannot reach ${url} — check URL/network. If this endpoint is behind Cloudflare Access, sign in to Access in this browser first.`
+          : msg,
+      };
+    }
+  }
+
   private escapeTag(val: string): string {
     return val.replace(/ /g, '\\ ').replace(/,/g, '\\,').replace(/=/g, '\\=');
   }
@@ -94,6 +151,7 @@ export class SyncService {
     
     const response = await fetch(writeUrl, {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Authorization': `Token ${token}`,
         'Content-Type': 'text/plain; charset=utf-8',

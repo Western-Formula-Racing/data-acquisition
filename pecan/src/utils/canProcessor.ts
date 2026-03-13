@@ -105,6 +105,7 @@ export async function decodeAndIngestUsingDbc(params: {
 // Use local.dbc for development, example.dbc for production
 let dbcFile = import.meta.env.DEV ? localDbc : exampleDbc;
 let usingCache = false;
+const dbcDebugSeen = new Set<number>();
 
 // Simple type definitions for our use, align with InfluxDB3 schema for consistency
 // InfluxDB3 Schema: id -> canId, name -> messageName, signalName, sensorReading, time
@@ -421,7 +422,10 @@ export function decodeCanMessage(
     }
 
     if (canId === 0x18FF50E5 || canId > 0x7FF || (decoded === null && canId !== 1999)) {
-       console.debug(`[DBC Debug] rawId=${canId} (0x${canId.toString(16)}), dbcId=${dbcId} (0x${dbcId.toString(16)}), decodedName=${decoded?.name ?? 'null'}`);
+      if (!dbcDebugSeen.has(canId)) {
+        dbcDebugSeen.add(canId);
+        console.debug(`[DBC Debug] rawId=${canId} (0x${canId.toString(16)}), dbcId=${dbcId} (0x${dbcId.toString(16)}), decodedName=${decoded?.name ?? 'null'}`);
+      }
     }
 
     const rawDataStr = messageData
