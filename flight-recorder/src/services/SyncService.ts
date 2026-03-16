@@ -56,15 +56,16 @@ export class SyncService {
           const decoded = processor.decode(frame.canId, frame.data, frame.time);
           if (decoded && decoded.signals) {
             // InfluxDB Line Protocol: measurement,tags fields timestamp(ns)
+            // Wide format: one point per CAN message, all signals as fields
             const timestampNs = frame.time * 1000000;
-            
-            for (const [sigName, sigData] of Object.entries(decoded.signals)) {
-              const value = (sigData as any).sensorReading;
-              if (typeof value !== 'number' || !isFinite(value)) continue;
 
-              const tags = `signalName=${this.escapeTag(sigName)},messageName=${this.escapeTag(decoded.messageName)},canId=${frame.canId}`;
-              const fields = `sensorReading=${value}`;
-              lineProtocolBatch.push(`WFR25,${tags} ${fields} ${timestampNs}`);
+            const tags = `messageName=${this.escapeTag(decoded.messageName)},canId=${frame.canId}`;
+            const fields = Object.entries(decoded.signals)
+              .filter(([_, s]) => typeof (s as any).sensorReading === 'number' && isFinite((s as any).sensorReading))
+              .map(([name, s]) => `${this.escapeTag(name)}=${(s as any).sensorReading}`)
+              .join(',');
+            if (fields) {
+              lineProtocolBatch.push(`${bucket},${tags} ${fields} ${timestampNs}`);
             }
           }
         }

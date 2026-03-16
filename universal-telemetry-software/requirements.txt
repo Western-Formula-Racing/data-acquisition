@@ -5,6 +5,7 @@ aiohttp==3.11.11
 redis[hiredis]
 influxdb-client>=1.38.0
 cantools>=39.4.0
+slicks>=0.2.0
 
 # Test dependencies
 pytest>=7.4.0
