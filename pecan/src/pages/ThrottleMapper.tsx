@@ -2,9 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createCanProcessor } from "../utils/canProcessor";
 import { packMessage } from "../utils/packMessage";
 import { dataStore } from "../lib/DataStore";
+import { usePageLock } from "../lib/usePageLock";
+import { useSerialStatus } from "../lib/useSerialStatus";
+import { PageLockBanner } from "../components/PageLockBanner";
 
 import {
-    Settings, Activity, Zap, AlertTriangle, Save, 
+    Settings, Activity, Zap, AlertTriangle, Save,
     Table as TableIcon, FileCode, Lock, Clock, Send
 } from "lucide-react";
 
@@ -80,6 +83,9 @@ const parseCanId = (canId: string): number => {
 };
 
 const Throttle_Mapper: React.FC = () => {
+    const lock = usePageLock('throttle-mapper');
+    const isLocal = useSerialStatus();
+
     // Canvas ref
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -117,7 +123,7 @@ const Throttle_Mapper: React.FC = () => {
 
     // Confirm and send CAN message interface vars
     const [showConfirm, setShowConfirm] = useState(false);
-    const [delay, setDelay] = useState<number | "">( "");
+    const [delay, setDelay] = useState<number | "">("");
 
     // Init CAN processor once
     useEffect(() => {
@@ -334,7 +340,7 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
         });
 
         // Split into bytes for the UI
-        return hexString.match(/.{1,2}/g) || ["00","00","00","00","00","00","00","00"];
+        return hexString.match(/.{1,2}/g) || ["00", "00", "00", "00", "00", "00", "00", "00"];
     }, [dzLow, dzHigh, gamma]);
 
     return (
@@ -355,7 +361,9 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                     </div>
                 </div>
 
-                <hr className="h-1 bg-option border-0 rounded-sm mb-4 opacity-100"/>
+                <hr className="h-1 bg-option border-0 rounded-sm mb-4 opacity-100" />
+
+                <PageLockBanner lock={lock} />
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                     {/* LEFT COLUMN */}
@@ -633,7 +641,7 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                                 <div className="space-y-3 w-3xs">
                                     <label className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold">Transmission Delay</label>
                                     <div className="flex items-center bg-slate-950 !rounded-xl border border-slate-800 p-1.5 h-12">
-                                        <button 
+                                        <button
                                             onClick={() => setDelay("")}
                                             className={`flex-1 h-full !rounded-lg text-xs font-bold transition-all ${delay === "" ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
                                         >
@@ -641,11 +649,11 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                                             Now
                                         </button>
                                         <div className="w-px h-4 bg-slate-800 mx-2" />
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             value={delay}
                                             onChange={(e) => setDelay(e.target.value === "" ? "" : Number(e.target.value))}
-                                            placeholder="ms..." 
+                                            placeholder="ms..."
                                             className="w-24 bg-transparent text-right pr-2 text-sm font-mono text-blue-400 focus:outline-none"
                                         />
                                         <span className="text-[10px] text-slate-600 pr-2 font-bold uppercase">ms</span>
@@ -658,9 +666,13 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                                         <label className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold ml-1">
                                             Send Message
                                         </label>
-                                        <button 
+                                        <button
                                             onClick={() => setShowConfirm(true)}
-                                            className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-bold !rounded-xl shadow-[0_8px_20px_-4px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-3 group"
+                                            disabled={lock.isLockedByOther && !isLocal}
+                                            className={`w-full h-12 font-bold !rounded-xl transition-all flex items-center justify-center gap-3 group ${(lock.isLockedByOther && !isLocal)
+                                                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                                                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow-[0_8px_20px_-4px_rgba(37,99,235,0.4)]'
+                                                }`}
                                         >
                                             <Send className="w-4 h-4 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
                                             Transmit Command
@@ -758,12 +770,12 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                             </div>
                             <h2 className="text-xl font-bold text-white">Confirm Transmission</h2>
                         </div>
-                        
+
                         <div className="space-y-4 mb-8">
                             <p className="text-slate-300 text-sm leading-relaxed mb-4">
                                 You are about to send a torque mapping update to the <span className="text-blue-400 font-bold">Engine Control Unit</span>.
                             </p>
-                            
+
                             <div className="bg-slate-950 rounded-lg p-4 border border-slate-800 space-y-2 font-mono text-xs">
 
                                 <div className="pb-2 mb-2 border-b border-slate-800">
@@ -782,7 +794,7 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                                             <span className="text-blue-300">{gamma.toFixed(2)}x</span>
                                         </div>
                                     </div>
-                                    </div>
+                                </div>
                                 <div className="flex justify-between">
                                     <span className="text-slate-500">Target ID:</span>
                                     <span className="text-blue-400">0x101 (Engine_Status_1)</span>
@@ -799,13 +811,13 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                         </div>
 
                         <div className="flex gap-3">
-                            <button 
+                            <button
                                 onClick={() => setShowConfirm(false)}
                                 className="flex-1 px-4 py-3 !rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-colors"
                             >
                                 Cancel
                             </button>
-                            <button 
+                            <button
                                 onClick={() => {
                                     /* Logic to send CAN frame */
                                     setShowConfirm(false);
@@ -819,7 +831,7 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                 </div>
             )}
         </div>
-        
+
     );
 };
 

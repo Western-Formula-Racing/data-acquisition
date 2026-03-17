@@ -10,7 +10,12 @@ import {
 } from "./utils/canProcessor";
 import { Outlet } from "react-router";
 import { webSocketService } from "./services/WebSocketService";
+import { telemetryHandler } from "./services/TelemetryHandler";
+import { serialService } from "./services/SerialService";
 import { DefaultBanner, CacheBanner } from "./components/AppBanners";
+import FloatingTools from "./components/FloatingTools";
+import { useRemoteConfig } from "./lib/useRemoteConfig";
+import { updateCategories } from "./config/categories";
 
 function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
@@ -30,6 +35,20 @@ function App() {
     toggleCache: () => setDisplayCacheBanner((o) => !o),
   };
 
+  const { session, loadConfig } = useRemoteConfig();
+
+  useEffect(() => {
+    const fetchConfig = async () => {
+      if (session?.user) {
+        const cloudConfig = await loadConfig();
+        if (cloudConfig?.categoryConfig) {
+          updateCategories(cloudConfig.categoryConfig);
+        }
+      }
+    };
+    fetchConfig();
+  }, [session, loadConfig]);
+
   const openSettings = () => setIsSettingsOpen(true);
   const closeSettings = () => setIsSettingsOpen(false);
   const openAuth = () => setIsAuthOpen(true);
@@ -45,28 +64,26 @@ function App() {
       if (isUsingCache) {
         setDisplayDefaultBanner(false);
         setDisplayCacheBanner(true);
-        // Persist the state
         localStorage.setItem('dbc-cache-active', 'true');
       } else {
-        // Check if we previously had cache active
         const wasCacheActive = localStorage.getItem('dbc-cache-active') === 'true';
         if (wasCacheActive) {
           console.log("[App] Cache was previously active but not found now");
         }
         localStorage.removeItem('dbc-cache-active');
       }
+
+      // Initialize WebSocket only after DBC is loaded so the CAN processor
+      // is created with the correct DBC file.
+      telemetryHandler.initialize();
+      webSocketService.initialize();
     })();
-  }, []);
 
-  // Initialize WebSocket service once when app loads
-  useEffect(() => {
-    webSocketService.initialize();
-
-    // Cleanup on unmount
     return () => {
       webSocketService.disconnect();
+      serialService.disconnect();
     };
-  }, []); // Empty dependency array = runs once on mount
+  }, []);
 
   return (
     <div className="h-screen flex flex-row overflow-y-auto">
@@ -89,6 +106,7 @@ function App() {
         <Outlet context={{ isSidebarOpen, openSettings, ...bannerApi }} />
         <SettingsModal isOpen={isSettingsOpen} onClose={closeSettings} bannerApi={bannerApi} />
         <AuthModal isOpen={isAuthOpen} onClose={closeAuth} />
+        <FloatingTools />
       </main>
 
 

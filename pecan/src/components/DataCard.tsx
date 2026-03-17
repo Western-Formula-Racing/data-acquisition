@@ -1,6 +1,7 @@
 import Dropdown from "./Dropdown";
 import React, { useState, useMemo, useEffect } from "react";
 import { determineCategory, getCategoryColor } from "../config/categories";
+import { useIntersectionObserver } from "../utils/useIntersectionObserver";
 
 interface InputProps {
   msgID: string;
@@ -17,6 +18,7 @@ interface InputProps {
     unit: string,
     event: React.MouseEvent
   ) => void;
+  onTraceClick?: (msgID: string) => void;
 }
 
 // Defining the structure of the data, can be changed later
@@ -40,14 +42,17 @@ const DataTextBox = ({
   </div>
 );
 
-function DataCard({ msgID, name, category, data, lastUpdated, rawData, compact, onSignalClick }: Readonly<InputProps>) {
+function DataCard({ msgID, name, category, data, lastUpdated, rawData, compact, onSignalClick, onTraceClick }: Readonly<InputProps>) {
 
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [ref, isIntersecting] = useIntersectionObserver('200px');
 
   useEffect(() => {
+    if (!isIntersecting) return;
+
     const interval = setInterval(() => setCurrentTime(Date.now()), 100);
     return () => clearInterval(interval);
-  }, []);
+  }, [isIntersecting]);
 
   const timeDiff = lastUpdated ? currentTime - lastUpdated : 0;
 
@@ -132,7 +137,7 @@ function DataCard({ msgID, name, category, data, lastUpdated, rawData, compact, 
 
   return (
     //  Data Card 
-    <div className={`${compact ? "min-w-[250px] max-w-[350px]" : "min-w-[400px] max-w-[440px]"} w-100`}>
+    <div ref={ref} className={`${compact ? "min-w-[250px] max-w-[350px]" : "min-w-[400px] max-w-[440px]"} w-100`}>
 
       {/* DM Header */}
       <div className={`${collapsed ? "gap-0.5" : "gap-1.5"} grid grid-cols-6 box-border mx-[3px]`}>
@@ -208,9 +213,19 @@ function DataCard({ msgID, name, category, data, lastUpdated, rawData, compact, 
         <div className={`${compact ? "w-76" : "w-90"} h-[2px] bg-white self-center rounded-xs`}></div>
 
         {/* Raw Data Display */}
-        <div className={`${ compact ? "text-[11px] grid-cols-7" : "text-xs grid-cols-6" } h-[50px] grid text-white  items-center justify-start`}>
-          <p id="raw-data" className={`${ compact ? "col-span-4" : "col-span-3"} font-semibold`}>&nbsp;&nbsp;&nbsp;{rawData || "00 01 02 03 04 05 06 07"}</p>
-          <p id="raw-data-received" className={`${ compact ? "col-span-3" : "col-span-3"} text-end font-semibold`}>Last Update:&nbsp;&nbsp;&nbsp;{timeDiff}ms</p>
+        <div className={`${compact ? "text-[11px] grid-cols-7" : "text-xs grid-cols-6"} h-[50px] grid text-white  items-center justify-start`}>
+          <p id="raw-data" className={`${compact ? "col-span-4" : "col-span-3"} font-semibold`}>&nbsp;&nbsp;&nbsp;{rawData || "00 01 02 03 04 05 06 07"}</p>
+          <p id="raw-data-received" className={`${compact ? "col-span-3" : "col-span-3"} text-end font-semibold flex items-center justify-end gap-2`}>
+            Last Update:&nbsp;{timeDiff}ms
+            <button
+              type="button"
+              onClick={() => onTraceClick?.(msgID)}
+              className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold border border-purple-500/40 bg-purple-500/10 text-purple-300 hover:bg-purple-500/25 transition-colors whitespace-nowrap"
+              title="View in CAN Trace panel"
+            >
+              TRACE ↗
+            </button>
+          </p>
         </div>
       </div>
     </div>

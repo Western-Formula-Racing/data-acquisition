@@ -20,12 +20,10 @@ import logging
 
 import redis
 
-logger = logging.getLogger("LinkDiagnostics")
+from src.config import REMOTE_IP, REDIS_URL, REDIS_DIAG_CHANNEL as REDIS_CHANNEL
+from src import redis_utils
 
-# Configuration
-REMOTE_IP = os.getenv("REMOTE_IP", "192.168.1.100")
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-REDIS_CHANNEL = "link_diagnostics"
+logger = logging.getLogger("LinkDiagnostics")
 
 PING_INTERVAL = float(os.getenv("PING_INTERVAL", "1.0"))
 
@@ -41,11 +39,7 @@ UBIQUITI_PASS = os.getenv("UBIQUITI_PASS", "ubnt")
 
 def publish(redis_client, data: dict):
     """Publish a diagnostic message to Redis."""
-    if redis_client:
-        try:
-            redis_client.publish(REDIS_CHANNEL, json.dumps(data))
-        except Exception as e:
-            logger.error(f"Redis publish error: {e}")
+    redis_utils.safe_publish(redis_client, REDIS_CHANNEL, json.dumps(data), logger)
 
 
 # ── ICMP Ping ─────────────────────────────────────────────────────────────────
@@ -295,13 +289,7 @@ async def run_link_diagnostics():
     """Main entry point. Gathers all diagnostic tasks."""
     logger.info("Link diagnostics service starting...")
 
-    try:
-        redis_client = redis.from_url(REDIS_URL)
-        redis_client.ping()
-        logger.info("Connected to Redis")
-    except Exception as e:
-        logger.warning(f"Could not connect to Redis: {e}")
-        redis_client = None
+    redis_client = redis_utils.get_sync_client(REDIS_URL)
 
     tasks = [
         ping_task(redis_client),

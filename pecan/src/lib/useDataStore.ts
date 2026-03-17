@@ -270,3 +270,50 @@ export function useMessageData(msgID: string, windowMs?: number): {
     history,
   }), [latest, history]);
 }
+
+/**
+ * Hook for the flat chronological trace buffer.
+ *
+ * Updates are throttled to at most once every `throttleMs` milliseconds
+ * (default 50 ms = 20 Hz) so the component doesn't re-render on every
+ * individual CAN frame at high bus rates.
+ *
+ * @param throttleMs - Min ms between state updates (default 50)
+ * @returns Snapshot of the trace buffer + a clearTrace() helper
+ */
+export function useTraceBuffer(throttleMs = 50): {
+  frames: TelemetrySample[];
+  clearTrace: () => void;
+} {
+  const [frames, setFrames] = useState<TelemetrySample[]>(() =>
+    dataStore.getTrace()
+  );
+
+  useEffect(() => {
+    let pending = false;
+
+    const flush = () => {
+      pending = false;
+      setFrames(dataStore.getTrace());
+    };
+
+    const unsubscribe = dataStore.subscribeTrace(() => {
+      if (!pending) {
+        pending = true;
+        setTimeout(flush, throttleMs);
+      }
+    });
+
+    // Sync immediately on mount
+    setFrames(dataStore.getTrace());
+
+    return unsubscribe;
+  }, [throttleMs]);
+
+  const clearTrace = useCallback(() => {
+    dataStore.clearTrace();
+    setFrames([]);
+  }, []);
+
+  return useMemo(() => ({ frames, clearTrace }), [frames, clearTrace]);
+}

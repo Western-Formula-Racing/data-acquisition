@@ -137,6 +137,8 @@ celerybeat.pid
 
 # Environments
 .env
+.env.local
+.env.*.local
 .envrc
 .venv
 env/
@@ -238,3 +240,5 @@ test-logs/
 # Ignore generated service worker files
 sw.js
 pecan/src/assets/WFR25.dbc
+WFR25.dbc
+CLAUDE.md

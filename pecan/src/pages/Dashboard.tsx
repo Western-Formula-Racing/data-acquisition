@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useSearchParams } from "react-router";
 import DataCard from "../components/DataCard";
 import DataRow from "../components/DataRow";
 import PlotManager from "../components/PlotManager";
 import type { PlotSignal } from "../components/PlotManager";
 import PlotControls from "../components/PlotControls";
+import TracePanel from "../components/TracePanel";
 import { dataStore } from "../lib/DataStore";
 import { useAllLatestMessages, useDataStoreStats } from "../lib/useDataStore";
 import atozIcon from "../assets/atoz.png";
@@ -16,6 +18,7 @@ import gridViewIcon from "../assets/grid-view.png";
 import TourGuide from "../components/TourGuide";
 import type { TourStep } from "../components/TourGuide";
 import { useRemoteConfig } from "../lib/useRemoteConfig";
+import { HelpCircle } from "lucide-react";
 
 interface Plot {
   id: string;
@@ -60,6 +63,10 @@ const TOUR_STEPS: TourStep[] = [
 function Dashboard() {
   // Sorting and View State
   // =====================================================================
+  const [searchParams] = useSearchParams();
+  const highlightMsgID = searchParams.get("msgID");
+  const shouldExpand = searchParams.get("expand") === "true";
+
   const [sortingMethod, setSortingMethod] = useState("name");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [tickUpdate, setTickUpdate] = useState(Date.now());
@@ -70,6 +77,9 @@ function Dashboard() {
   const [currentTourStep, setCurrentTourStep] = useState(0);
   const [plotPanelOpen, setPlotPanelOpen] = useState(true);
   const setPplotPanelOpen = setPlotPanelOpen;
+  const [desktopPanelOpen, setDesktopPanelOpen] = useState(() =>
+    localStorage.getItem("dash:desktopPanelOpen") !== "false"
+  );
   const [showPerfOverlay, setShowPerfOverlay] = useState(() =>
     localStorage.getItem("perf-overlay-enabled") === "true"
   );
@@ -329,6 +339,10 @@ function Dashboard() {
     localStorage.setItem("dash:viewMode", viewMode);
   }, [viewMode]);
 
+  useEffect(() => {
+    localStorage.setItem("dash:desktopPanelOpen", String(desktopPanelOpen));
+  }, [desktopPanelOpen]);
+
   const handleCloseTour = () => {
     setTourOpen(false);
     localStorage.setItem("dash:tutorialSeen", "true");
@@ -435,6 +449,14 @@ function Dashboard() {
     setPlots((prevPlots) => prevPlots.filter((plot) => plot.id !== plotId));
   };
 
+  // Trace Panel State
+  // =====================================================================
+  const [tracePanelFilter, setTracePanelFilter] = useState<string | null>(null);
+
+  const handleTraceClick = (msgID: string) => {
+    setTracePanelFilter(msgID);
+  };
+
   return (
     <div className="flex flex-col md:grid md:grid-cols-3 gap-0 w-100 h-full">
       {/* Tour Guide Overlay */}
@@ -447,8 +469,7 @@ function Dashboard() {
       />
 
       {/* Data display section */}
-      <div className={`md:col-span-2 relative flex flex-col md:h-full overflow-hidden pb-12 md:pb-0 ${plotPanelOpen ? 'h-[50vh]' : 'flex-1'
-        }`}>
+      <div className={`relative flex flex-col md:h-full overflow-hidden pb-12 md:pb-0 ${plotPanelOpen ? 'h-[50vh]' : 'flex-1'} ${desktopPanelOpen ? 'md:col-span-2' : 'md:col-span-3'}`}>
         <div className="flex-1 p-4 pb-16 overflow-y-auto">
           {/* Data filter / view selection menu */}
           <div className="bg-data-module-bg w-full h-[60px] md:h-[100px] grid grid-cols-4 gap-1 rounded-md mb-[15px]">
@@ -457,9 +478,7 @@ function Dashboard() {
 
             {/* View selection options */}
             <div className="col-span-1 flex items-center justify-end gap-1 p-3">
-              <div className="flex flex-row">
-
-
+              <div className="flex flex-row items-center gap-1">
                 {/* Filter button and dropdown  */}
                 <div id="dash-sort-btn" className="relative">
                   <button
@@ -508,23 +527,35 @@ function Dashboard() {
                     </div>
                   )}
                 </div>
-              </div>
 
-              {/* Hide view toggle buttons on mobile, only show list view */}
-              <div id="dash-view-toggle" className="hidden md:flex">
+                {/* Hide view toggle buttons on mobile, only show list view */}
+                <div id="dash-view-toggle" className="hidden md:flex">
+                  <button
+                    onClick={() => setViewMode("list")}
+                    className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
+                    aria-pressed={viewMode === "list"}
+                  >
+                    <img src={listViewIcon} alt="List view" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode("cards")}
+                    className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
+                    aria-pressed={viewMode === "cards"}
+                  >
+                    <img src={gridViewIcon} alt="Grid view" />
+                  </button>
+                </div>
+
+                {/* Dashboard tour start button */}
                 <button
-                  onClick={() => setViewMode("list")}
-                  className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
-                  aria-pressed={viewMode === "list"}
+                  id="dash-tour-start"
+                  type="button"
+                  onClick={handleStartTour}
+                  className="ml-1 w-8 h-8 rounded-full border border-blue-500/60 bg-blue-500/10 text-blue-200 flex items-center justify-center hover:bg-blue-500/20 transition-colors"
+                  title="Start dashboard tour"
+                  aria-label="Start dashboard tour"
                 >
-                  <img src={listViewIcon} alt="List view" />
-                </button>
-                <button
-                  onClick={() => setViewMode("cards")}
-                  className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
-                  aria-pressed={viewMode === "cards"}
-                >
-                  <img src={gridViewIcon} alt="Grid view" />
+                  <HelpCircle size={16} />
                 </button>
               </div>
             </div>
@@ -536,6 +567,7 @@ function Dashboard() {
               <div className="block">
                 <div className="columns-2 gap-4">
                   {filteredMsgs.map(([canId, sample]) => {
+                    const isUnknown = sample.messageName.startsWith("Unknown_CAN_");
                     const data = Object.entries(sample.data).map(
                       ([key, value]) => ({
                         [key]: `${value.sensorReading} ${value.unit}`,
@@ -553,13 +585,14 @@ function Dashboard() {
                               ? data
                               : [
                                 {
-                                  "No Data": "Waiting for messages...",
+                                  "No Data": isUnknown ? "not defined in DBC" : "Waiting for messages...",
                                 },
                               ]
                           }
                           lastUpdated={sample.timestamp}
                           rawData={sample.rawData}
                           onSignalClick={handleSignalClick}
+                          onTraceClick={handleTraceClick}
                         />
                       </div>
                     );
@@ -618,6 +651,7 @@ function Dashboard() {
                 {/* Rows */}
 
                 {filteredMsgs.map(([canId, sample], i) => {
+                  const isUnknown = sample.messageName.startsWith("Unknown_CAN_");
                   const data = Object.entries(sample.data).map(
                     ([key, value]) => ({
                       [key]: `${value.sensorReading} ${value.unit}`,
@@ -625,11 +659,20 @@ function Dashboard() {
                   );
 
                   // Tour Targeting Logic:
-                  // Try to find message 1024 for AccelX signal (dynamic plot).
+                  // Try to find message 1031 (0x407) for M1_Thermistor1 signal.
+                  // Handles both decimal (e.g. "1031") and hex (e.g. "0x407") IDs.
                   // If not found, default to the first message (index 0).
-                  const targetId = "1024";
-                  const targetSignal = "AccelX";
-                  const foundIndex = filteredMsgs.findIndex(([id]) => id === targetId);
+                  const targetNumericId = 1031;
+                  const parseCanId = (id: string): number | null => {
+                    if (id.startsWith("0x") || id.startsWith("0X")) {
+                      const n = parseInt(id, 16);
+                      return Number.isNaN(n) ? null : n;
+                    }
+                    const n = Number(id);
+                    return Number.isNaN(n) ? null : n;
+                  };
+                  const targetSignal = "M1_Thermistor1";
+                  const foundIndex = filteredMsgs.findIndex(([id]) => parseCanId(id) === targetNumericId);
 
                   // If found, target that index. If not, target 0.
                   const tourTargetIndex = foundIndex !== -1 ? foundIndex : 0;
@@ -648,7 +691,7 @@ function Dashboard() {
                           ? data
                           : [
                             {
-                              "No Data": "Waiting for messages...",
+                              "No Data": isUnknown ? "not defined in DBC" : "Waiting for messages...",
                             },
                           ]
                       }
@@ -656,9 +699,11 @@ function Dashboard() {
                       rawData={sample.rawData}
                       index={i}
                       onSignalClick={handleSignalClick}
+                      onTraceClick={handleTraceClick}
                       isTourRow={tourOpen && isTarget}
                       tourSignal={tourSignalName}
-                      initialOpen={tourOpen && isTarget}
+                      initialOpen={(tourOpen && isTarget) || (shouldExpand && canId === highlightMsgID)}
+                      isHighlighted={canId === highlightMsgID}
                     />
                   );
                 })}
@@ -668,15 +713,25 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Graph display section - collapsible on mobile */}
+      {/* Graph display section - collapsible on mobile and desktop */}
       <div
         id="dash-plot-sidebar"
         className={`md:col-span-1 bg-sidebar overflow-hidden flex flex-col transition-all duration-300 ${plotPanelOpen
-            ? 'flex-1 md:h-full p-4'
-            : `fixed ${showPerfOverlay ? 'bottom-8' : 'bottom-0'} left-0 right-0 h-12 z-20 md:relative md:h-full md:p-4`
-          }`}
+          ? 'flex-1 md:h-full p-4'
+          : `fixed ${showPerfOverlay ? 'bottom-8' : 'bottom-0'} left-0 right-0 h-12 z-20 md:relative md:h-full md:p-4`
+          } ${desktopPanelOpen ? '' : 'md:hidden'}`}
       >
-        {/* Collapsible header - shows on mobile */}
+        {/* Desktop collapse button - hidden on mobile */}
+        <button
+          className="hidden md:flex items-center justify-between w-full text-white font-semibold px-3 py-2 bg-data-module-bg rounded-md mb-2 hover:bg-data-textbox-bg/50 transition-colors"
+          onClick={() => setDesktopPanelOpen(false)}
+          title="Collapse plot panel"
+        >
+          <span>📊 Plots ({plots.length})</span>
+          <span className="text-base text-slate-400">▶</span>
+        </button>
+
+        {/* Collapsible header - shows on mobile only */}
         <button
           className={`md:hidden flex items-center justify-between w-full text-white font-semibold p-3 bg-data-module-bg ${plotPanelOpen ? 'rounded-md mb-2' : 'border-t border-white/10'
             }`}
@@ -735,15 +790,27 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Floating Tour Button */}
-      <button
-        onClick={handleStartTour}
-        className="fixed bottom-10 right-6 z-40 w-10 h-10 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center hover:bg-blue-500 hover:scale-110 transition-all"
-        title="Start Tour"
-        aria-label="Start Tour"
-      >
-        <span className="text-lg font-bold">?</span>
-      </button>
+      {/* Desktop reopen tab - only shown when panel is collapsed */}
+      {!desktopPanelOpen && (
+        <button
+          onClick={() => setDesktopPanelOpen(true)}
+          className="hidden md:flex fixed right-0 top-1/2 -translate-y-1/2 z-30 flex-col items-center gap-1 px-1.5 py-3 bg-sidebar border border-white/10 border-r-0 rounded-l-md text-slate-400 hover:text-white hover:bg-data-module-bg transition-colors shadow-lg"
+          title="Show plot panel"
+        >
+          <span className="text-base">◀</span>
+          <span className="text-[9px] font-mono tracking-widest uppercase [writing-mode:vertical-rl] rotate-180">Plots</span>
+        </button>
+      )}
+
+      {/* Trace Panel (mini, filtered) */}
+      {tracePanelFilter !== null && (
+        <TracePanel
+          direction="all"
+          filter={tracePanelFilter}
+          onClose={() => setTracePanelFilter(null)}
+          initialOffset={{ x: -(420 + 16), y: 0 }}
+        />
+      )}
 
       {/* Plot Controls Modal */}
       {

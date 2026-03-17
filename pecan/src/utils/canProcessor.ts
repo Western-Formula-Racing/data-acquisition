@@ -15,11 +15,13 @@ const CAN_EFF_FLAG = 0x80000000;
 const CAN_STD_MAX = 0x7FF;
 
 function toDbcId(rawCanId: number): number {
-  return rawCanId > CAN_STD_MAX ? (rawCanId | CAN_EFF_FLAG) >>> 0 : rawCanId;
+  const unsignedId = rawCanId >>> 0;
+  return unsignedId > CAN_STD_MAX ? (unsignedId | CAN_EFF_FLAG) >>> 0 : unsignedId;
 }
 
 export function formatCanId(canId: number): string {
-  const raw = canId > CAN_STD_MAX ? canId & ~CAN_EFF_FLAG : canId;
+  const unsignedId = canId >>> 0;
+  const raw = unsignedId > CAN_STD_MAX ? unsignedId & ~CAN_EFF_FLAG : unsignedId;
   if (raw > CAN_STD_MAX) {
     return `0x${raw.toString(16).toUpperCase().padStart(8, "0")}`;
   }
@@ -103,6 +105,7 @@ export async function decodeAndIngestUsingDbc(params: {
 // Use local.dbc for development, example.dbc for production
 let dbcFile = import.meta.env.DEV ? localDbc : exampleDbc;
 let usingCache = false;
+const dbcDebugSeen = new Set<number>();
 
 // Simple type definitions for our use, align with InfluxDB3 schema for consistency
 // InfluxDB3 Schema: id -> canId, name -> messageName, signalName, sensorReading, time
@@ -130,6 +133,8 @@ interface WebSocketMessage {
   canId?: number;
   id?: number;
   data?: number[];
+  type?: string;
+  messages?: WebSocketMessage[];
 }
 
 type WebSocketInput = string | WebSocketMessage | WebSocketMessage[];
@@ -393,9 +398,35 @@ export function decodeCanMessage(
   time: number
 ): DecodedMessage | null {
   try {
-    const dbcId = toDbcId(canId);
-    const frame = canInstance.createFrame(dbcId, messageData);
-    const decoded = canInstance.decode(frame);
+    let dbcId = toDbcId(canId);
+    let frame = canInstance.createFrame(dbcId, messageData);
+    let decoded = canInstance.decode(frame);
+
+    // Fallback: If decoding fails, try toggling the EFF bit (bit 31)
+    // This handles cases where a small ID is actually an extended frame 
+    // or the bridge sends a raw arbitration ID without the flag.
+    if (!decoded) {
+      const fallbackId = (dbcId & 0x80000000) ? (dbcId & 0x7FFFFFFF) : (dbcId | 0x80000000);
+      try {
+        const fallbackFrame = canInstance.createFrame(fallbackId, messageData);
+        const fallbackDecoded = canInstance.decode(fallbackFrame);
+        if (fallbackDecoded) {
+          console.log(`[DBC Fallback] Decoded message ${canId} (0x${canId.toString(16)}) using fallback ID ${fallbackId} (0x${fallbackId.toString(16)})`);
+          dbcId = fallbackId;
+          frame = fallbackFrame;
+          decoded = fallbackDecoded;
+        }
+      } catch (e) {
+        // Silently fail fallback attempt
+      }
+    }
+
+    if (canId === 0x18FF50E5 || canId > 0x7FF || (decoded === null && canId !== 1999)) {
+      if (!dbcDebugSeen.has(canId)) {
+        dbcDebugSeen.add(canId);
+        console.debug(`[DBC Debug] rawId=${canId} (0x${canId.toString(16)}), dbcId=${dbcId} (0x${dbcId.toString(16)}), decodedName=${decoded?.name ?? 'null'}`);
+      }
+    }
 
     const rawDataStr = messageData
       .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
@@ -600,6 +631,11 @@ export async function createCanProcessor(): Promise<any> {
 
       // If it's an object with time, canId/id and data properties
       if (typeof wsMessage === "object") {
+        // Handle Protocol V2 envelope: {"type": "can_data", "messages": [...]}
+        if ((wsMessage as any).type === "can_data" && Array.isArray((wsMessage as any).messages)) {
+          return this.processWebSocketMessage((wsMessage as any).messages);
+        }
+
         const time = wsMessage.time || wsMessage.timestamp || Date.now();
         const canId = wsMessage.canId || wsMessage.id;
         const data = wsMessage.data;

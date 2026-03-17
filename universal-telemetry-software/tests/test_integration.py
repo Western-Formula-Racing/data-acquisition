@@ -369,13 +369,13 @@ class TestPecanDashboard:
                     logger.info(f"  {msg}")
                 
                 # Check for WebSocket connection
-                connection_logs = [msg for msg in console_messages if "WebSocket connected" in msg]
+                connection_logs = [msg for msg in console_messages if "[WebSocket] Connected" in msg]
                 assert len(connection_logs) > 0, \
                     f"WebSocket connection not established. Errors: {page_errors}. Console: {console_messages[:15]}"
                 logger.info("✓ Pecan established WebSocket connection")
-                
+
                 # Check for data reception (should see at least first message)
-                data_logs = [msg for msg in console_messages if "Received WebSocket message #" in msg]
+                data_logs = [msg for msg in console_messages if "[WebSocket] Message #" in msg]
                 assert len(data_logs) > 0, \
                     f"No WebSocket messages received. Console: {console_messages[:15]}"
                 logger.info(f"✓ Pecan received {len(data_logs)} WebSocket messages")

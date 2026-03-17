@@ -9,6 +9,7 @@ import Comms from "./pages/Comms";
 import SystemLink from "./pages/SystemLink";
 import Landing from "./pages/Landing";
 import ThrottleMapper from "./pages/ThrottleMapper";
+import Trace from "./pages/Trace";
 // import TxDashboard from "./pages/TxDashboard";
 import DataTransmitter from "./pages/Transmitter";
 
@@ -33,7 +34,8 @@ export const router = createBrowserRouter([
       { path: "comms", element: <Comms /> },
       { path: "system-link", element: <SystemLink /> },
       { path: "throttle-mapper", element: <ThrottleMapper /> },
-      // { path: "tx", element: <TxDashboard /> },
+      { path: "trace", element: <Trace /> },
+       // { path: "tx", element: <TxDashboard /> },
       { path: "can-transmitter", element: <DataTransmitter /> },
     ],
   },

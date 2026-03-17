@@ -2,21 +2,23 @@ import asyncio
 import redis.asyncio as redis
 import websockets
 import os
-import signal
 import logging
 import json
 import time
 
+from src.config import (
+    REDIS_URL,
+    REDIS_CAN_CHANNEL as REDIS_CHANNEL,
+    REDIS_STATS_CHANNEL,
+    REDIS_UPLINK_CHANNEL,
+    REDIS_DIAG_CHANNEL,
+    ENABLE_UPLINK,
+)
+from src import redis_utils, utils
+
 logger = logging.getLogger("WebSocketBridge")
 
-# Config
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-REDIS_CHANNEL = "can_messages"
-REDIS_STATS_CHANNEL = "system_stats"
-REDIS_UPLINK_CHANNEL = "can_uplink"
-REDIS_DIAG_CHANNEL = "link_diagnostics"
 WS_PORT = int(os.getenv("WS_PORT", 9080))
-ENABLE_UPLINK = os.getenv("ENABLE_UPLINK", "false").lower() == "true"
 UPLINK_RATE_LIMIT = int(os.getenv("UPLINK_RATE_LIMIT", 10))  # messages per second per client
 ROLE = os.getenv("ROLE", "base")  # "car" = direct CAN write, "base" = Redis relay
 
@@ -25,6 +27,15 @@ shutdown_event = asyncio.Event()
 
 # Per-client rate limiting state: websocket -> list of timestamps
 _client_send_times: dict = {}
+
+# Page locks: page_name -> {"holder": client_id, "ws": websocket, "name": display_name}
+_page_locks: dict[str, dict] = {}
+
+# Map websocket -> client_id (assigned on connect)
+_client_ids: dict = {}
+
+# Monotonic counter for client IDs
+_next_client_id = 0
 
 # Direct CAN bus handle (car mode only)
 _can_bus = None
@@ -110,6 +121,105 @@ _ERROR_MESSAGES = {
     "CAN_WRITE_FAILED": "CAN bus write failed",
 }
 
+# Allowed page names for locking (prevent arbitrary key creation)
+_LOCKABLE_PAGES = {"can-transmitter", "throttle-mapper"}
+
+
+async def _broadcast_page_lock_state():
+    """Send current page lock state to all connected clients."""
+    locks = {}
+    for page, info in _page_locks.items():
+        locks[page] = {"holder": info["holder"], "name": info["name"]}
+
+    payload = json.dumps({"type": "page_lock_state", "locks": locks})
+    if connected_clients:
+        await asyncio.gather(
+            *[c.send(payload) for c in connected_clients],
+            return_exceptions=True,
+        )
+
+
+async def _handle_page_lock(websocket, msg: dict):
+    """Handle page_lock messages: acquire, release, query."""
+    action = msg.get("action")
+    page = msg.get("page")
+    client_id = _client_ids.get(websocket)
+
+    if action == "query":
+        # Return current lock state to just this client
+        locks = {}
+        for p, info in _page_locks.items():
+            locks[p] = {"holder": info["holder"], "name": info["name"]}
+        await websocket.send(json.dumps({
+            "type": "page_lock_state",
+            "locks": locks,
+            "clientId": client_id,
+        }))
+        return
+
+    if not page or page not in _LOCKABLE_PAGES:
+        await websocket.send(json.dumps({
+            "type": "error",
+            "code": "INVALID_PAGE",
+            "message": f"Invalid page. Must be one of: {', '.join(sorted(_LOCKABLE_PAGES))}",
+        }))
+        return
+
+    if action == "acquire":
+        display_name = msg.get("name", "")
+        if not isinstance(display_name, str):
+            display_name = ""
+        display_name = display_name[:50]  # Limit length
+
+        current = _page_locks.get(page)
+        if current and current["holder"] != client_id:
+            # Already locked by someone else
+            await websocket.send(json.dumps({
+                "type": "page_lock_result",
+                "page": page,
+                "success": False,
+                "holder": current["holder"],
+                "name": current["name"],
+            }))
+            return
+
+        _page_locks[page] = {
+            "holder": client_id,
+            "ws": websocket,
+            "name": display_name,
+        }
+        logger.info(f"Page lock acquired: {page} by {client_id} ({display_name})")
+
+        await websocket.send(json.dumps({
+            "type": "page_lock_result",
+            "page": page,
+            "success": True,
+            "clientId": client_id,
+        }))
+        await _broadcast_page_lock_state()
+
+    elif action == "release":
+        current = _page_locks.get(page)
+        if current and current["holder"] == client_id:
+            del _page_locks[page]
+            logger.info(f"Page lock released: {page} by {client_id}")
+            await _broadcast_page_lock_state()
+
+    else:
+        await websocket.send(json.dumps({
+            "type": "error",
+            "code": "INVALID_ACTION",
+            "message": "page_lock action must be 'acquire', 'release', or 'query'",
+        }))
+
+
+def _release_client_locks(websocket):
+    """Release all page locks held by a disconnecting client."""
+    to_remove = [page for page, info in _page_locks.items() if info["ws"] is websocket]
+    for page in to_remove:
+        del _page_locks[page]
+        logger.info(f"Page lock auto-released: {page} (client disconnected)")
+
 
 async def redis_listener():
     """Listens to Redis and broadcasts to all WS clients."""
@@ -124,9 +234,7 @@ async def redis_listener():
                 break
 
             if message['type'] == 'message':
-                data = message['data']
-                if isinstance(data, bytes):
-                    data = data.decode('utf-8')
+                data = redis_utils.decode_message(message['data'])
 
                 # Broadcast to all connected clients
                 if connected_clients:
@@ -165,6 +273,10 @@ async def _handle_client_message(websocket, raw: str, redis_client):
 
     if msg_type == "subscribe":
         # Future: track per-client format preference
+        return
+
+    if msg_type == "page_lock":
+        await _handle_page_lock(websocket, msg)
         return
 
     # --- Uplink messages below here ---
@@ -310,9 +422,13 @@ async def _handle_client_message(websocket, raw: str, redis_client):
 
 async def ws_handler(websocket):
     """Manages WebSocket connections — reads client messages for uplink."""
+    global _next_client_id
     connected_clients.add(websocket)
     client_info = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
-    logger.info(f"Client connected: {client_info}. Total: {len(connected_clients)}")
+    client_id = f"client_{_next_client_id}"
+    _next_client_id += 1
+    _client_ids[websocket] = client_id
+    logger.info(f"Client connected: {client_info} ({client_id}). Total: {len(connected_clients)}")
 
     redis_client = None
     if ENABLE_UPLINK and ROLE != "car":
@@ -337,27 +453,19 @@ async def ws_handler(websocket):
     finally:
         connected_clients.discard(websocket)
         _client_send_times.pop(websocket, None)
+        had_locks = any(info["ws"] is websocket for info in _page_locks.values())
+        _release_client_locks(websocket)
+        _client_ids.pop(websocket, None)
         if redis_client:
             await redis_client.aclose()
-        logger.info(f"Client disconnected: {client_info}. Total: {len(connected_clients)}")
+        logger.info(f"Client disconnected: {client_info} ({client_id}). Total: {len(connected_clients)}")
+        if had_locks:
+            await _broadcast_page_lock_state()
 
 async def run_websocket_bridge(heartbeat_event=None):
     """Main entry point for WebSocket bridge."""
     loop = asyncio.get_running_loop()
-
-    # Handle graceful shutdown
-    def handle_signal():
-        logger.info("Shutting down WebSocket bridge...")
-        shutdown_event.set()
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, handle_signal)
-
-    async def heartbeat():
-        while not shutdown_event.is_set():
-            if heartbeat_event is not None:
-                heartbeat_event.set()
-            await asyncio.sleep(1)
+    utils.register_shutdown_signals(loop, shutdown_event, "WebSocket bridge")
 
     logger.info(f"Starting WebSocket Bridge on port {WS_PORT}... (role={ROLE})")
     if ENABLE_UPLINK:
@@ -374,7 +482,7 @@ async def run_websocket_bridge(heartbeat_event=None):
         logger.info(f"WebSocket server running at ws://0.0.0.0:{WS_PORT}")
 
         # Run Redis listener and heartbeat until shutdown
-        await asyncio.gather(redis_listener(), heartbeat())
+        await asyncio.gather(redis_listener(), utils.heartbeat_coro(heartbeat_event, shutdown_event))
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

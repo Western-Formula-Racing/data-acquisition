@@ -12,7 +12,7 @@ services:
       - WSS_PORT=9443
       - SSL_CERT=/app/ssl/cert.pem
       - SSL_KEY=/app/ssl/key.pem
-      - DOMAIN=ws-wfr.0001200.xyz
+      - DOMAIN=ws-demo.westernformularacing.org # Also supports ws-wfr.0001200.xyz via Cloudflare Tunnel
       - ENABLE_CSV=false
       - ENABLE_ACCU=true
     volumes:

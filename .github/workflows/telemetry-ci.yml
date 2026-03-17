@@ -6,11 +6,13 @@ on:
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
+      - 'flight-recorder/**'
       - '.github/workflows/telemetry-ci.yml'
   pull_request:
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
+      - 'flight-recorder/**'
       - '.github/workflows/telemetry-ci.yml'
 
 jobs:
@@ -19,6 +21,7 @@ jobs:
     outputs:
       telemetry: ${{ steps.filter.outputs.telemetry }}
       pecan: ${{ steps.filter.outputs.pecan }}
+      fdr: ${{ steps.filter.outputs.fdr }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -29,6 +32,8 @@ jobs:
               - 'universal-telemetry-software/**'
             pecan:
               - 'pecan/**'
+            fdr:
+              - 'flight-recorder/**'
 
   # ── Build images once, share via artifact ───────────────────────────────
   build:
@@ -123,6 +128,12 @@ jobs:
         npm ci
         npx tsc --noEmit
 
+    - name: Build and typecheck FDR
+      working-directory: ./flight-recorder
+      run: |
+        npm ci
+        npx tsc --noEmit
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -133,7 +144,8 @@ jobs:
         pip install \
           pytest pytest-asyncio pytest-timeout \
           cantools influxdb-client \
-          websockets redis requests
+          websockets redis requests \
+          "slicks>=0.2.0"
 
     - name: Run unit tests
       working-directory: ./universal-telemetry-software
@@ -181,7 +193,8 @@ jobs:
           pytest pytest-asyncio pytest-timeout \
           cantools influxdb-client \
           websockets redis requests \
-          playwright
+          playwright \
+          "slicks>=0.2.0"
 
     - name: Install Playwright browsers
       run: playwright install chromium --with-deps
@@ -289,7 +302,8 @@ jobs:
         pip install \
           pytest pytest-asyncio pytest-timeout \
           cantools influxdb-client \
-          websockets redis requests
+          websockets redis requests \
+          "slicks>=0.2.0"
 
     - name: Start vCAN test stack
       working-directory: ./universal-telemetry-software
@@ -325,6 +339,12 @@ jobs:
       working-directory: ./universal-telemetry-software
       run: |
         python -m pytest tests/test_can_pipeline.py -v -s --timeout=60
+
+    - name: Run pecan UI vCAN tests
+      working-directory: ./pecan
+      run: |
+        npm ci
+        npm run test:ci
 
     - name: Collect vCAN test logs on failure
       if: failure()
@@ -515,3 +535,90 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  deploy-pecan-dev-cloudflare:
+    needs: [unit-tests, integration, vcan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev'
+    permissions:
+      contents: read
+      deployments: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: pecan/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: ./pecan
+        run: npm ci
+      
+      - name: Run tests
+        working-directory: ./pecan
+        run: npm run test:ci
+      
+      - name: Build
+        working-directory: ./pecan
+        run: npm run build
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY_DEV }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN_DEV }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID_DEV }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET_DEV }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID_DEV }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID_DEV }}
+      
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: 'pecan-dev'
+          directory: './pecan/dist'
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: dev
+
+  deploy-fdr-cloudflare:
+    needs: [unit-tests, integration, vcan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fdr'
+    permissions:
+      contents: read
+      deployments: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: flight-recorder/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: ./flight-recorder
+        run: npm ci
+      
+      - name: Build
+        working-directory: ./flight-recorder
+        run: npm run build
+        env:
+          VITE_GITHUB_DBC_READONLY_TOKEN: ${{ secrets.VITE_GITHUB_DBC_READONLY_TOKEN }}
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: 'wfr-fdr'
+          directory: './flight-recorder/dist'
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref_name }}

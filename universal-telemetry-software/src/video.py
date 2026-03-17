@@ -9,13 +9,14 @@ import threading
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
 
+from src import utils
+
 logger = logging.getLogger("Video")
 logger.setLevel(logging.INFO)
 
 # Optional OpenCV import for file simulation
 try:
     import cv2
-    import numpy as np
     HAS_OPENCV = True
 except ImportError:
     HAS_OPENCV = False
@@ -212,14 +213,8 @@ class VideoStream:
             self.stop()
 
 def run_video(role, remote_ip, heartbeat_event=None):
-    # Heartbeat thread for LED status
     if heartbeat_event is not None:
-        def _heartbeat():
-            while True:
-                heartbeat_event.set()
-                time.sleep(1)
-        t = threading.Thread(target=_heartbeat, daemon=True)
-        t.start()
+        utils.start_heartbeat_thread(heartbeat_event)
 
     stream = VideoStream(role, remote_ip)
     stream.start()
