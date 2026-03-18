@@ -13,10 +13,7 @@ import {
     Table as TableIcon,
     Zap,
     Clock,
-    Sigma,
-    Maximize2,
-    Minimize2,
-    Settings2
+    Sigma
 } from "lucide-react";
 
 interface CapturedPoint {
