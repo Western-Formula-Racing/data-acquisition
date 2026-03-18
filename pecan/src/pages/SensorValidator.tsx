@@ -387,7 +387,7 @@ const SensorValidator: React.FC = () => {
             {/* Header */}
             <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-4xl font-heading tracking-tight uppercase italic flex items-center gap-3">
+                    <h1 className="text-4xl font-bold tracking-tight uppercase flex items-center gap-3">
                         <Activity className="text-blue-500" size={32} />
                         Sensor Validation
                     </h1>
@@ -425,7 +425,7 @@ const SensorValidator: React.FC = () => {
                 <div className="flex flex-col gap-6">
                     {/* Signal Selection */}
                     <div className="bg-black/40 border border-white/10 p-5 rounded-lg">
-                        <h2 className="text-lg font-heading mb-4 flex items-center gap-2 text-blue-400">
+                        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-blue-400">
                             <Database size={20} />
                             Signal Selection
                         </h2>
@@ -488,10 +488,10 @@ const SensorValidator: React.FC = () => {
                         </div>
                         
                         <div className="text-center">
-                            <span className="text-7xl font-heading tabular-nums leading-none tracking-tighter">
+                            <span className="text-7xl font-semibold tabular-nums leading-none tracking-tighter">
                                 {liveValue.toFixed(selectedSignal ? (selectedSignal.factor < 1 ? 3 : 1) : 1)}
                             </span>
-                            <span className="text-2xl text-blue-500 ml-2 font-heading uppercase italic">
+                            <span className="text-2xl text-blue-500 ml-2 font-semibold uppercase">
                                 {selectedSignal?.unit || "RAW"}
                             </span>
                         </div>
@@ -557,10 +557,10 @@ const SensorValidator: React.FC = () => {
 
                             <div>
                                 <label className="text-xs uppercase text-gray-400 font-bold mb-1 block">Reference Value ({selectedSignal?.unit || "Units"})</label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-col sm:flex-row gap-2">
                                     <input 
                                         type="number"
-                                        className="flex-grow bg-black/50 border border-blue-500/50 p-3 rounded text-lg font-mono focus:outline-none focus:border-blue-400"
+                                        className="flex-grow min-w-0 bg-black/50 border border-blue-500/50 p-3 rounded text-lg font-mono focus:outline-none focus:border-blue-400"
                                         placeholder="Enter true value..."
                                         value={refValueInput}
                                         onChange={(e) => setRefValueInput(e.target.value)}
@@ -568,9 +568,9 @@ const SensorValidator: React.FC = () => {
                                     />
                                     <button 
                                         onClick={() => handleCapture()}
-                                        className="bg-blue-600 hover:bg-blue-500 text-white px-6 rounded font-heading uppercase italic tracking-wider flex items-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-900/20"
+                                        className="bg-blue-600 hover:bg-blue-500 text-white px-4 rounded font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg shadow-blue-900/20 whitespace-nowrap"
                                     >
-                                        <Plus size={20} />
+                                        <Plus size={18} />
                                         Capture
                                     </button>
                                 </div>
@@ -605,32 +605,32 @@ const SensorValidator: React.FC = () => {
                 </div>
 
                 {/* Middle Column: Plot */}
-                <div className="flex flex-col gap-6">
-                    <div className="bg-black/40 border border-white/10 p-5 rounded-lg h-full flex flex-col">
+                <div className="flex flex-col gap-6 min-w-0">
+                    <div className="bg-black/40 border border-white/10 p-5 rounded-lg h-full flex flex-col overflow-hidden">
                         <div className="flex flex-col gap-3 mb-4">
-                            <div className="flex justify-between items-center">
-                                <h2 className="text-lg font-heading flex items-center gap-2 text-blue-400">
-                                    <LineChart size={20} />
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                <h2 className="text-lg font-semibold flex items-center gap-2 text-blue-400 whitespace-nowrap overflow-hidden">
+                                    <LineChart size={20} className="flex-shrink-0" />
                                     Calibration Curve
                                 </h2>
-                                <div className="flex bg-black/40 p-1 rounded-md border border-white/5">
+                                <div className="flex bg-black/40 p-1 rounded-md border border-white/5 flex-shrink-0 self-end sm:self-auto">
                                     <button 
                                         onClick={() => setPlotScaleMode("auto")}
-                                        className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold transition-all ${plotScaleMode === "auto" ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                                        className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold transition-all ${plotScaleMode === "auto" ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
                                         title="Fit to Data"
                                     >
                                         Fit
                                     </button>
                                     <button 
                                         onClick={() => setPlotScaleMode("dbc")}
-                                        className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold transition-all ${plotScaleMode === "dbc" ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                                        className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold transition-all ${plotScaleMode === "dbc" ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
                                         title="Use DBC Bounds"
                                     >
                                         DBC
                                     </button>
                                     <button 
                                         onClick={() => setPlotScaleMode("manual")}
-                                        className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold transition-all ${plotScaleMode === "manual" ? 'bg-blue-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                                        className={`px-2 py-0.5 rounded text-[9px] uppercase font-bold transition-all ${plotScaleMode === "manual" ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
                                         title="Set Manual Range"
                                     >
                                         Manual
@@ -689,7 +689,7 @@ const SensorValidator: React.FC = () => {
                 <div className="flex flex-col gap-6">
                     <div className="bg-black/40 border border-white/10 p-0 rounded-lg h-full flex flex-col overflow-hidden">
                         <div className="p-5 border-b border-white/10 flex justify-between items-center">
-                            <h2 className="text-lg font-heading flex items-center gap-2 text-blue-400">
+                            <h2 className="text-lg font-semibold flex items-center gap-2 text-blue-400">
                                 <TableIcon size={20} />
                                 Data Points
                             </h2>
@@ -708,7 +708,7 @@ const SensorValidator: React.FC = () => {
                                         <th className="p-3 text-[10px] uppercase text-gray-500 font-bold border-b border-white/5">Ref</th>
                                         <th className="p-3 text-[10px] uppercase text-gray-500 font-bold border-b border-white/5">Mean</th>
                                         <th className="p-3 text-[10px] uppercase text-gray-500 font-bold border-b border-white/5">Min / Max</th>
-                                        <th className="p-3 text-[10px] uppercase text-gray-500 font-bold border-b border-white/5">Std</th>
+                                        <th className="p-3 text-[10px] uppercase text-gray-500 font-bold border-b border-white/5">stdev</th>
                                         <th className="p-3 text-[10px] uppercase text-gray-500 font-bold border-b border-white/5 w-10"></th>
                                     </tr>
                                 </thead>

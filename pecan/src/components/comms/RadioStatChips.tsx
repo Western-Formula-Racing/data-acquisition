@@ -21,7 +21,7 @@ function StatPill({
   return (
     <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-data-textbox-bg border border-sidebarfg/15">
       <span className="text-xs text-sidebarfg font-footer">{label}</span>
-      <span className={`text-sm font-heading ${color}`}>
+      <span className={`text-sm font-bold uppercase tracking-wider ${color}`}>
         {value}
         {unit && (
           <span className="text-xs text-sidebarfg font-footer ml-0.5">

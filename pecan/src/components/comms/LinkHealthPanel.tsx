@@ -53,7 +53,7 @@ export default function LinkHealthPanel() {
       >
         <div className="flex items-center gap-2">
           <QualityIndicatorDot level={quality.level} />
-          <span className="text-sm font-heading text-white">Link Health</span>
+          <span className="text-sm font-bold uppercase text-white/70">Link Health</span>
           <span
             className={`text-xs font-footer px-2 py-0.5 rounded-full ${quality.color}`}
           >
