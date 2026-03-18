@@ -71,7 +71,7 @@ const TelemetryCard = ({ label, value, unit, history, min, max, isStale }: any) 
 
     {isStale && (
       <div className="absolute inset-0 bg-amber-500/5 pointer-events-none flex items-center justify-center">
-        <span className="text-amber-500/20 font-heading text-4xl uppercase -rotate-12">Stale</span>
+        <span className="text-amber-500/20 font-bold text-4xl uppercase -rotate-12 opacity-20">Stale</span>
       </div>
     )}
   </div>
@@ -312,7 +312,7 @@ export default function TelemetryDebug() {
             <Activity className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-heading text-white tracking-wide">System Link</h1>
+            <h1 className="text-3xl font-bold uppercase tracking-wide text-white">System Link</h1>
             <div className="flex items-center gap-2 text-xs text-sidebarfg font-footer mt-1">
               <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
               Base Station Link
@@ -355,7 +355,7 @@ export default function TelemetryDebug() {
                 ) : (
                     <div className="flex flex-col items-center gap-2 text-sidebarfg">
                         <Video className="w-12 h-12" />
-                        <span className="font-heading text-xl">Waiting for Connection...</span>
+                        <span className="font-bold uppercase text-white/50">Waiting for Connection...</span>
                     </div>
                 )}
                 <div className="absolute top-4 left-4 bg-black/70 px-2 py-1 rounded text-xs font-mono text-white flex items-center gap-2">
@@ -376,7 +376,7 @@ export default function TelemetryDebug() {
             <section className="bg-data-module-bg rounded-md p-5 shadow-sm h-full flex flex-col border border-sidebarfg/10">
                 <div className="flex items-center gap-2 mb-4 text-white">
                     <Volume2 className="w-5 h-5 text-sidebarfg" />
-                    <h3 className="font-heading text-xl">Audio Comms</h3>
+                    <h3 className="font-bold uppercase text-white/50">Audio Comms</h3>
                 </div>
 
                 <div className="w-full h-24 bg-black/20 rounded-md border border-sidebarfg/10 mb-6 overflow-hidden">
@@ -397,7 +397,7 @@ export default function TelemetryDebug() {
                         }`}
                     >
                         {isTalking ? <Mic className="w-16 h-16 text-white animate-pulse" /> : <MicOff className="w-16 h-16 text-sidebarfg" />}
-                        <span className={`mt-3 font-heading text-xl uppercase tracking-widest ${isTalking ? 'text-white' : 'text-sidebarfg'}`}>
+                        <span className={`mt-3 font-bold uppercase tracking-wider ${isTalking ? 'text-white' : 'text-sidebarfg'}`}>
                             {isTalking ? 'ON AIR' : 'PTT'}
                         </span>
                     </button>

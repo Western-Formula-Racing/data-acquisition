@@ -352,7 +352,7 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                         <Activity className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold font-heading text-white">
+                        <h1 className="text-2xl font-bold uppercase tracking-tight text-white">
                             Throttle Mapper
                         </h1>
                         <p className="text-sm text-white">
