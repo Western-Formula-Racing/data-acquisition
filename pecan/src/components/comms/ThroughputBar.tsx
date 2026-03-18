@@ -43,7 +43,7 @@ export default function ThroughputBar({ throughputData }: Props) {
           Throughput
         </span>
         <span
-          className={`text-sm font-heading ${isStale ? 'text-sidebarfg' : 'text-white'}`}
+          className={`text-sm font-bold uppercase tracking-wider ${isStale ? 'text-sidebarfg' : 'text-white'}`}
         >
           {mbps.toFixed(1)}{' '}
           <span className="text-xs text-sidebarfg font-footer">Mbps</span>

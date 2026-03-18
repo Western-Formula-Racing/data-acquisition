@@ -431,7 +431,7 @@ function Trace() {
         {/* Title */}
         <span
           id="trace-toolbar-title"
-          className="font-heading text-lg font-semibold text-white tracking-wide mr-2"
+          className="text-lg font-bold text-white tracking-wide mr-2"
         >
           CAN TRACE
         </span>
