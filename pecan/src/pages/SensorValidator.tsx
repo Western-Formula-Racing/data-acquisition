@@ -383,44 +383,44 @@ const SensorValidator: React.FC = () => {
     }, [capturedPoints, selectedSignal, liveValue]);
 
     return (
-        <div className="flex flex-col gap-6 p-6 min-h-screen bg-transparent text-white font-sans overflow-y-auto">
+        <div className="flex flex-col gap-4 lg:gap-6 p-4 lg:p-6 min-h-screen bg-transparent text-white font-sans overflow-y-auto">
             {/* Header */}
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 className="text-4xl font-bold tracking-tight uppercase flex items-center gap-3">
-                        <Activity className="text-blue-500" size={32} />
+                    <h1 className="text-2xl sm:text-4xl font-bold tracking-tight uppercase flex items-center gap-3">
+                        <Activity className="text-blue-500 flex-shrink-0" size={28} />
                         Sensor Validation
                     </h1>
-                    <p className="text-gray-400 mt-1 font-mono text-sm">
+                    <p className="text-gray-400 mt-1 font-mono text-xs sm:text-sm">
                         Map CAN signals to physical reference values
                     </p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                     <button 
                         onClick={exportCCode}
-                        className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded flex items-center gap-2 border border-gray-700 transition-colors"
+                        className="flex-grow sm:flex-grow-0 bg-gray-800 hover:bg-gray-700 text-white px-3 py-2 rounded flex items-center justify-center gap-2 border border-gray-700 transition-colors text-xs sm:text-sm"
                     >
-                        <FileCode size={18} />
-                        Copy C Code
+                        <FileCode size={16} />
+                        C Code
                     </button>
                     <button 
                         onClick={exportCSV}
-                        className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded flex items-center gap-2 border border-gray-700 transition-colors"
+                        className="flex-grow sm:flex-grow-0 bg-gray-800 hover:bg-gray-700 text-white px-3 py-2 rounded flex items-center justify-center gap-2 border border-gray-700 transition-colors text-xs sm:text-sm"
                     >
-                        <Download size={18} />
+                        <Download size={16} />
                         CSV
                     </button>
                     <button 
                         onClick={exportJSON}
-                        className="bg-gray-800 hover:bg-gray-700 text-white px-4 py-2 rounded flex items-center gap-2 border border-gray-700 transition-colors"
+                        className="bg-gray-800 hover:bg-gray-700 text-white px-3 py-2 rounded flex items-center justify-center gap-2 border border-gray-700 transition-colors text-xs sm:text-sm"
                     >
-                        <FileJson size={18} />
+                        <FileJson size={16} />
                         JSON
                     </button>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
                 {/* Left Column: Config & Monitor */}
                 <div className="flex flex-col gap-6">
                     {/* Signal Selection */}
@@ -488,10 +488,10 @@ const SensorValidator: React.FC = () => {
                         </div>
                         
                         <div className="text-center">
-                            <span className="text-7xl font-semibold tabular-nums leading-none tracking-tighter">
+                            <span className="text-5xl sm:text-7xl font-semibold tabular-nums leading-none tracking-tighter">
                                 {liveValue.toFixed(selectedSignal ? (selectedSignal.factor < 1 ? 3 : 1) : 1)}
                             </span>
-                            <span className="text-2xl text-blue-500 ml-2 font-semibold uppercase">
+                            <span className="text-xl sm:text-2xl text-blue-500 ml-2 font-semibold uppercase">
                                 {selectedSignal?.unit || "RAW"}
                             </span>
                         </div>
@@ -701,8 +701,9 @@ const SensorValidator: React.FC = () => {
                                 Clear All
                             </button>
                         </div>
-                        <div className="flex-grow overflow-y-auto">
-                            <table className="w-full text-left text-sm border-collapse">
+                        <div className="flex-grow overflow-auto">
+                            <div className="min-w-full inline-block align-middle">
+                                <table className="w-full text-left text-sm border-collapse min-w-[300px]">
                                 <thead className="bg-gray-900 sticky top-0">
                                     <tr>
                                         <th className="p-3 text-[10px] uppercase text-gray-500 font-bold border-b border-white/5">Ref</th>
@@ -747,6 +748,7 @@ const SensorValidator: React.FC = () => {
                                     )}
                                 </tbody>
                             </table>
+                            </div>
                         </div>
                     </div>
                 </div>
