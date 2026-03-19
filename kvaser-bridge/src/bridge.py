@@ -213,18 +213,19 @@ class Bridge:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks = []
 
-        if self._server:
-            self._server.close()
-            await self._server.wait_closed()
-            self._server = None
-
-        # Close all client connections
+        # Close all client connections before waiting for server to close,
+        # otherwise wait_closed() hangs waiting for connections to finish.
         for ws in list(self._clients):
             try:
                 await ws.close()
             except Exception:
                 pass
         self._clients.clear()
+
+        if self._server:
+            self._server.close()
+            await self._server.wait_closed()
+            self._server = None
 
         self._close_bus()
         with self._status_lock:
