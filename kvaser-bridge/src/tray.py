@@ -13,8 +13,19 @@ from tkinter import messagebox, ttk
 from typing import Callable
 import webbrowser
 
+import platform as _platform
+
 import config
 from bridge import Bridge, BridgeState, BridgeStatus
+
+
+def _platform_interfaces() -> list[str]:
+    sys = _platform.system()
+    if sys == 'Linux':
+        return ['socketcan', 'vcan']
+    if sys == 'Darwin':
+        return ['maccan']
+    return ['kvaser']
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +52,7 @@ class TrayApp:
         initial_bitrate: int,
         initial_ws_port: int,
         on_quit: Callable[[], None],
+        can_interface: str = '',
     ) -> None:
         self._bridge   = bridge
         self._loop     = loop
@@ -54,11 +66,13 @@ class TrayApp:
         self._root.protocol('WM_DELETE_WINDOW', self._quit)
 
         # -- Variables --
+        self._interface_var = tk.StringVar(value=can_interface or config.DEFAULT_CAN_INTERFACE)
         self._channel_var = tk.IntVar(value=initial_channel)
         self._bitrate_var = tk.IntVar(value=initial_bitrate)
         self._ws_port_var = tk.IntVar(value=initial_ws_port)
         self._status_text = tk.StringVar(value='Idle')
         self._rx_text     = tk.StringVar(value='0')
+        self._tx_text     = tk.StringVar(value='0')
         self._clients_text = tk.StringVar(value='0')
 
         self._build_ui()
@@ -73,8 +87,21 @@ class TrayApp:
         cfg_frame = ttk.LabelFrame(root, text='Configuration')
         cfg_frame.pack(fill='x', **pad)
 
+        # Interface
+        ttk.Label(cfg_frame, text='Interface:').grid(row=0, column=0, sticky='w', padx=4, pady=2)
+        iface_combo = ttk.Combobox(
+            cfg_frame,
+            textvariable=self._interface_var,
+            values=_platform_interfaces(),
+            state='readonly',
+            width=20,
+        )
+        iface_combo.grid(row=0, column=1, padx=4, pady=2, sticky='ew')
+        iface_combo.bind('<<ComboboxSelected>>', self._on_interface_change)
+        self._iface_combo = iface_combo
+
         # Channel
-        ttk.Label(cfg_frame, text='Channel:').grid(row=0, column=0, sticky='w', padx=4, pady=2)
+        ttk.Label(cfg_frame, text='Channel:').grid(row=1, column=0, sticky='w', padx=4, pady=2)
         ch_combo = ttk.Combobox(
             cfg_frame,
             textvariable=self._channel_var,
@@ -82,11 +109,11 @@ class TrayApp:
             state='readonly',
             width=20,
         )
-        ch_combo.grid(row=0, column=1, padx=4, pady=2, sticky='ew')
+        ch_combo.grid(row=1, column=1, padx=4, pady=2, sticky='ew')
         ch_combo.bind('<<ComboboxSelected>>', self._on_channel_change)
 
         # Bitrate
-        ttk.Label(cfg_frame, text='Bitrate:').grid(row=1, column=0, sticky='w', padx=4, pady=2)
+        ttk.Label(cfg_frame, text='Bitrate:').grid(row=2, column=0, sticky='w', padx=4, pady=2)
         br_combo = ttk.Combobox(
             cfg_frame,
             values=config.BITRATE_LABELS,
@@ -98,20 +125,23 @@ class TrayApp:
             br_combo.current(idx)
         except ValueError:
             br_combo.current(6)  # 500k default
-        br_combo.grid(row=1, column=1, padx=4, pady=2, sticky='ew')
+        br_combo.grid(row=2, column=1, padx=4, pady=2, sticky='ew')
         br_combo.bind('<<ComboboxSelected>>', lambda e: self._on_bitrate_change(br_combo))
         self._br_combo = br_combo
 
         # WS Port
-        ttk.Label(cfg_frame, text='WS Port:').grid(row=2, column=0, sticky='w', padx=4, pady=2)
+        ttk.Label(cfg_frame, text='WS Port:').grid(row=3, column=0, sticky='w', padx=4, pady=2)
         ws_entry = ttk.Entry(cfg_frame, textvariable=self._ws_port_var, width=22)
-        ws_entry.grid(row=2, column=1, padx=4, pady=2, sticky='ew')
+        ws_entry.grid(row=3, column=1, padx=4, pady=2, sticky='ew')
         ws_entry.bind('<FocusOut>', self._on_ws_port_change)
         ws_entry.bind('<Return>', self._on_ws_port_change)
         self._ws_entry = ws_entry
 
         cfg_frame.columnconfigure(1, weight=1)
         self._ch_combo = ch_combo
+
+        # Disable channel/bitrate for interfaces that don't use them
+        self._update_hw_controls_state()
 
         # -- Status frame --
         status_frame = ttk.LabelFrame(root, text='Status')
@@ -123,24 +153,27 @@ class TrayApp:
 
         ttk.Label(status_frame, textvariable=self._status_text).grid(row=0, column=1, sticky='w')
 
-        ttk.Label(status_frame, text='Frames:').grid(row=1, column=0, sticky='w', padx=4, pady=2)
+        ttk.Label(status_frame, text='RX Frames:').grid(row=1, column=0, sticky='w', padx=4, pady=2)
         ttk.Label(status_frame, textvariable=self._rx_text).grid(row=1, column=1, sticky='w')
 
-        ttk.Label(status_frame, text='Clients:').grid(row=2, column=0, sticky='w', padx=4, pady=2)
-        ttk.Label(status_frame, textvariable=self._clients_text).grid(row=2, column=1, sticky='w')
+        ttk.Label(status_frame, text='TX Frames:').grid(row=2, column=0, sticky='w', padx=4, pady=2)
+        ttk.Label(status_frame, textvariable=self._tx_text).grid(row=2, column=1, sticky='w')
+
+        ttk.Label(status_frame, text='Clients:').grid(row=3, column=0, sticky='w', padx=4, pady=2)
+        ttk.Label(status_frame, textvariable=self._clients_text).grid(row=3, column=1, sticky='w')
 
         # Connect URL (read-only, copyable)
-        ttk.Label(status_frame, text='Connect to:').grid(row=3, column=0, sticky='w', padx=4, pady=2)
+        ttk.Label(status_frame, text='Connect to:').grid(row=4, column=0, sticky='w', padx=4, pady=2)
         self._url_var = tk.StringVar(value=self._get_ws_url())
         url_entry = ttk.Entry(status_frame, textvariable=self._url_var, state='readonly', width=28)
-        url_entry.grid(row=3, column=1, padx=4, pady=2, sticky='ew')
-        ttk.Button(status_frame, text='Copy', command=self._copy_url, width=5).grid(row=3, column=2, padx=2)
+        url_entry.grid(row=4, column=1, padx=4, pady=2, sticky='ew')
+        ttk.Button(status_frame, text='Copy', command=self._copy_url, width=5).grid(row=4, column=2, padx=2)
         self._url_entry = url_entry
 
         # Trust cert helper
-        ttk.Label(status_frame, text='First time?').grid(row=4, column=0, sticky='w', padx=4, pady=2)
+        ttk.Label(status_frame, text='First time?').grid(row=5, column=0, sticky='w', padx=4, pady=2)
         trust_btn = ttk.Button(status_frame, text='Trust Certificate', command=self._open_cert_trust)
-        trust_btn.grid(row=4, column=1, sticky='w', padx=4, pady=2)
+        trust_btn.grid(row=5, column=1, sticky='w', padx=4, pady=2)
 
         # Warning label
         warn = ttk.Label(
@@ -150,7 +183,7 @@ class TrayApp:
             wraplength=220,
             justify='left',
         )
-        warn.grid(row=5, column=0, columnspan=3, sticky='w', padx=4, pady=(0, 4))
+        warn.grid(row=6, column=0, columnspan=3, sticky='w', padx=4, pady=(0, 4))
 
         # -- Buttons --
         btn_frame = ttk.Frame(root)
@@ -183,6 +216,7 @@ class TrayApp:
 
         self._status_text.set(_STATE_LABELS.get(status.state, '?'))
         self._rx_text.set(str(status.frames_rx))
+        self._tx_text.set(str(status.frames_tx))
         self._clients_text.set(str(status.clients))
 
         color = _STATE_COLORS.get(status.state, '#888888')
@@ -193,13 +227,27 @@ class TrayApp:
 
         self._start_btn.configure(state='disabled' if running else 'normal')
         self._stop_btn.configure(state='normal' if running else 'disabled')
-        self._ch_combo.configure(state='disabled' if running else 'readonly')
-        self._br_combo.configure(state='disabled' if running else 'readonly')
+        self._iface_combo.configure(state='disabled' if running else 'readonly')
         self._ws_entry.configure(state='disabled' if running else 'normal')
+        # Channel/bitrate disabled when bridge is running OR interface doesn't use them
+        self._update_hw_controls_state(running)
 
     # ------------------------------------------------------------------
     # Actions
     # ------------------------------------------------------------------
+
+    def _on_interface_change(self, event) -> None:
+        iface = self._interface_var.get()
+        self._bridge.set_can_interface(iface)
+        self._update_hw_controls_state()
+
+    def _update_hw_controls_state(self, bridge_running: bool = False) -> None:
+        """Disable channel/bitrate when interface doesn't use them, or bridge is running."""
+        iface = self._interface_var.get()
+        no_hw = iface in ('vcan', 'socketcan')
+        state = 'disabled' if (bridge_running or no_hw) else 'readonly'
+        self._ch_combo.configure(state=state)
+        self._br_combo.configure(state=state)
 
     def _on_channel_change(self, event) -> None:
         self._bridge.set_channel(self._channel_var.get())
@@ -219,7 +267,8 @@ class TrayApp:
             s.close()
         except Exception:
             ip = 'localhost'
-        return f'wss://{ip}:{self._ws_port_var.get()}'
+        scheme = 'wss' if self._bridge.get_status().tls else 'ws'
+        return f'{scheme}://{ip}:{self._ws_port_var.get()}'
 
     def _get_https_url(self) -> str:
         """HTTPS URL for the cert trust page (same host/port as WSS)."""
