@@ -157,7 +157,7 @@ class Bridge:
 
         # Open CAN bus
         try:
-            if config.DEFAULT_CAN_INTERFACE == 'socketcan':
+            if self._can_interface == 'socketcan':
                 ch = config.DEFAULT_SOCKETCAN_CHANNEL
                 _socketcan_setup(ch, self._bitrate)
                 self._bus = can.interface.Bus(channel=ch, interface='socketcan')
@@ -176,7 +176,7 @@ class Bridge:
                     channel=self._channel,
                     bitrate=self._bitrate,
                 )
-            log.info('CAN bus opened: interface=%s bitrate=%d', config.DEFAULT_CAN_INTERFACE, self._bitrate)
+            log.info('CAN bus opened: interface=%s bitrate=%d', self._can_interface, self._bitrate)
         except Exception as e:
             log.error('Failed to open CAN bus: %s', e)
             self._set_state(BridgeState.ERROR, str(e))

@@ -124,6 +124,7 @@ def main() -> None:
     )
 
     shutdown = threading.Event()
+    _app_ref: list = [None]  # mutable container so on_quit can access app after creation
 
     def on_quit():
         if shutdown.is_set():
@@ -142,6 +143,12 @@ def main() -> None:
         except Exception:
             pass
         loop.call_soon_threadsafe(loop.stop)
+        app = _app_ref[0]
+        if app is not None and hasattr(app, 'quit'):
+            try:
+                app.quit()
+            except Exception:
+                pass
 
     def on_signal(sig, frame):
         log.info('Received signal %s, shutting down...', sig)
@@ -216,6 +223,7 @@ def main() -> None:
     )
     asyncio_thread.start()
 
+    _app_ref[0] = app
     log.info('Kvaser Bridge starting (mode=%s)', runtime_mode)
 
     if args.headless:
