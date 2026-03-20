@@ -192,7 +192,7 @@ jobs:
         pip install \
           pytest pytest-asyncio pytest-timeout \
           cantools influxdb-client \
-          websockets redis requests \
+          websockets redis requests aiohttp \
           playwright \
           "slicks>=0.2.0"
 
