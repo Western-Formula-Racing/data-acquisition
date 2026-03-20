@@ -108,8 +108,8 @@ services:
     build:
       context: ../pecan
       args:
-        # Use production WebSocket for CI testing
-        VITE_WS_URL: wss://ws-wfr.0001200.xyz:9443
+        # VITE_WS_URL is set in the CI build step — not used when loading pre-built image
+        VITE_WS_URL: ws://localhost:9080
     container_name: daq-pecan-test
     restart: unless-stopped
     ports:

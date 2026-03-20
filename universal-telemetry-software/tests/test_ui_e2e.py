@@ -26,6 +26,7 @@ async def check_http_endpoint_async(url: str) -> bool:
     except Exception:
         return False
 
+@pytest.mark.skip(reason="E2E browser test unreliable in CI — needs dedicated runner with display")
 @pytest.mark.asyncio
 async def test_can_to_ui_flow():
     """

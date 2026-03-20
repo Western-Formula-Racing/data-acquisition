@@ -62,11 +62,11 @@ jobs:
         docker build -t car-jitsi-client:test ./universal-telemetry-software/car-jitsi-client
         docker save car-jitsi-client:test -o /tmp/jitsi.tar
 
-    # Build pecan with the same args used in docker-compose.test.yml
+    # Build pecan pointing at the local base station WebSocket for E2E tests
     - name: Build pecan image
       run: |
         docker build \
-          --build-arg VITE_WS_URL=wss://ws-wfr.0001200.xyz:9443 \
+          --build-arg VITE_WS_URL=ws://localhost:9080 \
           -t pecan:test ./pecan
         docker save pecan:test -o /tmp/pecan.tar
 
@@ -526,7 +526,8 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-      
+          VITE_GRAFANA_BRIDGE_URL: https://grafana-bridge.westernformularacing.org/api/grafana
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -573,6 +574,7 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET_DEV }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID_DEV }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID_DEV }}
+          VITE_GRAFANA_BRIDGE_URL: https://grafana-bridge.westernformularacing.org/api/grafana
       
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
