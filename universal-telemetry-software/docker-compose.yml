@@ -145,6 +145,24 @@ services:
       influxdb3:
         condition: service_healthy
 
+  # ── Grafana Bridge ───────────────────────────────────────────────────────
+  # Pecan → Grafana dashboard creation API (port 3001)
+  # Requires GRAFANA_API_TOKEN in .env (create a Grafana service account token)
+  grafana-bridge:
+    build: ./grafana-bridge
+    container_name: daq-grafana-bridge
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      GRAFANA_INTERNAL_URL: http://grafana:3000
+      GRAFANA_EXTERNAL_URL: https://grafana.westernformularacing.org
+      GRAFANA_API_TOKEN: ${GRAFANA_API_TOKEN:-}
+      CORS_ORIGIN: "http://localhost:3000,https://pecan.westernformularacing.org"
+      INFLUX_TABLE: ${INFLUX_SEASON:-WFR26}_base
+    depends_on:
+      - grafana
+
 volumes:
   redis_data:
   murmur_data:
@@ -152,6 +170,8 @@ volumes:
   grafana_data:
 
     # Ports exposed (via network_mode: host):
+    # 3000 - PECAN dashboard UI
+    # 3001 - Grafana bridge API
     # 5005 - UDP (CAN data streaming)
     # 5006 - TCP (packet retransmission)
     # 6379 - Redis
@@ -159,4 +179,3 @@ volumes:
     # 8087 - Grafana dashboards
     # 9000 - InfluxDB3 API
     # 9080 - WebSocket for PECAN dashboard
-    # 3000 - PECAN dashboard UI
