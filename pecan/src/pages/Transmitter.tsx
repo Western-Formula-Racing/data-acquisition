@@ -9,6 +9,7 @@ import {
   type UplinkAckMessage,
   type WsErrorMessage,
 } from "../services/WebSocketService";
+import { dataStore } from "../lib/DataStore";
 import localDbc from "../assets/dbc.dbc?raw";
 import { Dbc } from "candied";
 
@@ -155,6 +156,16 @@ const DataTransmitter = () => {
           ackTimeoutRef.current = null;
         }
         setTxFeedback({ type: "error", message: "Failed to send (socket closed)." });
+      } else {
+        // Mirror the sent frame into the trace buffer so it shows as TX in TracePanel
+        dataStore.ingestMessage({
+          msgID: `0x${canId.toString(16).toUpperCase()}`,
+          messageName: selectedMessage?.name ?? `CAN_0x${canId.toString(16).toUpperCase()}`,
+          data: {}, // signals not needed for trace display
+          rawData: hex.match(/.{1,2}/g)?.join(" ") ?? "",
+          timestamp: Date.now(),
+          direction: "tx",
+        });
       }
     };
 
