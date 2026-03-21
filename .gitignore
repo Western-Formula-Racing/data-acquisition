@@ -238,3 +238,6 @@ test-logs/
 # Ignore generated service worker files
 sw.js
 pecan/src/assets/WFR25.dbc
+CLAUDE.md
+GEMINI.md
+flight-recorder/.env.local
