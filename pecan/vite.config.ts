@@ -34,7 +34,7 @@ const websocketPlugin = (): Plugin => ({
 function startWebSocketServer() {
   // Dynamic import to avoid build-time dependency issues
   import('ws').then(({ WebSocketServer }) => {
-    const wss = new WebSocketServer({ port: 9080 });
+    const wss = new WebSocketServer({ port: 9077 });
 
     // eslint-disable-next-line no-console
     console.log('WebSocket server started on ws://localhost:9080');

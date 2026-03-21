@@ -52,6 +52,7 @@ services:
       - "5006:5006/tcp" # TCP retransmission
       - "8080:8080/tcp" # Status HTTP server
       - "9080:9080/tcp" # WebSocket for PECAN
+      - "9078:9078/tcp" # TX WebSocket for PECAN Transmitter
     environment:
       - ROLE=base # Force base mode
       - REMOTE_IP=car # Receive from car container
@@ -64,6 +65,9 @@ services:
       - ENABLE_VIDEO=false
       - ENABLE_AUDIO=false
       - ENABLE_UPLINK=true # Enable uplink for bidirectional testing
+      - ENABLE_TX_WS=true # Enable TX WebSocket on port 9078 (simulation mode in CI)
+      - TX_WS_PORT=9078
+      - DBC_FILE_PATH=/app/example.dbc
       # InfluxDB logging
       - ENABLE_INFLUX_LOGGING=true
       - LOCAL_INFLUX_URL=http://test-influxdb3:8181
@@ -71,7 +75,6 @@ services:
       - LOCAL_INFLUX_ORG=WFR
       - LOCAL_INFLUX_BUCKET=WFR26
       - INFLUX_TABLE=WFR26_base
-      - DBC_FILE_PATH=/app/example.dbc
       # Cloud sync disabled in CI (no token)
       - CLOUD_INFLUX_TOKEN=
     depends_on:
@@ -81,6 +84,8 @@ services:
         condition: service_healthy
     networks:
       - daq-network
+    volumes:
+      - ../pecan/src/assets/dbc.dbc:/app/example.dbc:ro
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:8080 || exit 1" ]
       interval: 5s
@@ -165,6 +170,7 @@ networks:
 # Access points:
 # - Status page: http://localhost:8080
 # - WebSocket (PECAN): ws://localhost:9080
+# - TX WebSocket (Transmitter): ws://localhost:9078
 # - PECAN Dashboard: http://localhost:3000
 # - Redis: localhost:6379
 #

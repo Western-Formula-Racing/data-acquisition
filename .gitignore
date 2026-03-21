@@ -221,6 +221,10 @@ ENV/
 *.conda
 *.tar.bz2
 
+# Python virtual environments
+.venv/
+venv/
+
 .idea/workspace.xml
 /.idea
 node_modules/
