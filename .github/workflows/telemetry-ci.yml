@@ -526,7 +526,7 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-          VITE_GRAFANA_BRIDGE_URL: https://grafana-bridge.westernformularacing.org/api/grafana
+          VITE_GRAFANA_BRIDGE_URL: https://grafana.westernformularacing.org/grafana-bridge/api/grafana
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
@@ -574,7 +574,7 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET_DEV }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID_DEV }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID_DEV }}
-          VITE_GRAFANA_BRIDGE_URL: https://grafana-bridge.westernformularacing.org/api/grafana
+          VITE_GRAFANA_BRIDGE_URL: https://grafana.westernformularacing.org/grafana-bridge/api/grafana
       
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
