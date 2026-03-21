@@ -1,5 +1,6 @@
-import { Lock, Unlock, ShieldAlert } from 'lucide-react';
+import { Lock, Unlock, ShieldAlert, Cpu } from 'lucide-react';
 import { type PageLockState } from '../lib/usePageLock';
+import { useSerialStatus } from '../lib/useSerialStatus';
 
 interface PageLockBannerProps {
   lock: PageLockState;
@@ -7,11 +8,26 @@ interface PageLockBannerProps {
 
 /**
  * Shows lock status and controls for pages with mutual-exclusion requirements.
+ * - Local connection: "Lock N/A" indicator
  * - Not locked: "Take control" button
  * - Locked by me: "Release control" button + green indicator
  * - Locked by someone else: red warning banner
  */
 export function PageLockBanner({ lock }: PageLockBannerProps) {
+  const isLocal = useSerialStatus();
+
+  if (isLocal) {
+    return (
+      <div className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-amber-300">
+        <Cpu className="w-5 h-5 flex-shrink-0" />
+        <span className="text-sm">
+          <strong>Local Connection Active</strong> — Backend Lock N/A.
+          You are talking directly to hardware via USB.
+        </span>
+      </div>
+    );
+  }
+
   if (lock.isLockedByOther) {
     return (
       <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-300">

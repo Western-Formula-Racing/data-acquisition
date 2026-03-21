@@ -2,21 +2,23 @@ import asyncio
 import redis.asyncio as redis
 import websockets
 import os
-import signal
 import logging
 import json
 import time
 
+from src.config import (
+    REDIS_URL,
+    REDIS_CAN_CHANNEL as REDIS_CHANNEL,
+    REDIS_STATS_CHANNEL,
+    REDIS_UPLINK_CHANNEL,
+    REDIS_DIAG_CHANNEL,
+    ENABLE_UPLINK,
+)
+from src import redis_utils, utils
+
 logger = logging.getLogger("WebSocketBridge")
 
-# Config
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-REDIS_CHANNEL = "can_messages"
-REDIS_STATS_CHANNEL = "system_stats"
-REDIS_UPLINK_CHANNEL = "can_uplink"
-REDIS_DIAG_CHANNEL = "link_diagnostics"
 WS_PORT = int(os.getenv("WS_PORT", 9080))
-ENABLE_UPLINK = os.getenv("ENABLE_UPLINK", "false").lower() == "true"
 UPLINK_RATE_LIMIT = int(os.getenv("UPLINK_RATE_LIMIT", 10))  # messages per second per client
 ROLE = os.getenv("ROLE", "base")  # "car" = direct CAN write, "base" = Redis relay
 
@@ -232,9 +234,7 @@ async def redis_listener():
                 break
 
             if message['type'] == 'message':
-                data = message['data']
-                if isinstance(data, bytes):
-                    data = data.decode('utf-8')
+                data = redis_utils.decode_message(message['data'])
 
                 # Broadcast to all connected clients
                 if connected_clients:
@@ -465,20 +465,7 @@ async def ws_handler(websocket):
 async def run_websocket_bridge(heartbeat_event=None):
     """Main entry point for WebSocket bridge."""
     loop = asyncio.get_running_loop()
-
-    # Handle graceful shutdown
-    def handle_signal():
-        logger.info("Shutting down WebSocket bridge...")
-        shutdown_event.set()
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, handle_signal)
-
-    async def heartbeat():
-        while not shutdown_event.is_set():
-            if heartbeat_event is not None:
-                heartbeat_event.set()
-            await asyncio.sleep(1)
+    utils.register_shutdown_signals(loop, shutdown_event, "WebSocket bridge")
 
     logger.info(f"Starting WebSocket Bridge on port {WS_PORT}... (role={ROLE})")
     if ENABLE_UPLINK:
@@ -495,7 +482,7 @@ async def run_websocket_bridge(heartbeat_event=None):
         logger.info(f"WebSocket server running at ws://0.0.0.0:{WS_PORT}")
 
         # Run Redis listener and heartbeat until shutdown
-        await asyncio.gather(redis_listener(), heartbeat())
+        await asyncio.gather(redis_listener(), utils.heartbeat_coro(heartbeat_event, shutdown_event))
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

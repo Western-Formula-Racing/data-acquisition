@@ -17,7 +17,7 @@ wss://<host>:9443     # production (TLS)
 
 The PECAN frontend auto-selects the URL based on `window.location`:
 - `192.x.x.x` hostnames connect directly to the RPi
-- Everything else connects to the production backend at `wss://ws-wfr.0001200.xyz:9443`
+- Everything else connects to the production backend at `wss://ws-demo.westernformularacing.org`
 - Override with `localStorage.setItem('custom-ws-url', 'ws://...')`
 
 ---

@@ -115,7 +115,7 @@ flowchart TD
     ENV -->|Yes| USE_ENV["Use env var URL"]
     ENV -->|No| DETECT{"Detect deployment<br/>scenario"}
 
-    DETECT -->|"GitHub Pages /<br/>Cloud IP"| PROD["wss://ws-wfr.0001200.xyz:9443"]
+    DETECT -->|"GitHub Pages /<br/>Cloud IP"| PROD["wss://ws-demo.westernformularacing.org"]
     DETECT -->|"localhost /<br/>127.0.0.1"| LOCAL["ws://localhost:9080"]
     DETECT -->|"192.168.x.x<br/>(Car Hotspot)"| CAR["ws://192.168.x.x:9080"]
 
@@ -140,7 +140,7 @@ flowchart TD
 **Connection features:**
 - **Auto-protocol detection**: `ws://` on HTTP, `wss://` on HTTPS
 - **Deployment modes**: Production cloud, localhost dev, car hotspot (192.168.x.x)
-- **Default backend**: On non-`192.x.x.x` hosts (including `localhost`) PECAN connects to the hosted backend at `wss://ws-wfr.0001200.xyz:9443`, unless overridden
+- **Default backend**: On non-`192.x.x.x` hosts (including `localhost`) PECAN connects to the hosted backend at `wss://ws-demo.westernformularacing.org`, unless overridden
 - **Configurable override**: Users can set a custom WebSocket URL via Settings or `VITE_WS_URL`
 - **Reconnection**: Up to 5 attempts with linear backoff (2s increments)
 - **Uplink in active development**: The WebSocket protocol supports uplink (`can_send`, `can_send_batch`, `ping`), but the PECAN UI and client helpers for sending control messages are still under active development
@@ -159,7 +159,7 @@ npm install
 npm run dev
 ```
 
-By default, the development server runs on `http://localhost:5173` and PECAN connects to the **hosted** telemetry backend at `wss://ws-wfr.0001200.xyz:9443`. To force a different backend (for example, a local UTS instance on `ws://localhost:9080`), set `VITE_WS_URL` or configure a `custom-ws-url` in the PECAN Settings dialog.
+By default, the development server runs on `http://localhost:5173` and PECAN connects to the **hosted** telemetry backend at `wss://ws-demo.westernformularacing.org:9443`. To force a different backend (for example, a local UTS instance on `ws://localhost:9080`), set `VITE_WS_URL` or configure a `custom-ws-url` in the PECAN Settings dialog.
 
 ### Testing
 

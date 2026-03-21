@@ -330,6 +330,23 @@ describe('CAN Processor Unit Tests', () => {
             expect(result.length).toBe(3); // 2 valid CAN messages + 1 unknown CAN message
             expect(result[1].messageName).toBe('Unknown_CAN_0x0000270F');
         });
+
+        it('should process Protocol V2 enveloped messages from Dashboard', async () => {
+            const processor = await createCanProcessor();
+            const v2Message = {
+                type: 'can_data',
+                messages: [
+                    { canId: 192, data: [0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], time: 1000 }
+                ]
+            };
+            const result = processor.processWebSocketMessage(v2Message);
+
+            expect(Array.isArray(result)).toBe(true);
+            expect(result?.length).toBe(1);
+            expect(result?.[0]?.messageName).toBe('M192_Command_Message');
+            expect(result?.[0]?.canId).toBe(192);
+            expect(result?.[0]?.time).toBe(1000);
+        });
     });
 
     describe('DBC File Loading', () => {
@@ -461,6 +478,38 @@ describe('CAN Processor Unit Tests', () => {
             expect(vcuResult?.messageName).toBe('VCU_Status');
             expect(chargerCmd?.messageName).toBe('Charger_Command');
             expect(chargerSts?.messageName).toBe('Charger_Status');
+        });
+
+        it('should handle IDs that already have the EFF bit set', () => {
+            const CHARGER_CMD_DBC_ID = 2550588916; // 0x9806E5F4
+            const data = [0x68, 0x10, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00];
+            const result = decodeCanMessage(can, CHARGER_CMD_DBC_ID, data, 7000);
+            expect(result).not.toBeNull();
+            expect(result?.messageName).toBe('Charger_Command');
+        });
+
+        it('should handle negative IDs (if bridge sends signed uint32)', () => {
+            const CHARGER_CMD_SIGNED_ID = -1744378380; // 0x9806E5F4 as signed 32-bit
+            const data = [0x68, 0x10, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00];
+            const result = decodeCanMessage(can, CHARGER_CMD_SIGNED_ID, data, 8000);
+            
+            // With the new fallback, this should now be decoded correctly
+            expect(result).not.toBeNull();
+            expect(result?.messageName).toBe('Charger_Command');
+        });
+
+        it('should handle small extended IDs using fallback', () => {
+            // If we have an extended message with ID 0x123 in DBC,
+            // but we send it as standard ID 0x123.
+            // (Note: example.dbc doesn't have this, but we can simulate the logic)
+            // For now, testing that EFF bit toggling works for known IDs.
+            const CHARGER_CMD_WITHOUT_EFF = 0x1806E5F4; // Raw arbitration ID
+            const data = [0x68, 0x10, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00];
+            const result = decodeCanMessage(can, CHARGER_CMD_WITHOUT_EFF, data, 9000);
+            
+            expect(result).not.toBeNull();
+            expect(result?.messageName).toBe('Charger_Command');
+            expect(result?.canId).toBe(2550588916); // Should return the DBC ID
         });
     });
 });

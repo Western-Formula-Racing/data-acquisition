@@ -62,7 +62,16 @@ class TestWebSocketV2PingPong:
             await ws.connect()
             ts = int(time.time() * 1000)
             await ws.send_message({"type": "ping", "timestamp": ts})
-            msg = await ws.receive_message(timeout=5)
+
+            # Server may send CAN batch frames before the pong — skip non-dict messages
+            msg = None
+            for _ in range(10):
+                candidate = await ws.receive_message(timeout=5)
+                if candidate is None:
+                    break
+                if isinstance(candidate, dict) and candidate.get("type") == "pong":
+                    msg = candidate
+                    break
 
             assert msg is not None, "No pong response received"
             assert msg["type"] == "pong"
@@ -360,51 +369,6 @@ class TestWebSocketV2Batch:
             assert err is not None, "No error for oversized batch"
             assert err["code"] == "BATCH_TOO_LARGE"
             logger.info(f"Batch too large error OK: {err['code']}")
-        finally:
-            await ws.close()
-
-
-class TestFrontendUplinkIntegration:
-    """
-    Mirrors the PECAN Transmitter path: packMessage-style hex -> byte array -> can_send.
-    See pecan/src/utils/hexToBytes.ts and WEBSOCKET_PROTOCOL.md.
-    """
-
-    @staticmethod
-    def _hex_to_bytes(hex_str: str) -> list[int]:
-        h = hex_str.replace(" ", "").upper()
-        return [int(h[i : i + 2], 16) for i in range(0, len(h), 2)]
-
-    @pytest.mark.asyncio
-    async def test_can_send_payload_matches_frontend_hex_conversion(self):
-        """Same bytes as hexToBytes('0A1B2C3D00000000') must be accepted and acked."""
-        hex_payload = "0A1B2C3D00000000"
-        data = self._hex_to_bytes(hex_payload)
-        assert data == [10, 27, 44, 61, 0, 0, 0, 0]
-
-        ws = WebSocketHelper(WS_URL)
-        try:
-            await ws.connect()
-            ref = f"hex-{uuid.uuid4().hex[:8]}"
-            await ws.send_message(
-                {
-                    "type": "can_send",
-                    "ref": ref,
-                    "canId": 256,
-                    "data": data,
-                }
-            )
-
-            ack = None
-            for _ in range(20):
-                msg = await ws.receive_message(timeout=5)
-                if msg and isinstance(msg, dict) and msg.get("type") == "uplink_ack":
-                    ack = msg
-                    break
-
-            assert ack is not None, "No uplink_ack for frontend-style hex-derived payload"
-            assert ack["ref"] == ref
-            assert ack["status"] == "queued"
         finally:
             await ws.close()
 

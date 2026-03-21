@@ -30,6 +30,9 @@ interface MessageBuffer {
 // Maximum number of frames kept in the flat trace ring buffer
 const TRACE_BUFFER_MAX = 10000;
 
+// Frequency window in milliseconds for dashboard displays (2 seconds)
+export const FREQUENCY_WINDOW_MS = 2000;
+
 // Listener callback type
 type Listener = (msgID?: string) => void;
 
@@ -254,6 +257,31 @@ class DataStore {
     }
 
     return result;
+  }
+
+  /**
+   * Get the average frequency (Hz) for a specific msgID over a time window
+   * @param msgID - CAN message ID
+   * @param windowMs - Time window in milliseconds
+   * @returns Frequency in Hz
+   */
+  public getFrequency(msgID: string, windowMs: number): number {
+    const messageBuffer = this.buffer.get(msgID);
+    if (!messageBuffer || messageBuffer.samples.length === 0) {
+      return 0;
+    }
+
+    const now = Date.now();
+    const cutoffTime = now - windowMs;
+
+    // Count samples within the window
+    // Since samples are appended chronologically, we could optimize this with binary search,
+    // but for typical buffer sizes (a few thousand), filter/length is fast enough.
+    const samplesInWindow = messageBuffer.samples.filter(
+      (sample) => sample.timestamp >= cutoffTime
+    ).length;
+
+    return samplesInWindow / (windowMs / 1000);
   }
 
   /**

@@ -21,7 +21,7 @@ services:
     networks:
       - daq-network
     healthcheck:
-      test: [ "CMD", "pgrep", "-f", "python3 main.py" ]
+      test: [ "CMD", "pgrep", "-f", "python main.py" ]
       interval: 5s
       timeout: 3s
       retries: 3
@@ -108,8 +108,8 @@ services:
     build:
       context: ../pecan
       args:
-        # Use production WebSocket for CI testing
-        VITE_WS_URL: wss://ws-wfr.0001200.xyz:9443
+        # VITE_WS_URL is set in the CI build step — not used when loading pre-built image
+        VITE_WS_URL: ws://localhost:9080
     container_name: daq-pecan-test
     restart: unless-stopped
     ports:
@@ -120,7 +120,7 @@ services:
       base:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80" ]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:80" ]
       interval: 5s
       timeout: 3s
       retries: 3

@@ -29,7 +29,7 @@ function SensorChip({ msgID, signalName }: CommsSensorConfig) {
             <Activity className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
             <span className="text-xs text-sidebarfg font-footer truncate">{signalName}</span>
             {data ? (
-                <span className="text-sm text-white font-heading whitespace-nowrap">
+                <span className="text-sm font-bold uppercase tracking-wider text-white/90 whitespace-nowrap">
                     {data.sensorReading} <span className="text-xs text-sidebarfg">{data.unit}</span>
                 </span>
             ) : (

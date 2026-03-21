@@ -6,11 +6,13 @@ on:
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
+      - 'flight-recorder/**'
       - '.github/workflows/telemetry-ci.yml'
   pull_request:
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
+      - 'flight-recorder/**'
       - '.github/workflows/telemetry-ci.yml'
 
 jobs:
@@ -19,6 +21,7 @@ jobs:
     outputs:
       telemetry: ${{ steps.filter.outputs.telemetry }}
       pecan: ${{ steps.filter.outputs.pecan }}
+      fdr: ${{ steps.filter.outputs.fdr }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -29,6 +32,8 @@ jobs:
               - 'universal-telemetry-software/**'
             pecan:
               - 'pecan/**'
+            fdr:
+              - 'flight-recorder/**'
 
   # ── Build images once, share via artifact ───────────────────────────────
   build:
@@ -57,11 +62,11 @@ jobs:
         docker build -t car-jitsi-client:test ./universal-telemetry-software/car-jitsi-client
         docker save car-jitsi-client:test -o /tmp/jitsi.tar
 
-    # Build pecan with the same args used in docker-compose.test.yml
+    # Build pecan pointing at the local base station WebSocket for E2E tests
     - name: Build pecan image
       run: |
         docker build \
-          --build-arg VITE_WS_URL=wss://ws-wfr.0001200.xyz:9443 \
+          --build-arg VITE_WS_URL=ws://localhost:9080 \
           -t pecan:test ./pecan
         docker save pecan:test -o /tmp/pecan.tar
 
@@ -123,6 +128,12 @@ jobs:
         npm ci
         npx tsc --noEmit
 
+    - name: Build and typecheck FDR
+      working-directory: ./flight-recorder
+      run: |
+        npm ci
+        npx tsc --noEmit
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -133,7 +144,8 @@ jobs:
         pip install \
           pytest pytest-asyncio pytest-timeout \
           cantools influxdb-client \
-          websockets redis requests
+          websockets redis requests \
+          "slicks>=0.2.0"
 
     - name: Run unit tests
       working-directory: ./universal-telemetry-software
@@ -180,8 +192,9 @@ jobs:
         pip install \
           pytest pytest-asyncio pytest-timeout \
           cantools influxdb-client \
-          websockets redis requests \
-          playwright
+          websockets redis requests aiohttp \
+          playwright \
+          "slicks>=0.2.0"
 
     - name: Install Playwright browsers
       run: playwright install chromium --with-deps
@@ -214,7 +227,7 @@ jobs:
     - name: Run integration tests
       working-directory: ./universal-telemetry-software
       run: |
-        python -m pytest tests/test_integration.py tests/test_websocket_v2.py -v -s --timeout=120
+        python -m pytest tests/test_integration.py tests/test_websocket_v2.py tests/test_ui_e2e.py -v -s --timeout=120
 
     - name: Collect logs on failure
       if: failure()
@@ -289,7 +302,8 @@ jobs:
         pip install \
           pytest pytest-asyncio pytest-timeout \
           cantools influxdb-client \
-          websockets redis requests
+          websockets redis requests \
+          "slicks>=0.2.0"
 
     - name: Start vCAN test stack
       working-directory: ./universal-telemetry-software
@@ -512,7 +526,8 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-      
+          VITE_GRAFANA_BRIDGE_URL: https://grafana.westernformularacing.org/grafana-bridge/api/grafana
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -559,6 +574,7 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET_DEV }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID_DEV }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID_DEV }}
+          VITE_GRAFANA_BRIDGE_URL: https://grafana.westernformularacing.org/grafana-bridge/api/grafana
       
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
@@ -569,3 +585,42 @@ jobs:
           directory: './pecan/dist'
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: dev
+
+  deploy-fdr-cloudflare:
+    needs: [unit-tests, integration, vcan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fdr'
+    permissions:
+      contents: read
+      deployments: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: flight-recorder/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: ./flight-recorder
+        run: npm ci
+      
+      - name: Build
+        working-directory: ./flight-recorder
+        run: npm run build
+        env:
+          VITE_GITHUB_DBC_READONLY_TOKEN: ${{ secrets.VITE_GITHUB_DBC_READONLY_TOKEN }}
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: 'wfr-fdr'
+          directory: './flight-recorder/dist'
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref_name }}

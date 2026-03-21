@@ -16,7 +16,7 @@ interface InputProps {
 function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<InputProps>) {
 
   // Define the paths that belong to the Vehicle Control group
-  const controlPaths = ["/throttle-mapper", "/can-transmitter", "/tx"];
+  const controlPaths = ["/throttle-mapper", "/sensor-validator", "/can-transmitter", "/tx"];
   
   // State to track if the Vehicle Control dropdown is open
   const [isControlOpen, setIsControlOpen] = useState(
@@ -117,6 +117,13 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                     <SidebarOption
                       option="Throttle Mapper"
                       path="/throttle-mapper"
+                      onClose={onClose}
+                      nested
+                      isPending={true}
+                    />
+                    <SidebarOption
+                      option="Sensor Validator"
+                      path="/sensor-validator"
                       onClose={onClose}
                       nested
                       isPending={true}

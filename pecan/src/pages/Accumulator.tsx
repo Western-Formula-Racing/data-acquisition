@@ -20,6 +20,7 @@ import DraggablePlot from '../components/DraggablePlot';
 import { type PlotSignal } from '../components/PlotManager';
 import { dataStore } from '../lib/DataStore';
 import TourGuide, { type TourStep } from '../components/TourGuide';
+import { HelpCircle } from 'lucide-react';
 
 const TOUR_STEPS: TourStep[] = [
   {
@@ -79,6 +80,14 @@ export default function Accumulator() {
               Accumulator Monitor
             </h1>
             <BatteryStatus />
+            <button
+              onClick={() => setTourOpen(true)}
+              className="p-1.5 rounded-full bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 hover:text-blue-300 transition-all border border-blue-500/30"
+              title="Start accumulator tour"
+              aria-label="Start accumulator tour"
+            >
+              <HelpCircle size={16} />
+            </button>
           </div>
 
           {/* Alert Panel + Charging Curve in 2-column layout */}
@@ -132,15 +141,6 @@ export default function Accumulator() {
           </div>
         </div>
 
-        {/* Floating Tour Button */}
-        <button
-          onClick={() => setTourOpen(true)}
-          className="fixed bottom-6 right-6 z-40 w-10 h-10 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center hover:bg-blue-500 hover:scale-110 transition-all"
-          title="Start Tour"
-          aria-label="Start Tour"
-        >
-          <span className="text-lg font-bold">?</span>
-        </button>
 
         {/* Cell Plot Window (Draggable) */}
         <DraggablePlot
