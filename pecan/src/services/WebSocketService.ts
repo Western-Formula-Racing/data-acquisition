@@ -11,6 +11,29 @@ export const DIAG_MSG_IDS = {
 
 export type MessageHandler = (data: any) => void;
 
+/** Server response after a successful `can_send` / `can_send_batch`. */
+export type UplinkAckMessage = {
+  type: 'uplink_ack';
+  ref: string;
+  status: 'queued' | 'sent' | string;
+  reason: string | null;
+};
+
+/** Server error payload for failed uplink or protocol errors. */
+export type WsErrorMessage = {
+  type: 'error';
+  code: string;
+  message: string;
+};
+
+const SKIP_DOWNLINK_AFTER_TYPED = new Set([
+  'uplink_ack',
+  'error',
+  'page_lock_state',
+  'page_lock_result',
+  'pong',
+]);
+
 export class WebSocketService {
   private ws: WebSocket | null = null;
   private processor: any = null;
@@ -93,6 +116,11 @@ export class WebSocketService {
             const listeners = this.messageListeners.get(messageData.type);
             if (listeners) {
               listeners.forEach(handler => handler(messageData));
+            }
+            // Do not feed uplink responses / control messages to the CAN processor
+            if (SKIP_DOWNLINK_AFTER_TYPED.has(String(messageData.type))) {
+              this.messageCount++;
+              return;
             }
           }
 
@@ -240,6 +268,40 @@ export class WebSocketService {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(data));
     }
+  }
+
+  /**
+   * Uplink: send one CAN frame (see WEBSOCKET_PROTOCOL.md).
+   * @returns true if the message was queued on the socket
+   */
+  sendCanMessage(canId: number, data: number[], ref: string): boolean {
+    if (!this.isConnected()) return false;
+    console.log(`[WS →] can_send  canId=${canId}  ref=${ref}  data=[${data.join(', ')}]`);
+    this.send({
+      type: 'can_send',
+      ref,
+      canId,
+      data,
+    });
+    return true;
+  }
+
+  /**
+   * Uplink: send up to 20 CAN frames in one round-trip.
+   */
+  sendCanBatch(
+    messages: Array<{ canId: number; data: number[] }>,
+    ref: string
+  ): boolean {
+    if (!this.isConnected()) return false;
+    const summary = messages.map(m => `${m.canId}:[${m.data.join(',')}]`).join(' | ');
+    console.log(`[WS →] can_send_batch  ref=${ref}  msgs=${messages.length}  ${summary}`);
+    this.send({
+      type: 'can_send_batch',
+      ref,
+      messages,
+    });
+    return true;
   }
 
   on(type: string, handler: MessageHandler) {

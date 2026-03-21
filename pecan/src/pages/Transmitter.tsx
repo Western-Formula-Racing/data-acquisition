@@ -1,11 +1,22 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Search, Zap, Send, Info } from "lucide-react";
 import { packMessage } from "../utils/packMessage";
+import { hexToBytes } from "../utils/hexToBytes";
 import { usePageLock } from "../lib/usePageLock";
 import { PageLockBanner } from "../components/PageLockBanner";
-// Assuming you have a hook or utility to get your DBC messages
+import {
+  webSocketService,
+  type UplinkAckMessage,
+  type WsErrorMessage,
+} from "../services/WebSocketService";
 import localDbc from "../assets/dbc.dbc?raw";
 import { Dbc } from "candied";
+
+type TxFeedback =
+  | null
+  | { type: "sending" }
+  | { type: "ok"; status: string }
+  | { type: "error"; message: string };
 
 const DataTransmitter = () => {
   const lock = usePageLock('can-transmitter');
@@ -13,6 +24,11 @@ const DataTransmitter = () => {
   const [selectedMsgId, setSelectedMsgId] = useState<number | null>(null);
   const [signalValues, setSignalValues] = useState<Record<string, number>>({});
   const [delay, setDelay] = useState<number | "">("");
+  const [txFeedback, setTxFeedback] = useState<TxFeedback>(null);
+  const [wsConnected, setWsConnected] = useState(() => webSocketService.isConnected());
+
+  const pendingTxRef = useRef<string | null>(null);
+  const ackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 1. Load available messages from DBC
   const availableMessages = useMemo(() => {
@@ -40,6 +56,114 @@ const DataTransmitter = () => {
     const hex = packMessage(selectedMsgId, signalValues);
     return hex.match(/.{1,2}/g) || ["00", "00", "00", "00", "00", "00", "00", "00"];
   }, [selectedMsgId, signalValues]);
+
+  useEffect(() => {
+    const syncWs = () => setWsConnected(webSocketService.isConnected());
+    syncWs();
+    const onConnect = () => setWsConnected(true);
+    webSocketService.on("__connect__", onConnect);
+    const interval = window.setInterval(syncWs, 3000);
+    return () => {
+      webSocketService.off("__connect__", onConnect);
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    const clearAckTimer = () => {
+      if (ackTimeoutRef.current !== null) {
+        window.clearTimeout(ackTimeoutRef.current);
+        ackTimeoutRef.current = null;
+      }
+    };
+
+    const onAck = (raw: UplinkAckMessage) => {
+      if (raw?.type !== "uplink_ack") return;
+      if (pendingTxRef.current && raw.ref === pendingTxRef.current) {
+        pendingTxRef.current = null;
+        clearAckTimer();
+        setTxFeedback({ type: "ok", status: raw.status });
+      }
+    };
+
+    const onErr = (raw: WsErrorMessage) => {
+      if (raw?.type !== "error") return;
+      if (!pendingTxRef.current) return;
+      pendingTxRef.current = null;
+      clearAckTimer();
+      setTxFeedback({
+        type: "error",
+        message: `${raw.code}: ${raw.message}`,
+      });
+    };
+
+    webSocketService.on("uplink_ack", onAck);
+    webSocketService.on("error", onErr);
+    return () => {
+      webSocketService.off("uplink_ack", onAck);
+      webSocketService.off("error", onErr);
+      clearAckTimer();
+    };
+  }, []);
+
+  const handleTransmit = useCallback(() => {
+    if (selectedMsgId == null || lock.isLockedByOther) return;
+    const canId = selectedMsgId;
+
+    if (!webSocketService.isConnected()) {
+      setTxFeedback({
+        type: "error",
+        message: "WebSocket not connected — check Settings or network.",
+      });
+      return;
+    }
+
+    const hex = packMessage(canId, signalValues);
+    const data = hexToBytes(hex);
+    if (data.length < 1 || data.length > 8) {
+      setTxFeedback({
+        type: "error",
+        message: `Invalid payload length ${data.length} (need 1–8 bytes).`,
+      });
+      return;
+    }
+
+    const ref = `tx-${crypto.randomUUID().slice(0, 8)}`;
+
+    const run = () => {
+      if (ackTimeoutRef.current !== null) {
+        window.clearTimeout(ackTimeoutRef.current);
+        ackTimeoutRef.current = null;
+      }
+
+      pendingTxRef.current = ref;
+      setTxFeedback({ type: "sending" });
+
+      ackTimeoutRef.current = window.setTimeout(() => {
+        ackTimeoutRef.current = null;
+        if (pendingTxRef.current === ref) {
+          pendingTxRef.current = null;
+          setTxFeedback({ type: "error", message: "No acknowledgement (timeout)." });
+        }
+      }, 10_000);
+
+      const sent = webSocketService.sendCanMessage(canId, data, ref);
+      if (!sent) {
+        pendingTxRef.current = null;
+        if (ackTimeoutRef.current !== null) {
+          window.clearTimeout(ackTimeoutRef.current);
+          ackTimeoutRef.current = null;
+        }
+        setTxFeedback({ type: "error", message: "Failed to send (socket closed)." });
+      }
+    };
+
+    if (delay !== "" && typeof delay === "number" && delay > 0) {
+      window.setTimeout(run, delay);
+    } else {
+      run();
+    }
+  }, [selectedMsgId, signalValues, delay, lock.isLockedByOther]);
 
   return (
     <div className="relative flex flex-col h-full gap-6 p-6 text-white overflow-hidden">
@@ -161,29 +285,55 @@ const DataTransmitter = () => {
             </div>
 
             {/* Controls Bar */}
-            <div className="mt-auto pt-6 flex justify-end items-center gap-4">
-              <div className="flex items-center bg-slate-900 border border-slate-800 rounded-2xl p-1 h-12 w-64">
-                <button onClick={() => setDelay("")} className={`flex-1 h-full !rounded-xl text-[10px] font-bold ${delay === "" ? 'bg-blue-600 text-white' : 'text-slate-500'}`}>NOW</button>
-                <div className="w-px h-4 bg-slate-800 mx-2" />
-                <input
-                  type="number"
-                  value={delay}
-                  onChange={(e) => setDelay(e.target.value === "" ? "" : Number(e.target.value))}
-                  placeholder="delay..."
-                  className="bg-transparent text-right pr-2 text-sm font-mono text-blue-400 outline-none w-20"
-                />
-                <span className="text-[10px] text-slate-600 pr-2 font-bold">MS</span>
+            <div className="mt-auto pt-6 flex flex-col items-end gap-2">
+              <div className="flex flex-wrap justify-end items-center gap-4 w-full">
+                <span
+                  className={`text-xs font-mono mr-auto ${
+                    wsConnected ? "text-emerald-400/90" : "text-amber-400/90"
+                  }`}
+                  title="Telemetry WebSocket used for CAN uplink"
+                >
+                  WS: {wsConnected ? "connected" : "disconnected"}
+                </span>
+                <div className="flex items-center bg-slate-900 border border-slate-800 rounded-2xl p-1 h-12 w-64">
+                  <button type="button" onClick={() => setDelay("")} className={`flex-1 h-full !rounded-xl text-[10px] font-bold ${delay === "" ? 'bg-blue-600 text-white' : 'text-slate-500'}`}>NOW</button>
+                  <div className="w-px h-4 bg-slate-800 mx-2" />
+                  <input
+                    type="number"
+                    value={delay}
+                    onChange={(e) => setDelay(e.target.value === "" ? "" : Number(e.target.value))}
+                    placeholder="delay..."
+                    className="bg-transparent text-right pr-2 text-sm font-mono text-blue-400 outline-none w-20"
+                  />
+                  <span className="text-[10px] text-slate-600 pr-2 font-bold">MS</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleTransmit}
+                  disabled={lock.isLockedByOther || txFeedback?.type === "sending"}
+                  className={`h-12 px-10 font-bold !rounded-2xl shadow-lg flex items-center gap-3 transition-all ${
+                    lock.isLockedByOther || txFeedback?.type === "sending"
+                      ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-500 text-white'
+                  }`}
+                >
+                  <Send className="w-4 h-4" /> TRANSMIT
+                </button>
               </div>
-              <button
-                disabled={lock.isLockedByOther}
-                className={`h-12 px-10 font-bold !rounded-2xl shadow-lg flex items-center gap-3 transition-all ${
-                  lock.isLockedByOther
-                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-500 text-white'
-                }`}
-              >
-                <Send className="w-4 h-4" /> TRANSMIT
-              </button>
+              {txFeedback?.type === "sending" && (
+                <p className="text-xs text-slate-400">Sending… waiting for uplink_ack</p>
+              )}
+              {txFeedback?.type === "ok" && (
+                <p className="text-xs text-emerald-400">
+                  Transmitted — server status: <span className="font-mono">{txFeedback.status}</span>
+                  {txFeedback.status === "queued"
+                    ? " (relay to car; enable ENABLE_UPLINK on bridge if you see errors)"
+                    : null}
+                </p>
+              )}
+              {txFeedback?.type === "error" && (
+                <p className="text-xs text-red-400 max-w-xl text-right">{txFeedback.message}</p>
+              )}
             </div>
           </>
         ) : (
