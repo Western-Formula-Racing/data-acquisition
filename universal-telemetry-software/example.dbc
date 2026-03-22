@@ -975,6 +975,9 @@ BO_ 998 TORCH_START_BALANCE: 8 Vector__XXX
 
 BO_ 999 TORCH_STOP_BALANCE: 8 Vector__XXX
 
+BO_ 1999 VCU_Timestamp: 8 VCU
+ SG_ ECU_Epoch_ms : 0|64@1+ (1,0) [0|0] "ms" Vector__XXX
+
 
 
 CM_ BU_ ELCON "Accumulator charger";
