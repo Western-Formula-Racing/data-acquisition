@@ -380,7 +380,57 @@
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{10 -- LED REFERENCE}
+\section*{10 -- CLOUD SYNC (Base Only)}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Cloud sync starts automatically with the InfluxDB bridge (base + \cmd{ENABLE\_INFLUX\_LOGGING=true}). \\
+  Every 60s it checks internet reachability, then pushes new rows from local \cmd{WFR26\_base} \\
+  to cloud \cmd{WFR26} at \cmd{influxdb3.westernformularacing.org}. Skips silently if offline. \\[1mm]
+  \textit{Performance:} wide schema = 1 row per CAN message (all signals as columns). \\
+  Previously narrow/tall schema had 1 row per signal -- wide format is 5--10$\times$ fewer rows \\
+  to sync and query. A 30-min test session at 100 msg/s = \textasciitilde180k rows vs. 1M+ previously. \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{Set CLOUD\_INFLUX\_TOKEN}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Required -- token is empty by default and sync silently no-ops without it. \\[1mm]
+  Edit \cmd{docker-compose.prod.yml}: \\
+  \cmd{- CLOUD\_INFLUX\_TOKEN=<your-token>} \\[1mm]
+  Or export before pulling: \cmd{export CLOUD\_INFLUX\_TOKEN=<token>} \\
+  \textbf{FAIL (silent):} no errors shown, but 0 points ever reach the cloud. \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{Verify Connectivity}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{docker compose -f docker-compose.prod.yml exec telemetry python -m src.cloud\_sync --check-only} \\[1mm]
+  \textbf{PASS:} \cmd{✓ Cloud reachable} \\
+  \textbf{FAIL:} \cmd{✗ Cloud unreachable} \quad \textit{Fix:} check base RPi internet connection \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{Verify Sync Running}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "CloudSync"} \\[1mm]
+  \textbf{PASS:} \cmd{✓ Synced N points to cloud} every 60s \\
+  \textbf{FAIL:} \cmd{CLOUD\_INFLUX\_TOKEN not set} \quad \textit{Fix:} see token step above \\
+  \textbf{FAIL:} \cmd{Cloud unreachable} \quad sync will retry next interval automatically \\[1mm]
+  Manual one-off sync: \cmd{python -m src.cloud\_sync --last-hours 24} \\
+  Dry run (no write): \cmd{python -m src.cloud\_sync --dry-run} \\
+  State file (tracks cursor): \cmd{/tmp/influx\_cloud\_sync\_state.json} \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{11 -- LED REFERENCE}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \rowcolors{1}{tblhd}{white}
@@ -415,6 +465,7 @@
   TX\_DISABLED & ENABLE\_TX\_WS=true? & Edit docker-compose.prod.yml \\
   Wrong role on base & can0 on base RPi? & Base should NOT have CAN HAT \\
   Influx not logging & ENABLE\_INFLUX\_LOGGING=true? & Check docker-compose.prod.yml \\
+  Cloud sync no-op & CLOUD\_INFLUX\_TOKEN set? & See \S 10, token is empty by default \\
   Redis connection error & \cmd{docker compose ps redis} & \cmd{docker compose restart redis} \\
   PECAN disconnected & WS\_PORT=9080? & Check docker-compose.prod.yml env \\
   GHCR pull fails & Org member + docker login? & Re-run \S 0 GHCR step \\
@@ -423,7 +474,7 @@
 \vspace{2mm}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{12 -- KEY PORTS}
+\section*{13 -- KEY PORTS}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \rowcolors{1}{tblhd}{white}
@@ -446,7 +497,7 @@
 \vspace{2mm}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{13 -- ENV VAR QUICKREF}
+\section*{14 -- ENV VAR QUICKREF}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \rowcolors{1}{tblhd}{white}
@@ -470,7 +521,7 @@
 \vspace{2mm}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{14 -- DOCKER COMPOSE FILES}
+\section*{15 -- DOCKER COMPOSE FILES}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \noindent
