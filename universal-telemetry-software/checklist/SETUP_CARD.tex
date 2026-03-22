@@ -54,6 +54,7 @@
   \hline
   RPi IP       & \cmd{192.168.1.10} & \cmd{192.168.1.20} \\
   Radio IP     & \cmd{192.168.1.11} & \cmd{192.168.1.21} \\
+  Hotspot IP   & \cmd{192.168.10.1} & \cmd{192.168.20.1} \\
   \cmd{REMOTE\_IP} & \cmd{192.168.1.20} (base RPi) & \cmd{192.168.1.10} (car RPi) \\
   CAN HAT      & Required (\cmd{can0}) & Not needed \\
   Serves       & TX WebSocket :9078 & PECAN dashboard :3000 \\
@@ -124,6 +125,30 @@
   \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software} \\[1mm]
   \textbf{PASS:} \cmd{ls} shows \cmd{docker-compose.prod.yml} \\
   \textbf{FAIL:} auth error \quad \textit{Fix:} re-run \cmd{gh auth login} \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{Configure WiFi Hotspot with Fixed IP}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Each RPi acts as a WiFi AP so pit crew can connect laptops/phones on test days. \\
+  The hotspot uses a \textbf{separate subnet} from the radio link to avoid routing conflicts: \\[1mm]
+  \begin{tabular}{p{28mm}p{36mm}p{36mm}}
+    \rowcolor{tblhd}
+    & \textbf{Car RPi} & \textbf{Base RPi} \\
+    Hotspot gateway & \cmd{192.168.10.1} & \cmd{192.168.20.1} \\
+    SSID & \cmd{WFR-CAR} & \cmd{WFR-BASE} \\
+  \end{tabular} \\[1mm]
+  \cmd{sudo nmcli connection add type wifi ifname wlan0 con-name "daq-hotspot" \textbackslash} \\
+  \cmd{\ \ autoconnect yes ssid "WFR-BASE" wifi.mode ap \textbackslash} \\
+  \cmd{\ \ wifi-sec.key-mgmt wpa-psk wifi-sec.psk "wfr2025" \textbackslash} \\
+  \cmd{\ \ ipv4.method shared ipv4.addresses 192.168.20.1/24} \\[1mm]
+  Use \cmd{192.168.10.1/24} and \cmd{ssid "WFR-CAR"} on the car RPi instead. \\[1mm]
+  \cmd{sudo nmcli connection up daq-hotspot} \\[1mm]
+  \textbf{PASS:} \cmd{ip addr show wlan0} shows \cmd{192.168.10.1} or \cmd{192.168.20.1} \\
+  \textit{Note:} \cmd{autoconnect yes} means hotspot restarts on reboot -- no re-run needed. \\
+  \textit{Change later:} \cmd{sudo nmcli connection modify daq-hotspot wifi-sec.psk "newpass"} \\
 \end{tabular}
 
 \vspace{1mm}
@@ -380,6 +405,68 @@
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
+\section*{9.5 -- ECU TIME SYNC (Car RPi only)}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \textbf{The car RPi has no NTP -- system clock resets to 1970 on boot without a time source.} \\
+  CAN frames are timestamped on the car RPi before UDP transmission; the base RPi just \\
+  forwards those timestamps into InfluxDB unchanged. Getting the car RPi's clock right \\
+  is therefore the only thing that matters for correct InfluxDB timestamps. \\[1mm]
+  The ECU has a battery-backed DS3231 RTC and broadcasts the real epoch time on \textbf{CAN ID 1999} \\
+  (\cmd{VCU\_Timestamp}) once per second. The car RPi intercepts this and corrects its clock. \\[1mm]
+  \textbf{Car data is held (not dropped) until one of three conditions is met:} \\
+\end{tabular}
+
+\vspace{1mm}
+\noindent
+\begin{tabularx}{\linewidth}{p{4mm}p{30mm}X}
+  \rowcolor{tblhd}
+  & \textbf{Source} & \textbf{How} \\
+  1 & ECU RTC & ECU broadcasts CAN ID 1999 at 1 Hz -- RPi uses it automatically within $\sim$1s of CAN coming up. \textit{Primary -- most reliable.} \\
+  2 & RPi system clock & If RPi clock is already past 2026-03-22 (NTP synced, or manually set previously), data flows immediately. \\
+  3 & Manual set & User sets RPi clock via status page -- see below. \\
+\end{tabularx}
+
+\vspace{1mm}
+\gobox{Verify Sync}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep -E "time sync$\,$\textbar{}trusting RPi"} \\[1mm]
+  \textbf{PASS (ECU RTC):} \cmd{ECU time sync: epoch=1742... offset=+Xs} \\
+  \textbf{PASS (system clock):} \cmd{System clock past 2026-03-22, trusting RPi clock} \\
+  \textbf{FAIL:} no match -- data is being held. If ECU is on the bus, wait up to 2s for first broadcast. \\
+\end{tabular}
+
+\vspace{1mm}
+\warnbox{No ECU + no NTP = data held indefinitely. Use manual set below.}
+
+\vspace{1mm}
+\checkbox{Manual Time Set (bench test / no ECU)}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Open the status page on the \textbf{car RPi}: \\[1mm]
+  \textbf{On radio subnet:} \cmd{http://192.168.1.10:8080} \\
+  \textbf{Via hotspot (phone/laptop):} \cmd{http://192.168.10.1:8080} \\[1mm]
+  If clock is not synced, an amber banner is shown at the top with a datetime input. \\
+  \quad 1.\ Click \textbf{Now\,$\circlearrowleft$} -- pre-fills with your laptop's current time (assumed correct). \\
+  \quad 2.\ Click \textbf{Set RPi Clock} -- sends \cmd{POST /set-time} to the status server. \\
+  \quad 3.\ The container runs privileged, so \cmd{date -s} sets the host kernel clock directly. \\
+  \quad 4.\ Within 1s, \cmd{\_try\_auto\_sync()} detects clock $>$ 2026-03-22 and unblocks data. \\[1mm]
+  \textbf{PASS:} banner turns green. Check logs: \cmd{grep "trusting RPi clock"}. \\[1mm]
+  \textit{Note:} if you only have SSH and no browser, run on the RPi directly: \\
+  \cmd{sudo date -s "2026-03-22 14:35:00"} \\[2mm]
+  \textit{Base RPi clock:} the base RPi's system clock does \textbf{not} affect data timestamps -- \\
+  the car already stamped every frame before UDP transmission, so Grafana and InfluxDB \\
+  will show correct times even if the base is in 1970. \\
+  Nice-to-have: set base clock for clean container logs and accurate cloud sync cursors. \\
+  Same method -- \cmd{http://192.168.1.20:8080} or \cmd{http://192.168.20.1:8080} via hotspot. \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{10 -- CLOUD SYNC (Base Only)}
 % ─────────────────────────────────────────────────────────────────────────────
 
@@ -465,6 +552,7 @@
   TX\_DISABLED & ENABLE\_TX\_WS=true? & Edit docker-compose.prod.yml \\
   Wrong role on base & can0 on base RPi? & Base should NOT have CAN HAT \\
   Influx not logging & ENABLE\_INFLUX\_LOGGING=true? & Check docker-compose.prod.yml \\
+  Data held, none in PECAN & ECU time synced? & Open :8080, set clock if no ECU on bus (\S 9.5) \\
   Cloud sync no-op & CLOUD\_INFLUX\_TOKEN set? & See \S 10, token is empty by default \\
   Redis connection error & \cmd{docker compose ps redis} & \cmd{docker compose restart redis} \\
   PECAN disconnected & WS\_PORT=9080? & Check docker-compose.prod.yml env \\
@@ -547,6 +635,7 @@
   \cmd{grep "UDP"} -- Car sending? & \cmd{grep "Initial sequence"} -- Base receiving? \\
   \cmd{grep "CAN Reader"} -- Car reading CAN? & \cmd{grep -i error} -- Any errors? \\
   \cmd{grep "WebSocket"} -- WS bridge running? & \cmd{grep "Auto-detected"} -- Role correct? \\
+  \cmd{grep "time sync"} -- ECU clock synced? & \cmd{grep "trusting RPi"} -- System clock fallback? \\
   \hline
 \end{tabularx}
 

@@ -41,6 +41,12 @@ class CANMessage:
 
 ECU_TIMESTAMP_ID = 1999  # VCU_Timestamp — ECU broadcasts RTC epoch ms at 1 Hz
 
+# If RPi system clock is already past this date, trust it without waiting for ECU sync.
+# This covers RPis that have NTP or were manually set via the status page (/set-time).
+# Update each season if clocks are known to be unreliable.
+# NOTE: 2026-03-22 is today's date at time of writing.
+_SYSTEM_CLOCK_TRUST_EPOCH = 1742601600.0  # 2026-03-22 00:00:00 UTC
+
 class TelemetryNode:
     def __init__(self, can_event=None, telemetry_event=None):
         self.buffer = deque()
@@ -54,6 +60,7 @@ class TelemetryNode:
         # ECU clock sync — offset between ECU RTC and local monotonic clock
         self._clock_offset: float | None = None   # epoch_sec - monotonic at last sync
         self._last_ecu_sync: float = 0.0          # monotonic time of last valid ECU 1999
+        self._sync_source: str = "none"           # "ecu_rtc" | "system_clock" | "override"
 
     def publish(self, channel, data):
         redis_utils.safe_publish(self.redis_client, channel, data, logger)
@@ -68,10 +75,32 @@ class TelemetryNode:
         mono = time.monotonic()
         self._clock_offset = epoch_ms / 1000.0 - mono
         self._last_ecu_sync = mono
+        self._sync_source = "ecu_rtc"
         logger.info(f"ECU time sync: epoch={epoch_ms/1000:.3f}  offset={self._clock_offset:+.3f}s")
 
+    def _try_auto_sync(self) -> None:
+        """Check fallback time sources when no ECU sync has arrived yet.
+
+        Priority:
+          1. ECU RTC (handled by _handle_ecu_timestamp, always wins)
+          2. RPi system clock past _SYSTEM_CLOCK_TRUST_EPOCH — covers NTP-synced RPis
+             and RPis whose clock was manually set via POST /set-time on the status page.
+        """
+        if self._clock_offset is not None:
+            return  # already synced
+
+        sys_time = time.time()
+
+        if sys_time > _SYSTEM_CLOCK_TRUST_EPOCH:
+            self._clock_offset = sys_time - time.monotonic()
+            self._sync_source = "system_clock"
+            logger.info(
+                f"System clock past 2026-03-22 ({sys_time:.0f}), trusting RPi clock. "
+                "Update _SYSTEM_CLOCK_TRUST_EPOCH if RPi clock is known bad."
+            )
+
     def _corrected_time(self) -> float:
-        """Return current time using ECU RTC offset when available."""
+        """Return current time using the best available clock source."""
         if self._clock_offset is not None:
             return time.monotonic() + self._clock_offset
         return time.time()
@@ -118,7 +147,9 @@ class TelemetryNode:
                         if msg.arbitration_id == ECU_TIMESTAMP_ID:
                             self._handle_ecu_timestamp(bytes(msg.data))
                         if not self._ecu_synced:
-                            continue  # hold all data until first ECU time sync
+                            self._try_auto_sync()
+                        if not self._ecu_synced:
+                            continue  # hold all data until a time source is established
                         telemetry_msg = CANMessage(self._corrected_time(), msg.arbitration_id, msg.data)
                         await queue.put(telemetry_msg)
             except Exception as e:
@@ -412,9 +443,12 @@ class TelemetryNode:
         async def stats_publisher():
             while True:
                 await asyncio.sleep(1)
-                self.publish("system_stats", json.dumps(stats))
-                # Reset counters (except we keep accumulating or just send rate? rate is better)
-                # Let's send rate per second
+                payload = {
+                    **stats,
+                    "ecu_synced": self._ecu_synced,
+                    "ecu_sync_source": self._sync_source,
+                }
+                self.publish("system_stats", json.dumps(payload))
                 stats["received"] = 0
                 stats["missing"] = 0
                 stats["recovered"] = 0
