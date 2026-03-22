@@ -457,10 +457,10 @@ class TestTxWebSocketBridge:
     """
     Tests for the TX WebSocket bridge (port 9078).
 
-    Uses Heartbeat message from example.dbc:
-      - Name: Heartbeat, ID: 0x7cf, DLC: 8
-      - Signal: UTCTime (start=0, scale=1)
-      - Encode(UTCTime=12345678) -> [0x4e, 0x61, 0xbc, 0x00, 0x00, 0x00, 0x00, 0x00]
+    Uses VCU_Precharge from dbc.dbc:
+      - Name: VCU_Precharge, ID: 0x7D3 (2003), DLC: 8
+      - Signals: Precharge_Enable (bit 0, unsigned), Precharge_OK (bit 1, unsigned)
+      - Encode(Precharge_Enable=1) -> [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
 
     can_preview_signals: returns encoded bytes WITHOUT writing to CAN
     can_send_signals:   returns encoded bytes AND writes to CAN (ENABLE_TX_WS=true)
@@ -468,9 +468,9 @@ class TestTxWebSocketBridge:
 
     TX_WS_URL = "ws://localhost:9078"
 
-    # From cantools encode of Heartbeat (example.dbc) with UTCTime=12345678
-    EXPECTED_BYTES = [0x4E, 0x61, 0xBC, 0x00, 0x00, 0x00, 0x00, 0x00]
-    HEARTBEAT_CAN_ID = 0x7CF
+    # VCU_Precharge with Precharge_Enable=1 → bit 0 set → byte 0 = 0x01
+    EXPECTED_BYTES = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    SIMPLE_CAN_ID = 2003  # VCU_Precharge (0x7D3)
 
     @pytest.mark.asyncio
     async def test_preview_returns_encoded_bytes(self):
@@ -482,15 +482,15 @@ class TestTxWebSocketBridge:
             await ws.send_message({
                 "type": "can_preview_signals",
                 "ref": ref,
-                "canId": self.HEARTBEAT_CAN_ID,
-                "signals": {"UTCTime": 12345678},
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {"Precharge_Enable": 1},
             })
 
             resp = await ws.receive_message(timeout=5)
             assert resp is not None, "No response to can_preview_signals"
             assert resp["type"] == "preview", f"Expected 'preview', got: {resp}"
             assert resp["ok"] is True
-            assert resp["canId"] == self.HEARTBEAT_CAN_ID
+            assert resp["canId"] == self.SIMPLE_CAN_ID
             assert resp["bytes"] == self.EXPECTED_BYTES, (
                 f"Expected {self.EXPECTED_BYTES}, got {resp['bytes']}"
             )
@@ -535,8 +535,8 @@ class TestTxWebSocketBridge:
             await ws.send_message({
                 "type": "can_send_signals",
                 "ref": ref,
-                "canId": self.HEARTBEAT_CAN_ID,
-                "signals": {"UTCTime": 99999999},
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {"Precharge_Enable": 1},
             })
 
             resp = await ws.receive_message(timeout=5)
@@ -582,25 +582,26 @@ class TestTxWebSocketIntegration:
         - can_preview_signals  (live preview, no CAN write)
         - can_send_signals      (encode + CAN write when ENABLE_TX_WS=true)
 
-    Uses Heartbeat (0x7cf) and MC_Command (0x100) from example.dbc as test vectors.
-    These are real DBC messages with known encoding behavior from cantools.
+    Uses VCU_Precharge (0x7D3) and M192_Command_Message (0xC0) from dbc.dbc as test vectors.
+    These are real car DBC messages with known encoding behavior from cantools.
     """
 
     TX_WS_URL = "ws://localhost:9078"
 
-    # Heartbeat (example.dbc): ID=0x7cf, 1 signal: UTCTime (scale=1, offset=0)
-    HEARTBEAT_ID = 0x7CF
-    HEARTBEAT_SIGNALS = {"UTCTime": 0}
+    # VCU_Precharge (dbc.dbc): ID=0x7D3 (2003), simple 1-bit signals — used for basic tests
+    SIMPLE_CAN_ID = 2003
+    SIMPLE_SIGNALS = {"Precharge_Enable": 0, "Precharge_OK": 0}
 
-    # MC_Command (example.dbc): ID=0x100, 2 signals: TorqueRequest (scale=0.1), SpeedLimit (scale=1)
-    MC_COMMAND_ID = 0x100
-    MC_COMMAND_SIGNALS = {"TorqueRequest": 100.0, "SpeedLimit": 5000}
+    # M192_Command_Message (dbc.dbc): ID=0xC0 (192), signed torque/speed signals
+    # VCU_INV_Torque_Command (bits 0-15, signed, scale=0.1), VCU_INV_Speed_Command (bits 16-31, signed, scale=1)
+    COMMAND_CAN_ID = 192
+    COMMAND_SIGNALS = {"VCU_INV_Torque_Command": 100.0, "VCU_INV_Speed_Command": 5000}
 
     # ── Preview tests ─────────────────────────────────────────────────────────
 
     @pytest.mark.asyncio
     async def test_preview_heartbeat_zero_returns_all_zero_bytes(self):
-        """Preview Heartbeat with UTCTime=0 → all zero bytes."""
+        """Preview VCU_Precharge with all signals=0 → all zero bytes."""
         ws = WebSocketHelper(self.TX_WS_URL)
         try:
             await ws.connect()
@@ -608,15 +609,15 @@ class TestTxWebSocketIntegration:
             await ws.send_message({
                 "type": "can_preview_signals",
                 "ref": ref,
-                "canId": self.HEARTBEAT_ID,
-                "signals": {"UTCTime": 0},
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {"Precharge_Enable": 0, "Precharge_OK": 0},
             })
 
             resp = await ws.receive_message(timeout=5)
             assert resp is not None, "No response"
             assert resp["type"] == "preview"
             assert resp["ok"] is True
-            assert resp["canId"] == self.HEARTBEAT_ID
+            assert resp["canId"] == self.SIMPLE_CAN_ID
             assert resp["bytes"] == [0] * 8, f"Expected all-zero bytes, got {resp['bytes']}"
             logger.info("Preview zero OK")
         finally:
@@ -625,8 +626,8 @@ class TestTxWebSocketIntegration:
     @pytest.mark.asyncio
     async def test_preview_heartbeat_nonzero_returns_nonzero_bytes(self):
         """
-        Preview Heartbeat with UTCTime=12345678.
-        Expected bytes (cantools verified): [0x4e, 0x61, 0xbc, 0, 0, 0, 0, 0]
+        Preview VCU_Precharge with Precharge_Enable=1.
+        Expected bytes (cantools verified): [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
 
         This confirms that changing signal values actually changes the encoded output.
         """
@@ -637,14 +638,14 @@ class TestTxWebSocketIntegration:
             await ws.send_message({
                 "type": "can_preview_signals",
                 "ref": ref,
-                "canId": self.HEARTBEAT_ID,
-                "signals": {"UTCTime": 12345678},
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {"Precharge_Enable": 1},
             })
 
             resp = await ws.receive_message(timeout=5)
             assert resp is not None
             assert resp["type"] == "preview"
-            assert resp["bytes"] == [0x4E, 0x61, 0xBC, 0x00, 0x00, 0x00, 0x00, 0x00], (
+            assert resp["bytes"] == [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], (
                 f"cantools encoding mismatch: got {[hex(b) for b in resp['bytes']]}"
             )
             logger.info("Preview nonzero OK")
@@ -661,12 +662,12 @@ class TestTxWebSocketIntegration:
         try:
             await ws.connect()
 
-            # Send two different UTCTime values
+            # Send two different VCU_INV_Torque_Command values
             await ws.send_message({
                 "type": "can_preview_signals",
                 "ref": "v1",
-                "canId": self.HEARTBEAT_ID,
-                "signals": {"UTCTime": 10000000},
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 100.0},
             })
             resp1 = await ws.receive_message(timeout=5)
             assert resp1 is not None and resp1["type"] == "preview"
@@ -675,8 +676,8 @@ class TestTxWebSocketIntegration:
             await ws.send_message({
                 "type": "can_preview_signals",
                 "ref": "v2",
-                "canId": self.HEARTBEAT_ID,
-                "signals": {"UTCTime": 20000000},
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 200.0},
             })
             resp2 = await ws.receive_message(timeout=5)
             assert resp2 is not None and resp2["type"] == "preview"
@@ -693,8 +694,9 @@ class TestTxWebSocketIntegration:
     @pytest.mark.asyncio
     async def test_preview_mc_command_two_signals(self):
         """
-        MC_Command (0x100) has two signals: TorqueRequest (scale=0.1) and SpeedLimit.
-        Encoding TorqueRequest=100.0 → raw=1000 (0x03E8), SpeedLimit=5000 (0x1388).
+        M192_Command_Message (0xC0) has VCU_INV_Torque_Command (bits 0-15, signed, scale=0.1)
+        and VCU_INV_Speed_Command (bits 16-31, signed, scale=1).
+        Torque=100.0 → raw=1000 (0x03E8), Speed=5000 (0x1388).
         Combined LE bytes: E8 03 88 13 00 00 00 00
         """
         ws = WebSocketHelper(self.TX_WS_URL)
@@ -703,8 +705,8 @@ class TestTxWebSocketIntegration:
             await ws.send_message({
                 "type": "can_preview_signals",
                 "ref": "mc-cmd",
-                "canId": self.MC_COMMAND_ID,
-                "signals": {"TorqueRequest": 100.0, "SpeedLimit": 5000},
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 100.0, "VCU_INV_Speed_Command": 5000},
             })
 
             resp = await ws.receive_message(timeout=5)
@@ -712,9 +714,9 @@ class TestTxWebSocketIntegration:
             assert resp["type"] == "preview"
             # Expected: [0xE8, 0x03, 0x88, 0x13, 0x00, 0x00, 0x00, 0x00]
             assert resp["bytes"] == [0xE8, 0x03, 0x88, 0x13, 0x00, 0x00, 0x00, 0x00], (
-                f"MC_Command encoding mismatch: got {[hex(b) for b in resp['bytes']]}"
+                f"M192 encoding mismatch: got {[hex(b) for b in resp['bytes']]}"
             )
-            logger.info("MC_Command encoding OK")
+            logger.info("M192_Command_Message encoding OK")
         finally:
             await ws.close()
 
@@ -724,8 +726,8 @@ class TestTxWebSocketIntegration:
     async def test_preview_partial_signals_succeeds(self):
         """
         can_preview_signals with a partial signal set succeeds — missing signals
-        default to 0 (strict=False encoding). TorqueRequest=50.0 → raw=500 (0x01F4),
-        SpeedLimit omitted → defaults to 0. Expected bytes: F4 01 00 00 00 00 00 00.
+        default to 0. VCU_INV_Torque_Command=50.0 → raw=500 (0x01F4),
+        VCU_INV_Speed_Command omitted → defaults to 0. Expected bytes: F4 01 00 00 00 00 00 00.
         """
         ws = WebSocketHelper(self.TX_WS_URL)
         try:
@@ -733,8 +735,8 @@ class TestTxWebSocketIntegration:
             await ws.send_message({
                 "type": "can_preview_signals",
                 "ref": "missing-sig",
-                "canId": self.MC_COMMAND_ID,
-                "signals": {"TorqueRequest": 50.0},  # SpeedLimit missing → defaults to 0
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 50.0},  # Speed omitted → defaults to 0
             })
 
             resp = await ws.receive_message(timeout=5)
@@ -771,7 +773,7 @@ class TestTxWebSocketIntegration:
     @pytest.mark.asyncio
     async def test_preview_negative_signal_returns_encode_error(self):
         """
-        Heartbeat's UTCTime is unsigned (min=0). Sending a negative value
+        VCU_Precharge's Precharge_Enable is unsigned [0|1]. Sending -1
         should return ENCODE_ERROR (value out of range for the signal).
         """
         ws = WebSocketHelper(self.TX_WS_URL)
@@ -780,8 +782,8 @@ class TestTxWebSocketIntegration:
             await ws.send_message({
                 "type": "can_preview_signals",
                 "ref": "neg-sig",
-                "canId": self.HEARTBEAT_ID,
-                "signals": {"UTCTime": -1},
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {"Precharge_Enable": -1},
             })
 
             resp = await ws.receive_message(timeout=5)
@@ -801,7 +803,7 @@ class TestTxWebSocketIntegration:
             await ws.send_message({
                 "type": "can_preview_signals",
                 "ref": "empty-sig",
-                "canId": self.HEARTBEAT_ID,
+                "canId": self.SIMPLE_CAN_ID,
                 "signals": {},
             })
 
@@ -832,8 +834,8 @@ class TestTxWebSocketIntegration:
             await ws.send_message({
                 "type": "can_send_signals",
                 "ref": ref,
-                "canId": self.HEARTBEAT_ID,
-                "signals": {"UTCTime": 99999999},
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {"Precharge_Enable": 1},
             })
 
             resp = await ws.receive_message(timeout=5)
@@ -890,7 +892,7 @@ class TestTxWebSocketIntegration:
         try:
             await ws.connect()
 
-            # Send 10 previews with incrementing UTCTime values
+            # Send 10 previews with incrementing torque values
             refs = []
             for i in range(10):
                 ref = f"rapid-{i}"
@@ -898,8 +900,8 @@ class TestTxWebSocketIntegration:
                 await ws.send_message({
                     "type": "can_preview_signals",
                     "ref": ref,
-                    "canId": self.HEARTBEAT_ID,
-                    "signals": {"UTCTime": 1000000 + i * 1000},
+                    "canId": self.COMMAND_CAN_ID,
+                    "signals": {"VCU_INV_Torque_Command": (i + 1) * 10.0},
                 })
 
             # Receive all 10 responses
@@ -936,8 +938,8 @@ class TestTxWebSocketIntegration:
             await ws.send_message({
                 "type": "can_preview_signals",
                 "ref": "step1",
-                "canId": self.HEARTBEAT_ID,
-                "signals": {"UTCTime": 11111111},
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 100.0},
             })
             resp1 = await ws.receive_message(timeout=5)
             assert resp1 is not None and resp1["type"] == "preview"
@@ -947,8 +949,8 @@ class TestTxWebSocketIntegration:
             await ws.send_message({
                 "type": "can_send_signals",
                 "ref": "step2",
-                "canId": self.HEARTBEAT_ID,
-                "signals": {"UTCTime": 22222222},
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 200.0},
             })
             resp2 = await ws.receive_message(timeout=5)
             assert resp2 is not None and resp2["type"] in ("uplink_ack", "error")
@@ -957,8 +959,8 @@ class TestTxWebSocketIntegration:
             await ws.send_message({
                 "type": "can_preview_signals",
                 "ref": "step3",
-                "canId": self.HEARTBEAT_ID,
-                "signals": {"UTCTime": 33333333},
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 300.0},
             })
             resp3 = await ws.receive_message(timeout=5)
             assert resp3 is not None and resp3["type"] == "preview"

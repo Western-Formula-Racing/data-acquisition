@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { Search, Zap, Send, Info, Wifi, WifiOff } from "lucide-react";
+import { Search, Zap, Send, Info } from "lucide-react";
 import { usePageLock } from "../lib/usePageLock";
 import { PageLockBanner } from "../components/PageLockBanner";
 import { txWebSocketService } from "../services/TxWebSocketService";
@@ -180,24 +180,30 @@ const DataTransmitter = () => {
 
   const isTxReady = txConnected && !lock.isLockedByOther;
 
+  // 4-state color system: lock × WS connection
+  const txBorderState =
+    lock.isLockedByMe && txConnected  ? 'active'  :
+    !lock.isLockedByMe && txConnected ? 'ready'   :
+    lock.isLockedByMe                 ? 'locked'  :
+                                        'idle';
+
+  const TX_COLORS = {
+    idle:   { wire: 'rgba(30,58,138,0.30)',  wireSub: 'rgba(30,58,138,0.18)'  },
+    locked: { wire: 'rgba(96,165,250,0.38)', wireSub: 'rgba(96,165,250,0.22)' },
+    ready:  { wire: 'rgba(34,197,94,0.36)',  wireSub: 'rgba(34,197,94,0.20)'  },
+    active: { wire: 'rgba(249,115,22,0.40)', wireSub: 'rgba(249,115,22,0.22)' },
+  } as const;
+
+  const colors = TX_COLORS[txBorderState];
+
   return (
     <div className="relative flex flex-col h-full gap-6 p-6 text-white overflow-hidden">
-      <PageLockBanner lock={lock} />
-
-      {/* TX Bridge connection indicator */}
-      <div className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-xl w-fit ${
-        txConnected
-          ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-          : "bg-red-500/10 text-red-400 border border-red-500/20"
-      }`}>
-        {txConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-        {txConnected ? "TX Bridge Connected (port 9078)" : "TX Bridge Disconnected — Transmission Disabled"}
-      </div>
+      <PageLockBanner lock={lock} wireColor={colors.wire} txConnected={txConnected} />
 
       <div className="flex flex-1 gap-6 overflow-hidden">
 
         {/* --- LEFT COLUMN: Floating Sidebar --- */}
-        <div className="w-80 flex flex-col gap-4 bg-slate-900/50 rounded-2xl border border-blue-500/20 p-4 backdrop-blur-md shadow-2xl">
+        <div className="w-80 flex flex-col gap-4 bg-slate-900/50 rounded-2xl border p-4 backdrop-blur-md shadow-2xl" style={{ borderColor: colors.wire, transition: 'border-color 0.5s ease' }}>
           <div className="relative">
             <Search className="absolute left-3 top-3 w-4 h-4 text-white" />
             <input
@@ -235,7 +241,7 @@ const DataTransmitter = () => {
           {selectedMessage ? (
             <>
               {/* Hex Header Card */}
-              <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-6 backdrop-blur-md">
+              <div className="bg-slate-900/50 border rounded-3xl p-6 backdrop-blur-md" style={{ borderColor: colors.wire, transition: 'border-color 0.5s ease' }}>
                 <div className="flex justify-between items-center mb-6">
                   <div>
                     <h2 className="text-2xl font-bold text-white">{selectedMessage.name}</h2>
@@ -264,7 +270,7 @@ const DataTransmitter = () => {
                   const currentValue = signalValues[sig.name] ?? Math.max(sig.min, Math.min(sig.max, 0));
 
                   return (
-                    <div key={sig.name} className="bg-slate-900/30 border border-slate-800/50 rounded-2xl p-4 flex flex-col gap-3">
+                    <div key={sig.name} className="bg-slate-900/30 border rounded-2xl p-4 flex flex-col gap-3" style={{ borderColor: colors.wireSub, transition: 'border-color 0.5s ease' }}>
                       <div className="flex justify-between items-center">
                         <div className="flex flex-col">
                           <span className="text-sm font-semibold text-slate-300">{sig.name}</span>
