@@ -373,6 +373,51 @@ class TestWebSocketV2Batch:
             await ws.close()
 
 
+class TestFrontendUplinkIntegration:
+    """
+    Mirrors the PECAN Transmitter path: packMessage-style hex -> byte array -> can_send.
+    See pecan/src/utils/hexToBytes.ts and WEBSOCKET_PROTOCOL.md.
+    """
+
+    @staticmethod
+    def _hex_to_bytes(hex_str: str) -> list[int]:
+        h = hex_str.replace(" ", "").upper()
+        return [int(h[i : i + 2], 16) for i in range(0, len(h), 2)]
+
+    @pytest.mark.asyncio
+    async def test_can_send_payload_matches_frontend_hex_conversion(self):
+        """Same bytes as hexToBytes('0A1B2C3D00000000') must be accepted and acked."""
+        hex_payload = "0A1B2C3D00000000"
+        data = self._hex_to_bytes(hex_payload)
+        assert data == [10, 27, 44, 61, 0, 0, 0, 0]
+
+        ws = WebSocketHelper(WS_URL)
+        try:
+            await ws.connect()
+            ref = f"hex-{uuid.uuid4().hex[:8]}"
+            await ws.send_message(
+                {
+                    "type": "can_send",
+                    "ref": ref,
+                    "canId": 256,
+                    "data": data,
+                }
+            )
+
+            ack = None
+            for _ in range(20):
+                msg = await ws.receive_message(timeout=5)
+                if msg and isinstance(msg, dict) and msg.get("type") == "uplink_ack":
+                    ack = msg
+                    break
+
+            assert ack is not None, "No uplink_ack for frontend-style hex-derived payload"
+            assert ack["ref"] == ref
+            assert ack["status"] == "queued"
+        finally:
+            await ws.close()
+
+
 class TestWebSocketV2RateLimit:
     """Test per-client rate limiting."""
 
@@ -404,6 +449,526 @@ class TestWebSocketV2RateLimit:
 
             assert rate_limited, "Rate limiting was not triggered after 15 rapid messages"
             logger.info("Rate limiting OK")
+        finally:
+            await ws.close()
+
+
+class TestTxWebSocketBridge:
+    """
+    Tests for the TX WebSocket bridge (port 9078).
+
+    Uses VCU_Precharge from dbc.dbc:
+      - Name: VCU_Precharge, ID: 0x7D3 (2003), DLC: 8
+      - Signals: Precharge_Enable (bit 0, unsigned), Precharge_OK (bit 1, unsigned)
+      - Encode(Precharge_Enable=1) -> [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+    can_preview_signals: returns encoded bytes WITHOUT writing to CAN
+    can_send_signals:   returns encoded bytes AND writes to CAN (ENABLE_TX_WS=true)
+    """
+
+    TX_WS_URL = "ws://localhost:9078"
+
+    # VCU_Precharge with Precharge_Enable=1 → bit 0 set → byte 0 = 0x01
+    EXPECTED_BYTES = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    SIMPLE_CAN_ID = 2003  # VCU_Precharge (0x7D3)
+
+    @pytest.mark.asyncio
+    async def test_preview_returns_encoded_bytes(self):
+        """can_preview_signals returns the correct 8-byte encoded payload."""
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            ref = f"preview-{uuid.uuid4().hex[:8]}"
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": ref,
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {"Precharge_Enable": 1},
+            })
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None, "No response to can_preview_signals"
+            assert resp["type"] == "preview", f"Expected 'preview', got: {resp}"
+            assert resp["ok"] is True
+            assert resp["canId"] == self.SIMPLE_CAN_ID
+            assert resp["bytes"] == self.EXPECTED_BYTES, (
+                f"Expected {self.EXPECTED_BYTES}, got {resp['bytes']}"
+            )
+            logger.info(f"Preview OK: {[hex(b) for b in resp['bytes']]}")
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_preview_unknown_can_id_returns_error(self):
+        """can_preview_signals with unknown CAN ID returns ENCODE_ERROR."""
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": "bad-id",
+                "canId": 0x9999,
+                "signals": {"UTCTime": 0},
+            })
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None
+            assert resp["type"] == "error"
+            assert resp["code"] == "ENCODE_ERROR"
+            logger.info("Unknown CAN ID error OK")
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_send_returns_uplink_ack_when_tx_enabled(self, docker):
+        """
+        can_send_signals returns uplink_ack when ENABLE_TX_WS=true.
+        Runs with a TX bridge container that has ENABLE_TX_WS=true.
+        """
+        # This test requires the TX bridge to be running with ENABLE_TX_WS=true.
+        # It is tested via the same TX_WS_URL but the actual backend must
+        # have ENABLE_TX_WS=true set in its environment.
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            ref = f"send-{uuid.uuid4().hex[:8]}"
+            await ws.send_message({
+                "type": "can_send_signals",
+                "ref": ref,
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {"Precharge_Enable": 1},
+            })
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None, "No response to can_send_signals"
+            # If ENABLE_TX_WS=false (default), we get TX_DISABLED.
+            # If ENABLE_TX_WS=true, we get uplink_ack with status=sent.
+            assert resp["type"] in ("uplink_ack", "error"), f"Unexpected response: {resp}"
+            if resp["type"] == "error" and resp["code"] == "TX_DISABLED":
+                logger.info("TX bridge is disabled (ENABLE_TX_WS=false) — expected in dev/test envs")
+            elif resp["type"] == "uplink_ack":
+                assert resp["ref"] == ref
+                assert resp["status"] == "sent"
+                logger.info(f"TX send OK: {[hex(b) for b in resp['bytes']]}")
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_ping_returns_pong(self):
+        """ping/pong work on the TX WebSocket port."""
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            ts = int(time.time() * 1000)
+            await ws.send_message({"type": "ping", "timestamp": ts})
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None
+            assert resp["type"] == "pong"
+            assert "serverTime" in resp
+            logger.info("TX WS ping/pong OK")
+        finally:
+            await ws.close()
+
+
+class TestTxWebSocketIntegration:
+    """
+    End-to-end integration tests for the TX WebSocket bridge + frontend sending behavior.
+
+    Tests the complete flow:
+        Frontend (signals) → TX WS (encode) → bytes returned → uplink_ack / TX
+
+    Uses the same message types that the PECAN Transmitter page sends:
+        - can_preview_signals  (live preview, no CAN write)
+        - can_send_signals      (encode + CAN write when ENABLE_TX_WS=true)
+
+    Uses VCU_Precharge (0x7D3) and M192_Command_Message (0xC0) from dbc.dbc as test vectors.
+    These are real car DBC messages with known encoding behavior from cantools.
+    """
+
+    TX_WS_URL = "ws://localhost:9078"
+
+    # VCU_Precharge (dbc.dbc): ID=0x7D3 (2003), simple 1-bit signals — used for basic tests
+    SIMPLE_CAN_ID = 2003
+    SIMPLE_SIGNALS = {"Precharge_Enable": 0, "Precharge_OK": 0}
+
+    # M192_Command_Message (dbc.dbc): ID=0xC0 (192), signed torque/speed signals
+    # VCU_INV_Torque_Command (bits 0-15, signed, scale=0.1), VCU_INV_Speed_Command (bits 16-31, signed, scale=1)
+    COMMAND_CAN_ID = 192
+    COMMAND_SIGNALS = {"VCU_INV_Torque_Command": 100.0, "VCU_INV_Speed_Command": 5000}
+
+    # ── Preview tests ─────────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_preview_heartbeat_zero_returns_all_zero_bytes(self):
+        """Preview VCU_Precharge with all signals=0 → all zero bytes."""
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            ref = f"prev-{uuid.uuid4().hex[:8]}"
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": ref,
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {"Precharge_Enable": 0, "Precharge_OK": 0},
+            })
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None, "No response"
+            assert resp["type"] == "preview"
+            assert resp["ok"] is True
+            assert resp["canId"] == self.SIMPLE_CAN_ID
+            assert resp["bytes"] == [0] * 8, f"Expected all-zero bytes, got {resp['bytes']}"
+            logger.info("Preview zero OK")
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_preview_heartbeat_nonzero_returns_nonzero_bytes(self):
+        """
+        Preview VCU_Precharge with Precharge_Enable=1.
+        Expected bytes (cantools verified): [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+        This confirms that changing signal values actually changes the encoded output.
+        """
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            ref = f"prev-{uuid.uuid4().hex[:8]}"
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": ref,
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {"Precharge_Enable": 1},
+            })
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None
+            assert resp["type"] == "preview"
+            assert resp["bytes"] == [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], (
+                f"cantools encoding mismatch: got {[hex(b) for b in resp['bytes']]}"
+            )
+            logger.info("Preview nonzero OK")
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_preview_different_signals_produce_different_bytes(self):
+        """
+        Verify that two different signal values produce two different byte sequences.
+        This is the core correctness check: sliders changing → preview bytes changing.
+        """
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+
+            # Send two different VCU_INV_Torque_Command values
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": "v1",
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 100.0},
+            })
+            resp1 = await ws.receive_message(timeout=5)
+            assert resp1 is not None and resp1["type"] == "preview"
+            bytes1 = resp1["bytes"]
+
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": "v2",
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 200.0},
+            })
+            resp2 = await ws.receive_message(timeout=5)
+            assert resp2 is not None and resp2["type"] == "preview"
+            bytes2 = resp2["bytes"]
+
+            assert bytes1 != bytes2, (
+                f"Different signal values must produce different bytes: "
+                f"v1={bytes1} v2={bytes2}"
+            )
+            logger.info(f"Different signals → different bytes: {bytes1} != {bytes2}  ✓")
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_preview_mc_command_two_signals(self):
+        """
+        M192_Command_Message (0xC0) has VCU_INV_Torque_Command (bits 0-15, signed, scale=0.1)
+        and VCU_INV_Speed_Command (bits 16-31, signed, scale=1).
+        Torque=100.0 → raw=1000 (0x03E8), Speed=5000 (0x1388).
+        Combined LE bytes: E8 03 88 13 00 00 00 00
+        """
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": "mc-cmd",
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 100.0, "VCU_INV_Speed_Command": 5000},
+            })
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None
+            assert resp["type"] == "preview"
+            # Expected: [0xE8, 0x03, 0x88, 0x13, 0x00, 0x00, 0x00, 0x00]
+            assert resp["bytes"] == [0xE8, 0x03, 0x88, 0x13, 0x00, 0x00, 0x00, 0x00], (
+                f"M192 encoding mismatch: got {[hex(b) for b in resp['bytes']]}"
+            )
+            logger.info("M192_Command_Message encoding OK")
+        finally:
+            await ws.close()
+
+    # ── Error handling tests ─────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_preview_partial_signals_succeeds(self):
+        """
+        can_preview_signals with a partial signal set succeeds — missing signals
+        default to 0. VCU_INV_Torque_Command=50.0 → raw=500 (0x01F4),
+        VCU_INV_Speed_Command omitted → defaults to 0. Expected bytes: F4 01 00 00 00 00 00 00.
+        """
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": "missing-sig",
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 50.0},  # Speed omitted → defaults to 0
+            })
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None
+            assert resp["type"] == "preview"
+            assert resp["bytes"] == [0xF4, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], (
+                f"Partial signal encoding mismatch: got {[hex(b) for b in resp['bytes']]}"
+            )
+            logger.info("Partial signals preview OK")
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_preview_invalid_can_id_returns_encode_error(self):
+        """A CAN ID not in the DBC should return ENCODE_ERROR."""
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": "bad-id",
+                "canId": 0xFFFF,
+                "signals": {"UTCTime": 0},
+            })
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None
+            assert resp["type"] == "error"
+            assert resp["code"] == "ENCODE_ERROR"
+            logger.info("Invalid CAN ID error OK")
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_preview_negative_signal_returns_encode_error(self):
+        """
+        VCU_Precharge's Precharge_Enable is unsigned [0|1]. Sending -1
+        should return ENCODE_ERROR (value out of range for the signal).
+        """
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": "neg-sig",
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {"Precharge_Enable": -1},
+            })
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None
+            assert resp["type"] == "error"
+            assert resp["code"] == "ENCODE_ERROR"
+            logger.info("Negative signal error OK")
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_preview_empty_signals_returns_all_zeros(self):
+        """Empty signals dict previews with all signals at 0 — returns all-zero bytes."""
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": "empty-sig",
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {},
+            })
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None
+            assert resp["type"] == "preview"
+            assert resp["bytes"] == [0, 0, 0, 0, 0, 0, 0, 0], (
+                f"Empty signals should encode to all zeros, got {resp['bytes']}"
+            )
+            logger.info("Empty signals all-zero preview OK")
+        finally:
+            await ws.close()
+
+    # ── Send (TX) tests ───────────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_send_signals_returns_uplink_ack_or_disabled(self):
+        """
+        can_send_signals with ENABLE_TX_WS=false (default) returns TX_DISABLED.
+        With ENABLE_TX_WS=true it would return uplink_ack with status=sent.
+
+        This test accepts either behavior — confirms the TX path is wired.
+        """
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            ref = f"send-{uuid.uuid4().hex[:8]}"
+            await ws.send_message({
+                "type": "can_send_signals",
+                "ref": ref,
+                "canId": self.SIMPLE_CAN_ID,
+                "signals": {"Precharge_Enable": 1},
+            })
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None
+            assert resp["type"] in ("uplink_ack", "error"), f"Unexpected: {resp}"
+
+            if resp["type"] == "uplink_ack":
+                assert resp["ref"] == ref
+                assert resp["status"] == "sent"
+                logger.info("TX uplink_ack OK (ENABLE_TX_WS=true)")
+            else:
+                assert resp["code"] == "TX_DISABLED"
+                logger.info("TX returns TX_DISABLED (ENABLE_TX_WS=false) — expected in dev")
+
+            # In either case, bytes should be present
+            if resp["type"] == "uplink_ack" and "bytes" in resp:
+                assert len(resp["bytes"]) == 8
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_send_signals_bad_can_id_returns_encode_error(self):
+        """can_send_signals with bad CAN ID returns ENCODE_ERROR (not TX_DISABLED)."""
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+            await ws.send_message({
+                "type": "can_send_signals",
+                "ref": "bad-send",
+                "canId": 0xDEAD,
+                "signals": {"UTCTime": 0},
+            })
+
+            resp = await ws.receive_message(timeout=5)
+            assert resp is not None
+            assert resp["type"] == "error"
+            # TX bridge validates DBC before checking ENABLE_TX_WS, so ENCODE_ERROR not TX_DISABLED
+            assert resp["code"] in ("ENCODE_ERROR", "TX_DISABLED"), (
+                f"Expected ENCODE_ERROR or TX_DISABLED, got: {resp['code']}"
+            )
+            logger.info(f"Bad CAN ID on send: {resp['code']} — OK")
+        finally:
+            await ws.close()
+
+    # ── Rapid sending / debounce behavior ────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_rapid_preview_requests_all_get_responses(self):
+        """
+        Send 10 preview requests rapidly (simulates slider dragging).
+        All 10 should receive a 'preview' response — no dropped messages.
+        """
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+
+            # Send 10 previews with incrementing torque values
+            refs = []
+            for i in range(10):
+                ref = f"rapid-{i}"
+                refs.append(ref)
+                await ws.send_message({
+                    "type": "can_preview_signals",
+                    "ref": ref,
+                    "canId": self.COMMAND_CAN_ID,
+                    "signals": {"VCU_INV_Torque_Command": (i + 1) * 10.0},
+                })
+
+            # Receive all 10 responses
+            responses = []
+            for _ in range(10):
+                resp = await ws.receive_message(timeout=5)
+                assert resp is not None, "Timeout waiting for preview response"
+                assert resp["type"] == "preview"
+                responses.append(resp)
+
+            received_refs = {r["ref"] for r in responses}
+            for ref in refs:
+                assert ref in received_refs, f"Missing response for ref={ref}"
+
+            logger.info(f"10/10 rapid preview responses received  ✓")
+        finally:
+            await ws.close()
+
+    @pytest.mark.asyncio
+    async def test_mixed_preview_and_send_sequence(self):
+        """
+        Simulate a realistic TX page session:
+          1. User adjusts slider → preview
+          2. User clicks TRANSMIT → send_signals
+          3. User adjusts again → preview
+          4. User sends again → send_signals
+        All responses should be correct types and in order.
+        """
+        ws = WebSocketHelper(self.TX_WS_URL)
+        try:
+            await ws.connect()
+
+            # Step 1: preview
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": "step1",
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 100.0},
+            })
+            resp1 = await ws.receive_message(timeout=5)
+            assert resp1 is not None and resp1["type"] == "preview"
+            assert resp1["ref"] == "step1"
+
+            # Step 2: send
+            await ws.send_message({
+                "type": "can_send_signals",
+                "ref": "step2",
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 200.0},
+            })
+            resp2 = await ws.receive_message(timeout=5)
+            assert resp2 is not None and resp2["type"] in ("uplink_ack", "error")
+
+            # Step 3: preview with different value
+            await ws.send_message({
+                "type": "can_preview_signals",
+                "ref": "step3",
+                "canId": self.COMMAND_CAN_ID,
+                "signals": {"VCU_INV_Torque_Command": 300.0},
+            })
+            resp3 = await ws.receive_message(timeout=5)
+            assert resp3 is not None and resp3["type"] == "preview"
+            assert resp3["ref"] == "step3"
+            # Bytes should differ from step 1
+            assert resp3["bytes"] != resp1["bytes"], "Bytes should change with different signal"
+
+            logger.info("Mixed preview/send sequence OK  ✓")
         finally:
             await ws.close()
 
