@@ -1,0 +1,7 @@
+# Ignore everything in this folder
+*
+
+# Except these files
+!SETUP_CARD.tex
+!SETUP_CARD.md
+!.gitignore

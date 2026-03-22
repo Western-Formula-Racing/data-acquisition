@@ -11,13 +11,13 @@ services:
       - "9080:9080/tcp" # WebSocket for PECAN
     environment:
       - ROLE=auto # auto, car, or base
-      - REMOTE_IP=192.168.1.100 # IP of the other RPi
+      - REMOTE_IP=192.168.1.20  # IP of the other RPi (car→base: .20 | base→car: .10)
       - UDP_PORT=5005
       - TCP_PORT=5006
       - REDIS_URL=redis://redis:6379/0 # Use service name
       - WS_PORT=9080 # WebSocket for PECAN dashboard
       - STATUS_PORT=8080 # HTTP server for status page
-      - SIMULATE=true # Set to true for simulation mode
+      - SIMULATE=false # Set to true for simulation mode (no hardware)
       - ENABLE_VIDEO=false # Enable video streaming
       - ENABLE_AUDIO=false # Enable audio streaming
       # InfluxDB logging (Base Station only)

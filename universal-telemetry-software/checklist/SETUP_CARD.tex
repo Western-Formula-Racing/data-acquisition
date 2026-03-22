@@ -1,0 +1,502 @@
+\documentclass[a5paper,10pt]{article}
+
+% ─── Page & Layout ───────────────────────────────────────────────────────────
+\usepackage[margin=6mm]{geometry}
+\usepackage{booktabs}
+\usepackage[table]{xcolor}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{amssymb}
+\usepackage{helvet}
+\usepackage[scaled=0.85]{sourcecodepro}
+\usepackage[T1]{fontenc}
+% Helvetica as default for all text
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage[colorlinks=false]{hyperref}
+
+% ─── Colors ──────────────────────────────────────────────────────────────────
+\definecolor{checkblue}{RGB}{50,125,200}
+\definecolor{gogreen}{RGB}{30,130,60}
+\definecolor{warnamber}{RGB}{200,120,0}
+\definecolor{cardbg}{RGB}{245,245,245}
+\definecolor{headbg}{RGB}{30,30,45}
+\definecolor{tblhd}{RGB}{235,235,240}
+
+% ─── Custom Commands ─────────────────────────────────────────────────────────
+\newcommand{\checkbox}[1]{\colorbox{checkblue}{\textcolor{white}{\textbf{\strut CHECK}}}\ #1}
+\newcommand{\gobox}[1]{\colorbox{gogreen}{\textcolor{white}{\textbf{\strut GO}}}\ #1}
+\newcommand{\warnbox}[1]{\colorbox{warnamber}{\textcolor{white}{\textbf{\strut WARN}}}\ #1}
+\newcommand{\cmd}[1]{{\ttfamily\scriptsize #1}}
+
+% ─── Column helpers ──────────────────────────────────────────────────────────
+% A5 text width ≈ 126mm
+
+\begin{document}
+\raggedright
+\small
+\pagestyle{empty}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% TITLE
+% ─────────────────────────────────────────────────────────────────────────────
+\noindent\colorbox{headbg}{\textcolor{white}{\textbf{\strut\ UTS QUICK REFERENCE CARD -- DAQ RADIO}}}
+\vspace{1mm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% IP / ROLE OVERVIEW
+% ─────────────────────────────────────────────────────────────────────────────
+\rowcolors{1}{tblhd}{white}
+\noindent
+\begin{tabular}{p{26mm}p{48mm}p{48mm}}
+  \hline
+  \rowcolor{tblhd}
+  \textbf{} & \textbf{CAR side} & \textbf{BASE side} \\
+  \hline
+  RPi IP       & \cmd{192.168.1.10} & \cmd{192.168.1.20} \\
+  Radio IP     & \cmd{192.168.1.11} & \cmd{192.168.1.21} \\
+  \cmd{REMOTE\_IP} & \cmd{192.168.1.20} (base RPi) & \cmd{192.168.1.10} (car RPi) \\
+  CAN HAT      & Required (\cmd{can0}) & Not needed \\
+  Serves       & TX WebSocket :9078 & PECAN dashboard :3000 \\
+  Role trigger & \cmd{can0} present & \cmd{can0} absent \\
+  LED          & Blue on \cmd{gpio26} & No blue LED \\
+  \hline
+\end{tabular}
+\vspace{2mm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{0 -- RPi INITIAL SETUP}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\checkbox{System Packages}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{sudo apt update \&\& sudo apt install -y git curl} \\[1mm]
+  \textbf{PASS:} no errors \quad \textbf{FAIL:} network issue, check connection \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{Install Docker}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{curl -fsSL https://get.docker.com | sh} \\[1mm]
+  \cmd{sudo usermod -aG docker \$USER \&\& newgrp docker} \\[1mm]
+  \textbf{PASS:} \cmd{docker --version} returns a version \\
+  \textbf{FAIL:} permission denied \quad \textit{Fix:} log out and back in \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{Install GitHub CLI (gh)}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{sudo apt install -y gh} \quad (Ubuntu 24.04+) \\[1mm]
+  \textit{Older Ubuntu:} follow \cmd{cli.github.com/manual/installation} \\[1mm]
+  \textbf{PASS:} \cmd{gh --version} returns a version \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{Set Static IP -- Both RPis}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \textbf{Car RPi:} \cmd{192.168.1.10} \quad \textbf{Base RPi:} \cmd{192.168.1.20} \\[1mm]
+  Find the active netplan file: \cmd{ls /etc/netplan/} \\
+  \cmd{sudo nano /etc/netplan/01-netcfg.yaml} \quad (filename may differ) \\[1mm]
+  \cmd{network:} \\
+  \cmd{\ \ version: 2} \\
+  \cmd{\ \ ethernets:} \\
+  \cmd{\ \ \ \ eth0:} \quad \textit{(check interface name with \cmd{ip link})} \\
+  \cmd{\ \ \ \ \ \ dhcp4: no} \\
+  \cmd{\ \ \ \ \ \ addresses: [192.168.1.10/24]} \quad (car) or \cmd{[192.168.1.20/24]} (base) \\[1mm]
+  \cmd{sudo netplan apply} \\[1mm]
+  \textbf{PASS:} \cmd{ip addr show eth0} shows the assigned IP \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{Auth \& Clone Repo}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{gh auth login} \quad (follow prompts -- HTTPS, then Authenticate via browser) \\[1mm]
+  \cmd{gh repo clone Western-Formula-Racing/daq-radio \textasciitilde/daq-radio} \\[1mm]
+  \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software} \\[1mm]
+  \textbf{PASS:} \cmd{ls} shows \cmd{docker-compose.prod.yml} \\
+  \textbf{FAIL:} auth error \quad \textit{Fix:} re-run \cmd{gh auth login} \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{GHCR Docker Login}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Images are hosted at \cmd{ghcr.io/western-formula-racing/} (private -- org membership required). \\
+  Use the gh CLI token -- no separate PAT needed: \\[1mm]
+  \cmd{echo \$(gh auth token) | docker login ghcr.io -u \$(gh api user --jq .login) --password-stdin} \\[1mm]
+  \textbf{PASS:} \cmd{Login Succeeded} \\
+  \textbf{FAIL:} \cmd{unauthorized} \quad \textit{Fix:} ensure your GitHub account is a member of the \\
+  \cmd{Western-Formula-Racing} org, then re-run \cmd{gh auth login} \\[1mm]
+  \textit{Note:} this login persists in \cmd{\textasciitilde/.docker/config.json} -- only needed once per RPi. \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{1 -- UBIQUITI RADIO LINK}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\checkbox{Both Radios Powered}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Car-side radio: \cmd{192.168.1.11} \quad Base-side radio: \cmd{192.168.1.21} \\[1mm]
+  \textbf{PASS:} power LED on each unit, no fault indicators \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{Radio Management Access}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  From any device on the subnet: \\
+  \cmd{http://192.168.1.11} -- car-side radio \quad \cmd{http://192.168.1.21} -- base-side radio \\[1mm]
+  \textbf{PASS:} Ubiquiti login page loads \\
+  \textbf{FAIL:} timeout \quad \textit{Fix:} verify host IP is on \cmd{192.168.1.x/24}, check PoE injector \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{Link Status}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Login to either radio $\rightarrow$ \textbf{Main} tab \\[1mm]
+  \textbf{PASS:} Status = \textbf{Connected}, Signal $\geq$ \cmd{-75 dBm}, TX rate $\geq$ \cmd{50 Mbps} \\
+  \textbf{FAIL:} Disconnected or very low signal \\
+  \textit{Fix:} check antenna alignment, PoE power, and that both radios are on same SSID/pairing \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{End-to-End Ping Through Radio}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  From car RPi (\cmd{192.168.1.10}): \\
+  \cmd{ping 192.168.1.21} \quad (base radio) \\
+  \cmd{ping 192.168.1.20} \quad (base RPi) \\[1mm]
+  \textbf{PASS:} replies $<$ 10ms at bench, $<$ 50ms in field \\
+  \textbf{FAIL:} 100\% loss \quad \textit{Fix:} check radio link status above, then check base RPi static IP \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{2 -- HARDWARE + OS}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\checkbox{CAN HAT -- Car RPi only}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{lsmod $\vert$ grep -E "can$\,$\textbar{}mcp"} \\[1mm]
+  \cmd{dmesg $\vert$ grep -i mcp} \\[1mm]
+  \textbf{PASS:} modules loaded, no kernel errors \\
+  \textbf{FAIL:} empty output or errors \\
+  \textit{Fix:} See README \S Hardware Setup. Add \cmd{can can\_raw mcp251xfd} to \cmd{/etc/modules}.
+  Edit \cmd{/boot/firmware/config.txt}:
+  \cmd{dtoverlay=mcp251xfd,oscillator=20000000,interrupt=25}.
+  Reboot. \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{CAN Interface Up}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{ip link show can0} \\[1mm]
+  \textbf{PASS:} \cmd{can0: <NOARP,UP,LOWER\_UP> ...} \\
+  \textbf{FAIL:} \cmd{can0: ERROR} or device missing \\
+  \textit{Fix:} \cmd{sudo systemctl start can0} \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{3 -- REMOTE\_IP CONFIG}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\warnbox{Most common misconfiguration. Wrong REMOTE\_IP = no data flow.}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{grep REMOTE\_IP docker-compose.prod.yml} \\[1mm]
+  \textbf{CAR RPi} (\cmd{192.168.1.10}): set \cmd{REMOTE\_IP=192.168.1.20} (base IP) \\
+  \textbf{BASE RPi} (\cmd{192.168.1.20}): set \cmd{REMOTE\_IP=192.168.1.10} (car IP) \\[1mm]
+  Default in \cmd{docker-compose.prod.yml} is \cmd{192.168.1.20} -- correct for car, change on base. \\[1mm]
+  Edit: \cmd{nano docker-compose.prod.yml} \quad Apply: \cmd{docker compose -f docker-compose.prod.yml down \&\& docker compose -f docker-compose.prod.yml up -d} \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{4 -- PULL \& START SERVICES}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\gobox{Pull Pre-built Images (Prod)}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software} \\
+  \cmd{docker compose -f docker-compose.prod.yml pull} \\
+  \cmd{docker compose -f docker-compose.prod.yml up -d} \\[1mm]
+  \textit{Note:} Set \cmd{REMOTE\_IP} (see \S 3) before this step. \\
+  \textit{Build locally instead:} \cmd{docker compose up -d} (dev only, slow on RPi) \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{Verify Containers}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{docker compose -f docker-compose.prod.yml ps} \\[1mm]
+  \textbf{PASS:} telemetry, redis, pecan all running \\
+  \textbf{FAIL:} any container Exited or missing \\
+  \textit{Fix:} \cmd{docker compose -f docker-compose.prod.yml logs telemetry} \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{Verify Redis}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{redis-cli ping} \\[1mm]
+  \textbf{PASS:} \cmd{PONG} \quad \textbf{FAIL:} Connection refused \\
+  \textit{Fix:} \cmd{docker compose -f docker-compose.prod.yml restart redis} \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{5 -- ROLE AUTO-DETECTION}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\gobox{Check Role}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "Auto-detected Role"} \\[1mm]
+  \textbf{CAR:} \cmd{Auto-detected Role: car} -- \cmd{can0} found \\
+  \textbf{BASE:} \cmd{Auto-detected Role: base} -- no \cmd{can0} \\
+  \textit{Override:} set \cmd{ROLE=car} or \cmd{ROLE=base} in docker-compose.prod.yml \\
+\end{tabular}
+
+\vspace{1mm}
+\warnbox{Wrong role = wrong LED pattern + no data on PECAN.}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{6 -- DATA FLOW CHECKS}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\gobox{Car: UDP Sending}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "UDP"} \\[1mm]
+  \textbf{PASS:} \cmd{Sending UDP packets to 192.168.1.20:5005} \\
+  \textbf{FAIL:} silent \quad \textit{Fix:} check REMOTE\_IP + can0 \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{Base: UDP Receiving}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "Initial sequence"} \\[1mm]
+  \textbf{PASS:} \cmd{Initial sequence:} + incrementing numbers \\
+  \textbf{FAIL:} silent \quad \textit{Fix:} check REMOTE\_IP + ping car \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{Car: CAN Reader}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "CAN Reader"} \\[1mm]
+  \textbf{PASS:} \cmd{CAN Reader started on can0} \\
+  \textbf{FAIL:} silent \quad \textit{Fix:} \cmd{... logs telemetry $\vert$ grep -i can} \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{7 -- PECAN DASHBOARD}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\textbf{RX Page (Base RPi):} \cmd{http://192.168.1.20:3000}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \textbf{PASS:} Live CAN messages updating, rate > 0 msg/s \\
+  \textbf{FAIL:} No data, 0 msg/s \quad \textit{Fix:} check base REMOTE\_IP \\
+\end{tabular}
+
+\vspace{1mm}
+\textbf{TX Page (Car RPi):} \cmd{http://192.168.1.10:3000/transmitter}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \textbf{PASS:} WebSocket Connected, CAN preview decodes signals \\
+  \textbf{FAIL:} Disconnected or TX\_DISABLED \\
+  \textit{Fix TX\_DISABLED:} set \cmd{ENABLE\_TX\_WS=true} (see \S 8) \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{8 -- ENABLE TX WEBSOCKET (Car Only)}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\warnbox{Disabled by default. Enable only when sending CAN frames from TX page.}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Edit \cmd{docker-compose.prod.yml}: set \cmd{ENABLE\_TX\_WS=true} \\
+  Apply: \cmd{docker compose -f docker-compose.prod.yml down \&\& docker compose -f docker-compose.prod.yml up -d} \\[1mm]
+  Verify: \cmd{... logs telemetry $\vert$ grep "TX WebSocket"} \\
+  Expected: \cmd{TX WebSocket bridge started on port 9078 ... ENABLE\_TX\_WS=true ...} \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{9 -- INFLUX LOGGING (Base Only)}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\gobox{InfluxDB Health}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{curl http://localhost:9000/health} \\[1mm]
+  \textbf{PASS:} \cmd{\{"status":"ok"\}} \quad \textbf{FAIL:} connection refused -- wait 30s, retry \\
+  Grafana: \cmd{http://192.168.1.20:8087} \quad user: \cmd{admin} \quad pass: \cmd{admin} \\
+  \textit{Token file:} \cmd{influxdb3-admin-token.json} is pre-committed -- no manual setup needed. \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{Verify Write Table -- Base Only}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "table="} \\[1mm]
+  \textbf{PASS:} \cmd{table=WFR26\_base} (or \cmd{WFR27\_base} etc.) \\
+  \textbf{FAIL:} \cmd{table=WFR26} without \cmd{\_base} suffix -- UTS would overwrite the source-of-truth CSV table \\[1mm]
+  \textit{Root cause:} \cmd{INFLUX\_TABLE} in \cmd{docker-compose.prod.yml} must be \cmd{\$\{INFLUX\_SEASON:-WFR26\}\_base} \\
+  \textit{Schema:} wide format -- one row per CAN message, each decoded signal as a column. \\
+  \textit{Separation:} \cmd{WFR26\_base} = live radio telemetry \quad \cmd{WFR26} = uploaded CSV (read-only) \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{10 -- LED REFERENCE}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\rowcolors{1}{tblhd}{white}
+\noindent
+\begin{tabularx}{\linewidth}{p{26mm}p{20mm}p{12mm}X}
+  \toprule
+  \textbf{LED} & \textbf{Color} & \textbf{GPIO} & \textbf{Meaning} \\
+  \midrule
+  CAN activity & Blue & 26 & Car: solid = CAN flowing, double-flash = no CAN >1s \\
+  CAN telemetry & Yellow & 6 & Base+Car: solid = process alive \\
+  WebSocket & Green & 23 & Connected to PECAN \\
+  Audio & White & 22 & Audio streaming active \\
+  Video & Red & 24 & Video streaming active \\
+  \bottomrule
+\end{tabularx}
+\vspace{2mm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{11 -- FAST TROUBLESHOOTING}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\rowcolors{1}{cardbg}{white}
+\noindent
+\begin{tabularx}{\linewidth}{p{26mm}p{50mm}X}
+  \toprule
+  \textbf{Symptom} & \textbf{Check First} & \textbf{Fix} \\
+  \midrule
+  No data on PECAN & Base REMOTE\_IP correct? & Set to \cmd{192.168.1.10} \\
+  Car not sending UDP & Car REMOTE\_IP correct? & Set to \cmd{192.168.1.20} \\
+  Ping fails across radio & Radio link up? & Check \S 1 radio status \\
+  can0 ERROR & CAN HAT driver loaded? & \cmd{sudo modprobe mcp251xfd} \\
+  TX\_DISABLED & ENABLE\_TX\_WS=true? & Edit docker-compose.prod.yml \\
+  Wrong role on base & can0 on base RPi? & Base should NOT have CAN HAT \\
+  Influx not logging & ENABLE\_INFLUX\_LOGGING=true? & Check docker-compose.prod.yml \\
+  Redis connection error & \cmd{docker compose ps redis} & \cmd{docker compose restart redis} \\
+  PECAN disconnected & WS\_PORT=9080? & Check docker-compose.prod.yml env \\
+  GHCR pull fails & Org member + docker login? & Re-run \S 0 GHCR step \\
+  \bottomrule
+\end{tabularx}
+\vspace{2mm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{12 -- KEY PORTS}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\rowcolors{1}{tblhd}{white}
+\noindent
+\begin{tabularx}{\linewidth}{p{14mm}p{22mm}X}
+  \toprule
+  \textbf{Port} & \textbf{Protocol} & \textbf{Use} \\
+  \midrule
+  5005 & UDP & CAN data streaming (car $\rightarrow$ base) \\
+  5006 & TCP & Packet retransmission \\
+  6379 & TCP & Redis \\
+  8080 & HTTP & Status monitoring page \\
+  8087 & HTTP & Grafana dashboards \\
+  9000 & HTTP & InfluxDB3 API \\
+  9080 & WebSocket & PECAN telemetry feed \\
+  9078 & WebSocket & PECAN TX CAN write (car only) \\
+  3000 & HTTP & PECAN dashboard UI \\
+  \bottomrule
+\end{tabularx}
+\vspace{2mm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{13 -- ENV VAR QUICKREF}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\rowcolors{1}{tblhd}{white}
+\noindent
+\begin{tabularx}{\linewidth}{p{40mm}p{20mm}X}
+  \toprule
+  \textbf{Variable} & \textbf{Default} & \textbf{Description} \\
+  \midrule
+  ROLE & auto & Force car or base (auto-detected from can0) \\
+  REMOTE\_IP & 192.168.1.20 & IP of the other RPi (change on base to .10) \\
+  UDP\_PORT & 5005 & Real-time UDP streaming port \\
+  TCP\_PORT & 5006 & Retransmission port \\
+  WS\_PORT & 9080 & WebSocket port for PECAN \\
+  ENABLE\_TX\_WS & false & Enable CAN writes from TX page \\
+  SIMULATE & false & Simulate CAN (no hardware needed) \\
+  ENABLE\_VIDEO & false & Video streaming \\
+  ENABLE\_AUDIO & false & Audio streaming \\
+  ENABLE\_INFLUX\_LOGGING & true & Log telemetry to local InfluxDB3 \\
+  \bottomrule
+\end{tabularx}
+\vspace{2mm}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section*{14 -- DOCKER COMPOSE FILES}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\noindent
+\begin{tabularx}{\linewidth}{X}
+  \cmd{docker-compose.prod.yml} -- \textbf{Prod} (pulls GHCR images -- use this on RPi) \\
+  \cmd{docker-compose.yml} -- Dev (builds locally, slow on RPi) \\[1mm]
+  \textbf{Prod deploy:} \\
+  \cmd{docker compose -f docker-compose.prod.yml pull} \\
+  \cmd{docker compose -f docker-compose.prod.yml up -d} \\
+\end{tabularx}
+
+% ─────────────────────────────────────────────────────────────────────────────
+% FOOTER — WHEN IN DOUBT
+% ─────────────────────────────────────────────────────────────────────────────
+\vspace{1mm}
+\noindent
+\begin{tabularx}{\linewidth}{|X|X|}
+  \hline
+  \rowcolor{headbg}
+  \multicolumn{2}{|c|}{\color{white}\textbf{WHEN IN DOUBT -- docker compose -f docker-compose.prod.yml logs telemetry}} \\
+  \hline
+  \rowcolors{1}{cardbg}{white}
+  \cmd{grep "UDP"} -- Car sending? & \cmd{grep "Initial sequence"} -- Base receiving? \\
+  \cmd{grep "CAN Reader"} -- Car reading CAN? & \cmd{grep -i error} -- Any errors? \\
+  \cmd{grep "WebSocket"} -- WS bridge running? & \cmd{grep "Auto-detected"} -- Role correct? \\
+  \hline
+\end{tabularx}
+
+\end{document}
