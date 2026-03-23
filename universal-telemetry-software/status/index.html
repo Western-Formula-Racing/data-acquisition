@@ -424,11 +424,11 @@
 
         function prefillNow() {
             // Use local browser time — assumes the user's laptop clock is correct
+            // datetime-local expects local wall-clock time (not UTC), so format manually.
             const now = new Date();
-            now.setSeconds(Math.round(now.getSeconds()));
-            // datetime-local format: YYYY-MM-DDTHH:MM:SS
-            const iso = now.toISOString().slice(0, 19);
-            document.getElementById('timeInput').value = iso;
+            const pad = n => String(n).padStart(2, '0');
+            const local = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            document.getElementById('timeInput').value = local;
         }
 
         async function setTime() {

@@ -39,6 +39,7 @@ UPLINK_RATE_LIMIT = int(os.getenv("UPLINK_RATE_LIMIT", "10"))
 # ── DBC / CAN bus (lazy init) ────────────────────────────────────────────────
 
 _can_bus = None
+_can_bus_init_failed = False  # True when bus open was attempted but failed (non-sim)
 _db = None  # cantools database
 
 
@@ -57,8 +58,8 @@ def _init_dbc():
 
 def _init_can_bus():
     """Open CAN bus for writing (car mode)."""
-    global _can_bus
-    if _can_bus is not None:
+    global _can_bus, _can_bus_init_failed
+    if _can_bus is not None or _can_bus_init_failed:
         return
     if os.getenv("SIMULATE", "false").lower() == "true":
         logger.info("TX CAN bus: simulation mode (no hardware)")
@@ -67,7 +68,8 @@ def _init_can_bus():
         _can_bus = can.interface.Bus(channel="can0", bustype="socketcan")
         logger.info("TX CAN bus opened for direct writes on can0")
     except Exception as e:
-        logger.warning(f"Could not open CAN bus for TX ({e}). Writes will be logged only.")
+        logger.error(f"Could not open CAN bus for TX ({e}). Writes are unavailable.")
+        _can_bus_init_failed = True
 
 
 def _encode_signals(can_id: int, signals: dict):
@@ -93,6 +95,8 @@ def _encode_signals(can_id: int, signals: dict):
 
 def _write_can(can_id: int, data: bytes, ref: str):
     """Write encoded bytes to CAN bus. Returns error string or None."""
+    if _can_bus_init_failed:
+        return "CAN bus unavailable (failed to open on startup)"
     if _can_bus is None:
         logger.info(f"CAN write (sim): canId={can_id} ref={ref} bytes={list(data)}")
         return None
@@ -155,7 +159,9 @@ async def _handle_client_message(websocket, raw: str):
         await websocket.send(json.dumps({"type": "error", "code": "UNKNOWN_TYPE", "message": _ERRORS["UNKNOWN_TYPE"]}))
         return
 
-    if not ENABLE_TX_WS:
+    # can_preview_signals is allowed even when TX writes are disabled — it never touches the bus.
+    # Only can_send_signals requires ENABLE_TX_WS=true.
+    if not ENABLE_TX_WS and msg_type == "can_send_signals":
         await websocket.send(json.dumps({"type": "error", "code": "TX_DISABLED", "message": _ERRORS["TX_DISABLED"]}))
         return
 
@@ -188,7 +194,10 @@ async def _handle_client_message(websocket, raw: str):
 
     data_bytes, err = _encode_signals(can_id, signals)
     if err:
-        await websocket.send(json.dumps({"type": "error", "code": "ENCODE_ERROR", "message": f"{_ERRORS['ENCODE_ERROR']}: {err}"}))
+        if err.startswith("INTERNAL_ERROR"):
+            await websocket.send(json.dumps({"type": "error", "code": "INTERNAL_ERROR", "message": f"{_ERRORS['INTERNAL_ERROR']}: {err}"}))
+        else:
+            await websocket.send(json.dumps({"type": "error", "code": "ENCODE_ERROR", "message": f"{_ERRORS['ENCODE_ERROR']}: {err}"}))
         return
 
     # ── can_preview_signals: respond with bytes only ───────────────────────────

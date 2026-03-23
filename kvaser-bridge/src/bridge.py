@@ -287,10 +287,12 @@ class Bridge:
                         # Dashboard → CAN bus: {"type": "tx", "canId": N, "data": [...]}
                         can_id = int(data['canId'])
                         payload = bytes(data['data'])
+                        if len(payload) > 8:
+                            continue
                         frame = can.Message(
                             arbitration_id=can_id,
                             data=payload,
-                            is_extended_id=False,
+                            is_extended_id=can_id > 0x7FF,
                         )
                         await loop.run_in_executor(None, self._bus.send, frame)
                         with self._status_lock:

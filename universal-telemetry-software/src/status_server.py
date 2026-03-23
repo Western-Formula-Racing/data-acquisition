@@ -20,6 +20,13 @@ logger = logging.getLogger("StatusServer")
 
 PORT = int(os.getenv("STATUS_PORT", 8080))
 DIRECTORY = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/status"
+# SET_TIME_ENABLED must be explicitly set to "true" to allow the /set-time endpoint.
+# This prevents unauthenticated callers from modifying the host clock.
+SET_TIME_ENABLED = os.getenv("SET_TIME_ENABLED", "false").lower() == "true"
+
+
+class StatusTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
 
 
 class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
@@ -42,6 +49,9 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == '/set-time':
+            if not SET_TIME_ENABLED:
+                self._json_response(403, {"error": "set-time is disabled (set SET_TIME_ENABLED=true)"})
+                return
             self._handle_set_time()
         else:
             self.send_response(404)
@@ -87,8 +97,7 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 def run_status_server():
     """Main entry point for status HTTP server."""
     os.chdir(DIRECTORY)
-    with socketserver.TCPServer(("0.0.0.0", PORT), StatusHTTPRequestHandler) as httpd:
-        httpd.allow_reuse_address = True
+    with StatusTCPServer(("0.0.0.0", PORT), StatusHTTPRequestHandler) as httpd:
         logger.info(f"Serving status page at http://0.0.0.0:{PORT}")
         try:
             httpd.serve_forever()

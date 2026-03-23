@@ -237,6 +237,7 @@ class TelemetryNode:
                         epoch_ms = int(time.time() * 1000)
                         timestamp_bytes = struct.pack("<q", epoch_ms)  # int64 LE, matches ECU format
                         self._handle_ecu_timestamp(timestamp_bytes)   # also updates clock offset
+                        self._sync_source = "system_clock"            # override: not a real ECU sync
                         hb_msg = CANMessage(self._corrected_time(), ECU_TIMESTAMP_ID, timestamp_bytes)
                         await queue.put(hb_msg)
                 except Exception as e:

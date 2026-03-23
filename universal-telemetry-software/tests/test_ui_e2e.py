@@ -6,7 +6,6 @@ import logging
 from .test_helpers import (
     RedisHelper,
     DockerHelper,
-    wait_for_service,
 )
 
 logging.basicConfig(level=logging.INFO)

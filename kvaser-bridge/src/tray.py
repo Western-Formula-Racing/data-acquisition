@@ -244,10 +244,14 @@ class TrayApp:
     def _update_hw_controls_state(self, bridge_running: bool = False) -> None:
         """Disable channel/bitrate when interface doesn't use them, or bridge is running."""
         iface = self._interface_var.get()
-        no_hw = iface in ('vcan', 'socketcan')
-        state = 'disabled' if (bridge_running or no_hw) else 'readonly'
-        self._ch_combo.configure(state=state)
-        self._br_combo.configure(state=state)
+        # Channel selector: not applicable for vcan/socketcan (no hardware channel index)
+        no_ch = iface in ('vcan', 'socketcan')
+        ch_state = 'disabled' if (bridge_running or no_ch) else 'readonly'
+        self._ch_combo.configure(state=ch_state)
+        # Bitrate selector: not applicable for vcan; socketcan still needs a bitrate for ip link set
+        no_br = iface == 'vcan'
+        br_state = 'disabled' if (bridge_running or no_br) else 'readonly'
+        self._br_combo.configure(state=br_state)
 
     def _on_channel_change(self, event) -> None:
         self._bridge.set_channel(self._channel_var.get())

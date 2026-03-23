@@ -48,7 +48,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--no-tls', action='store_true',
         help='Serve plain ws:// instead of wss:// (no certificate required). '
-             'Useful for Pecna dashboard on local network — defaults port to 9080.',
+             'Useful for PECAN dashboard on local network — defaults port to 9080.',
     )
     return parser.parse_args()
 
@@ -148,7 +148,7 @@ def main() -> None:
             try:
                 app.quit()
             except Exception:
-                pass
+                log.exception("Error while quitting application")
 
     def on_signal(sig, frame):
         log.info('Received signal %s, shutting down...', sig)

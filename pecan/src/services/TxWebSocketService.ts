@@ -38,8 +38,17 @@ const TX_WS_PORT = 9078;
 function buildTxWsUrl(): string {
   const isSecure = window.location.protocol === 'https:';
   const protocol = isSecure ? 'wss' : 'ws';
-  const hostname = window.location.hostname;
-  // TX WS always runs alongside UTS on the same host; same port convention
+  // If a custom RX WS URL is configured in Settings, derive the TX host from it
+  // so that remote deployments (PECAN pointing at a separate UTS box) work correctly.
+  const customRxUrl = localStorage.getItem('custom-ws-url');
+  let hostname = window.location.hostname;
+  if (customRxUrl) {
+    try {
+      hostname = new URL(customRxUrl).hostname;
+    } catch {
+      // malformed custom URL — fall back to window.location.hostname
+    }
+  }
   return `${protocol}://${hostname}:${TX_WS_PORT}`;
 }
 
