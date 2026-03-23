@@ -39,7 +39,6 @@ UPLINK_RATE_LIMIT = int(os.getenv("UPLINK_RATE_LIMIT", "10"))
 # ── DBC / CAN bus (lazy init) ────────────────────────────────────────────────
 
 _can_bus = None
-_can_bus_init_failed = False  # True when bus open was attempted but failed (non-sim)
 _db = None  # cantools database
 
 
@@ -58,8 +57,8 @@ def _init_dbc():
 
 def _init_can_bus():
     """Open CAN bus for writing (car mode)."""
-    global _can_bus, _can_bus_init_failed
-    if _can_bus is not None or _can_bus_init_failed:
+    global _can_bus
+    if _can_bus is not None:
         return
     if os.getenv("SIMULATE", "false").lower() == "true":
         logger.info("TX CAN bus: simulation mode (no hardware)")
@@ -68,8 +67,7 @@ def _init_can_bus():
         _can_bus = can.interface.Bus(channel="can0", bustype="socketcan")
         logger.info("TX CAN bus opened for direct writes on can0")
     except Exception as e:
-        logger.error(f"Could not open CAN bus for TX ({e}). Writes are unavailable.")
-        _can_bus_init_failed = True
+        logger.warning(f"Could not open CAN bus for TX ({e}). Writes will be logged only.")
 
 
 def _encode_signals(can_id: int, signals: dict):
@@ -87,7 +85,8 @@ def _encode_signals(can_id: int, signals: dict):
         padded.update(signals)
         data = msg.encode(padded)
         return list(data), None
-    except cantools.database.EncodeError as e:
+    except (cantools.database.EncodeError, KeyError) as e:
+        # KeyError = unknown message ID; EncodeError = bad signal value — both are user input errors.
         return None, f"ENCODE_ERROR: {e}"
     except Exception as e:
         return None, f"INTERNAL_ERROR: {e}"
@@ -95,8 +94,6 @@ def _encode_signals(can_id: int, signals: dict):
 
 def _write_can(can_id: int, data: bytes, ref: str):
     """Write encoded bytes to CAN bus. Returns error string or None."""
-    if _can_bus_init_failed:
-        return "CAN bus unavailable (failed to open on startup)"
     if _can_bus is None:
         logger.info(f"CAN write (sim): canId={can_id} ref={ref} bytes={list(data)}")
         return None
