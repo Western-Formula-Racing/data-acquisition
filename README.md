@@ -120,7 +120,7 @@ Convenience deployment for the PECAN WebSocket broadcast server. The dashboard i
 ### Prerequisites
 
 - **Node.js** (v18+) and npm
-- **Python** 3.8+
+- **Python** 3.11+
 - **Redis** server (bundled via Docker Compose in `universal-telemetry-software` for most deployments)
 - **Docker** and Docker Compose (for containerized deployment)
 
@@ -151,8 +151,8 @@ docker compose up -d
 
 #### Car Simulator
 ```bash
-cd car-simulate
-python websocket_sender.py
+cd car-simulate/persistent-broadcast
+docker compose up -d
 ```
 
 ## CAN Message Categories
@@ -171,10 +171,10 @@ Example categories:
 
 ## Docker Deployment
 
-### Development Environment
+### Simulator / Demo
 ```bash
 cd car-simulate/persistent-broadcast
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Production Deployment (WebSocket backend)
@@ -196,10 +196,10 @@ daq-radio/
 │   │   └── config/     # Category configuration
 │   └── public/         # Static assets
 ├── universal-telemetry-software/  # Car/base telemetry stack (UTS)
+├── flight-recorder/    # React app for post-run data review and upload
 ├── car-simulate/       # Testing and simulation tools
 ├── ws-backend/         # WebSocket broadcast server deployment
 ├── dev-utils/          # Developer utilities and scripts
-└── start_system.sh     # Automated startup script
 ```
 
 ### Technology Stack
