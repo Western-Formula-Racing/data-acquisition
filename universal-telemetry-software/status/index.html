@@ -163,6 +163,58 @@
             color: #fca5a5;
         }
 
+        .sync-banner {
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .sync-banner.waiting {
+            background: rgba(251, 191, 36, 0.12);
+            border: 1px solid #fbbf24;
+        }
+        .sync-banner.synced {
+            background: rgba(74, 222, 128, 0.08);
+            border: 1px solid #4ade80;
+        }
+        .sync-banner-text { font-size: 0.95rem; }
+        .sync-banner-text strong { display: block; margin-bottom: 4px; font-size: 1.05rem; }
+        .sync-banner.waiting .sync-banner-text strong { color: #fbbf24; }
+        .sync-banner.synced  .sync-banner-text strong { color: #4ade80; }
+        .sync-banner-text small { color: #8e8eab; font-size: 0.8rem; }
+
+        .time-form {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .time-form input[type="datetime-local"] {
+            background: #35354c;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            color: #fff;
+            padding: 7px 10px;
+            font-size: 0.85rem;
+        }
+        .time-form button, .btn {
+            padding: 7px 16px;
+            border-radius: 6px;
+            border: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-amber { background: #fbbf24; color: #1a1a1a; }
+        .btn-amber:hover { background: #f59e0b; }
+        .btn-green { background: #4ade80; color: #1a1a1a; }
+        .btn-green:hover { background: #22c55e; }
+        .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+
         .performance-footer {
             position: sticky;
             bottom: 0;
@@ -200,6 +252,19 @@
         <div class="connection-status" id="connectionStatus">
             <span class="status-indicator status-disconnected"></span>
             Connecting...
+        </div>
+
+        <!-- ECU / Clock sync banner -->
+        <div class="sync-banner waiting" id="syncBanner">
+            <div class="sync-banner-text">
+                <strong id="syncTitle">⏳ Waiting for ECU time sync</strong>
+                <small id="syncDetail">Data is held until a valid clock source is established (ECU RTC, NTP, or manual set)</small>
+            </div>
+            <div class="time-form" id="timeForm">
+                <input type="datetime-local" id="timeInput" step="1">
+                <button class="btn btn-amber btn-sm" onclick="prefillNow()">Now ↺</button>
+                <button class="btn btn-amber btn-sm" onclick="setTime()">Set RPi Clock</button>
+            </div>
         </div>
 
         <div class="status-grid">
@@ -282,6 +347,7 @@
         let totalRecovered = 0;
         let rateHistory = [];
         const MAX_HISTORY = 60;
+        let ecuSynced = false;
 
         const canvas = document.getElementById('rateChart');
         const ctx = canvas.getContext('2d');
@@ -336,8 +402,62 @@
             }
         }
 
+        const SOURCE_LABELS = {
+            'ecu_rtc':      { text: '✅ Synced — ECU RTC',        cls: 'synced',  detail: 'Timestamps from ECU DS3231 battery-backed RTC' },
+            'system_clock': { text: '✅ Synced — RPi system clock', cls: 'synced',  detail: 'RPi clock was past 2026-03-22 at startup (NTP or manual set)' },
+            'none':         { text: '⏳ Waiting for ECU time sync', cls: 'waiting', detail: 'Data is held until a valid clock source is established (ECU RTC, NTP, or manual set below)' },
+        };
+
+        function updateSyncBanner(synced, source) {
+            ecuSynced = synced;
+            const banner = document.getElementById('syncBanner');
+            const title  = document.getElementById('syncTitle');
+            const detail = document.getElementById('syncDetail');
+            const form   = document.getElementById('timeForm');
+            const info   = SOURCE_LABELS[source] || SOURCE_LABELS['none'];
+
+            banner.className = 'sync-banner ' + info.cls;
+            title.textContent  = info.text;
+            detail.textContent = info.detail;
+            form.style.display = synced ? 'none' : 'flex';
+        }
+
+        function prefillNow() {
+            // Use local browser time — assumes the user's laptop clock is correct
+            // datetime-local expects local wall-clock time (not UTC), so format manually.
+            const now = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            const local = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            document.getElementById('timeInput').value = local;
+        }
+
+        async function setTime() {
+            const val = document.getElementById('timeInput').value;
+            if (!val) { alert('Enter a date/time first'); return; }
+            try {
+                const res = await fetch('/set-time', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ time: val.replace('T', ' ') }),
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    document.getElementById('syncTitle').textContent  = '🕐 Clock set — waiting for data to ungate…';
+                    document.getElementById('syncDetail').textContent = 'RPi clock: ' + json.time;
+                } else {
+                    alert('Failed to set time: ' + json.error);
+                }
+            } catch (e) {
+                alert('Request failed: ' + e);
+            }
+        }
+
         function updateStats(stats) {
             const { received, missing, recovered } = stats;
+
+            if (stats.ecu_synced !== undefined) {
+                updateSyncBanner(stats.ecu_synced, stats.ecu_sync_source || 'none');
+            }
 
             document.getElementById('rxRate').textContent = received || 0;
             document.getElementById('missRate').textContent = missing || 0;

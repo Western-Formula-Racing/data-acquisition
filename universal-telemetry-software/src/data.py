@@ -3,7 +3,6 @@ import socket
 import struct
 import time
 import os
-from datetime import datetime, timezone
 import json
 import logging
 import can
@@ -40,6 +39,14 @@ class CANMessage:
         timestamp, can_id, data = struct.unpack("!dI8s", binary_data)
         return cls(timestamp, can_id, data)
 
+ECU_TIMESTAMP_ID = 1999  # VCU_Timestamp — ECU broadcasts RTC epoch ms at 1 Hz
+
+# If RPi system clock is already past this date, trust it without waiting for ECU sync.
+# This covers RPis that have NTP or were manually set via the status page (/set-time).
+# Update each season if clocks are known to be unreliable.
+# NOTE: 2026-03-22 is today's date at time of writing.
+_SYSTEM_CLOCK_TRUST_EPOCH = 1742601600.0  # 2026-03-22 00:00:00 UTC
+
 class TelemetryNode:
     def __init__(self, can_event=None, telemetry_event=None):
         self.buffer = deque()
@@ -50,9 +57,57 @@ class TelemetryNode:
         self.can_event = can_event  # multiprocessing.Event signalled on each CAN RX
         self.telemetry_event = telemetry_event  # heartbeat for LED status
         self.redis_client = redis_utils.get_sync_client(REDIS_URL)
+        # ECU clock sync — offset between ECU RTC and local monotonic clock
+        self._clock_offset: float | None = None   # epoch_sec - monotonic at last sync
+        self._last_ecu_sync: float = 0.0          # monotonic time of last valid ECU 1999
+        self._sync_source: str = "none"           # "ecu_rtc" | "system_clock" | "override"
 
     def publish(self, channel, data):
         redis_utils.safe_publish(self.redis_client, channel, data, logger)
+
+    def _handle_ecu_timestamp(self, data: bytes) -> None:
+        """Extract epoch_ms from ECU VCU_Timestamp message and update clock offset."""
+        if len(data) < 8:
+            return
+        epoch_ms = struct.unpack_from("<q", data)[0]  # int64 little-endian
+        if epoch_ms <= 0:
+            return
+        mono = time.monotonic()
+        self._clock_offset = epoch_ms / 1000.0 - mono
+        self._last_ecu_sync = mono
+        self._sync_source = "ecu_rtc"
+        logger.info(f"ECU time sync: epoch={epoch_ms/1000:.3f}  offset={self._clock_offset:+.3f}s")
+
+    def _try_auto_sync(self) -> None:
+        """Check fallback time sources when no ECU sync has arrived yet.
+
+        Priority:
+          1. ECU RTC (handled by _handle_ecu_timestamp, always wins)
+          2. RPi system clock past _SYSTEM_CLOCK_TRUST_EPOCH — covers NTP-synced RPis
+             and RPis whose clock was manually set via POST /set-time on the status page.
+        """
+        if self._clock_offset is not None:
+            return  # already synced
+
+        sys_time = time.time()
+
+        if sys_time > _SYSTEM_CLOCK_TRUST_EPOCH:
+            self._clock_offset = sys_time - time.monotonic()
+            self._sync_source = "system_clock"
+            logger.info(
+                f"System clock past 2026-03-22 ({sys_time:.0f}), trusting RPi clock. "
+                "Update _SYSTEM_CLOCK_TRUST_EPOCH if RPi clock is known bad."
+            )
+
+    def _corrected_time(self) -> float:
+        """Return current time using the best available clock source."""
+        if self._clock_offset is not None:
+            return time.monotonic() + self._clock_offset
+        return time.time()
+
+    @property
+    def _ecu_synced(self) -> bool:
+        return self._clock_offset is not None
 
     def detect_role(self):
         if self.role != "auto":
@@ -89,7 +144,13 @@ class TelemetryNode:
                     if msg:
                         if self.can_event is not None:
                             self.can_event.set()
-                        telemetry_msg = CANMessage(msg.timestamp, msg.arbitration_id, msg.data)
+                        if msg.arbitration_id == ECU_TIMESTAMP_ID:
+                            self._handle_ecu_timestamp(bytes(msg.data))
+                        if not self._ecu_synced:
+                            self._try_auto_sync()
+                        if not self._ecu_synced:
+                            continue  # hold all data until a time source is established
+                        telemetry_msg = CANMessage(self._corrected_time(), msg.arbitration_id, msg.data)
                         await queue.put(telemetry_msg)
             except Exception as e:
                 logger.warning(f"CAN Interface unavailable ({e}). Starting simulation mode.")
@@ -115,7 +176,7 @@ class TelemetryNode:
                         
                     if self.can_event is not None:
                         self.can_event.set()
-                    telemetry_msg = CANMessage(time.time(), can_id, data)
+                    telemetry_msg = CANMessage(self._corrected_time(), can_id, data)
                     await queue.put(telemetry_msg)
 
         # UDP Sender Task
@@ -167,19 +228,21 @@ class TelemetryNode:
                     batch = []
                     last_send = time.time()
 
-        # Heartbeat Injector Task
+        # Heartbeat Injector Task — fallback when no ECU on bus (e.g. bench testing)
         async def inject_heartbeat():
             while True:
                 try:
-                    # Inject a heartbeat message (ID 1999) every second
-                    # Payload: 8-bytes representing UTC time as YYYYMMDDHHMMSS (uint64, little-endian)
-                    utc_int = int(datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"))
-                    timestamp_bytes = struct.pack("<Q", utc_int)
-                    hb_msg = CANMessage(time.time(), 1999, timestamp_bytes)
-                    await queue.put(hb_msg)
+                    # Only inject if no ECU time sync received in the last 3s
+                    if time.monotonic() - self._last_ecu_sync > 3.0:
+                        epoch_ms = int(time.time() * 1000)
+                        timestamp_bytes = struct.pack("<q", epoch_ms)  # int64 LE, matches ECU format
+                        self._handle_ecu_timestamp(timestamp_bytes)   # also updates clock offset
+                        self._sync_source = "system_clock"            # override: not a real ECU sync
+                        hb_msg = CANMessage(self._corrected_time(), ECU_TIMESTAMP_ID, timestamp_bytes)
+                        await queue.put(hb_msg)
                 except Exception as e:
                     logger.debug(f"Failed to inject heartbeat: {e}")
-                
+
                 await asyncio.sleep(1.0)
 
         # TCP Resend Server
@@ -334,6 +397,8 @@ class TelemetryNode:
                 for _ in range(count):
                     if offset + 20 > len(data): break
                     msg = CANMessage.unpack(data[offset:offset+20])
+                    if msg.can_id == ECU_TIMESTAMP_ID:
+                        self._handle_ecu_timestamp(bytes(msg.data))
                     msgs_to_publish.append({
                         "time": int(msg.timestamp * 1000),
                         "canId": msg.can_id,
@@ -379,9 +444,12 @@ class TelemetryNode:
         async def stats_publisher():
             while True:
                 await asyncio.sleep(1)
-                self.publish("system_stats", json.dumps(stats))
-                # Reset counters (except we keep accumulating or just send rate? rate is better)
-                # Let's send rate per second
+                payload = {
+                    **stats,
+                    "ecu_synced": self._ecu_synced,
+                    "ecu_sync_source": self._sync_source,
+                }
+                self.publish("system_stats", json.dumps(payload))
                 stats["received"] = 0
                 stats["missing"] = 0
                 stats["recovered"] = 0

@@ -3,13 +3,13 @@ DBC encoding helpers for extended-CAN test fixtures.
 
 Loads universal-telemetry-software/example.dbc via cantools and provides
 convenience functions that return structurally valid, deterministic CAN frames
-for the two extended (J1939 29-bit) messages added for CI testing:
+for the two extended (J1939 29-bit) messages used for CI testing:
 
-    Charger_Command  –  DBC ID 2550588916  (0x9806E5F4)
-                        actual CAN arbitration ID 403105268  (0x1806E5F4)
+    ELCON_LIMITS   –  CAN arbitration ID 403105268  (0x1806E5F4)
+                      Has Max_charge_voltage, Max_charge_current, Control signals
 
-    Charger_Status   –  DBC ID 2566869221  (0x98FF50E5)
-                        actual CAN arbitration ID 419385573  (0x18FF50E5)
+    ELCON_STATUS   –  CAN arbitration ID 419385573  (0x18FF50E5)
+                      Has Output_voltage, Output_current, and flag signals
 
 The DBC convention for extended frames is to store IDs with bit 31 set
 (0x80000000).  python-can reports msg.arbitration_id WITHOUT that bit, so the
@@ -40,13 +40,13 @@ def _get_msg(name: str) -> cantools.database.Message:
 # ── Public frame-ID constants (actual CAN arbitration IDs) ──────────────────
 
 def charger_command_frame_id() -> int:
-    """Actual 29-bit CAN arbitration ID for Charger_Command."""
-    return _get_msg("Charger_Command").frame_id
+    """Actual 29-bit CAN arbitration ID for ELCON_LIMITS (charger command)."""
+    return _get_msg("ELCON_LIMITS").frame_id
 
 
 def charger_status_frame_id() -> int:
-    """Actual 29-bit CAN arbitration ID for Charger_Status."""
-    return _get_msg("Charger_Status").frame_id
+    """Actual 29-bit CAN arbitration ID for ELCON_STATUS (charger status)."""
+    return _get_msg("ELCON_STATUS").frame_id
 
 
 EXTENDED_FRAME_IDS: dict[str, int] = {}  # populated on first use
@@ -73,7 +73,7 @@ def encode_charger_command(
     control: int = 0,
 ) -> tuple[int, bytes, str]:
     """
-    Encode a Charger_Command frame.
+    Encode an ELCON_LIMITS frame (charger command).
 
     Returns:
         (frame_id, data_bytes, data_hex)
@@ -83,7 +83,7 @@ def encode_charger_command(
 
     Defaults: Max_charge_voltage=420.0 V, Max_charge_current=10.0 A, Control=0.
     """
-    msg = _get_msg("Charger_Command")
+    msg = _get_msg("ELCON_LIMITS")
     data = msg.encode(
         {
             "Max_charge_voltage": max_voltage,
@@ -105,14 +105,14 @@ def encode_charger_status(
     comm_state: int = 0,
 ) -> tuple[int, bytes, str]:
     """
-    Encode a Charger_Status frame.
+    Encode an ELCON_STATUS frame (charger status).
 
     Returns:
         (frame_id, data_bytes, data_hex)
 
     Defaults reflect a nominal charger operating state (all flags clear).
     """
-    msg = _get_msg("Charger_Status")
+    msg = _get_msg("ELCON_STATUS")
     data = msg.encode(
         {
             "Output_voltage": output_voltage,

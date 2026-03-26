@@ -2,6 +2,7 @@ import Dropdown from "./Dropdown";
 import React, { useState, useMemo, useEffect } from "react";
 import { determineCategory, getCategoryColor } from "../config/categories";
 import { useIntersectionObserver } from "../utils/useIntersectionObserver";
+import { dataStore, FREQUENCY_WINDOW_MS } from "../lib/DataStore";
 
 interface InputProps {
   msgID: string;
@@ -42,7 +43,7 @@ const DataTextBox = ({
   </div>
 );
 
-function DataCard({ msgID, name, category, data, lastUpdated, rawData, compact, onSignalClick, onTraceClick }: Readonly<InputProps>) {
+function DataCard({ msgID, name, category, data, rawData, compact, onSignalClick, onTraceClick }: Readonly<InputProps>) {
 
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [ref, isIntersecting] = useIntersectionObserver('200px');
@@ -54,7 +55,7 @@ function DataCard({ msgID, name, category, data, lastUpdated, rawData, compact, 
     return () => clearInterval(interval);
   }, [isIntersecting]);
 
-  const timeDiff = lastUpdated ? currentTime - lastUpdated : 0;
+  const hz = useMemo(() => dataStore.getFrequency(msgID, FREQUENCY_WINDOW_MS), [msgID, currentTime]);
 
   const computedCategory = useMemo(() => {
     return determineCategory(msgID, category);
@@ -216,7 +217,11 @@ function DataCard({ msgID, name, category, data, lastUpdated, rawData, compact, 
         <div className={`${compact ? "text-[11px] grid-cols-7" : "text-xs grid-cols-6"} h-[50px] grid text-white  items-center justify-start`}>
           <p id="raw-data" className={`${compact ? "col-span-4" : "col-span-3"} font-semibold`}>&nbsp;&nbsp;&nbsp;{rawData || "00 01 02 03 04 05 06 07"}</p>
           <p id="raw-data-received" className={`${compact ? "col-span-3" : "col-span-3"} text-end font-semibold flex items-center justify-end gap-2`}>
-            Last Update:&nbsp;{timeDiff}ms
+            Frequency:&nbsp;{hz === 0 ? (
+              <span className="text-orange-500 font-bold animate-pulse">STOPPED</span>
+            ) : (
+              `${hz.toFixed(1)} Hz`
+            )}
             <button
               type="button"
               onClick={() => onTraceClick?.(msgID)}

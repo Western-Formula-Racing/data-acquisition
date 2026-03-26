@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { determineCategory, getCategoryColor } from "../config/categories";
 import { useIntersectionObserver } from "../utils/useIntersectionObserver";
+import { dataStore, FREQUENCY_WINDOW_MS } from "../lib/DataStore";
 
 const CAN_STD_MAX = 0x7FF;
 
@@ -37,7 +38,7 @@ interface DataRowProps {
     onTraceClick?: (msgID: string) => void;
 }
 
-export default function DataRow({ msgID, name, category, data, rawData, lastUpdated, index, initialOpen = false, isTourRow = false, isHighlighted = false, tourSignal, onSignalClick, onTraceClick }: Readonly<DataRowProps>) {
+export default function DataRow({ msgID, name, category, data, rawData, index, initialOpen = false, isTourRow = false, isHighlighted = false, tourSignal, onSignalClick, onTraceClick }: Readonly<DataRowProps>) {
 
     const [currentTime, setCurrentTime] = useState(Date.now());
     const [ref, isIntersecting] = useIntersectionObserver('200px'); // Pre-load slightly offscreen
@@ -49,7 +50,7 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
         return () => clearInterval(interval);
     }, [isIntersecting]);
 
-    const timeDiff = lastUpdated ? currentTime - lastUpdated : 0;
+    const hz = useMemo(() => dataStore.getFrequency(msgID, FREQUENCY_WINDOW_MS), [msgID, currentTime]);
 
     const computedCategory = useMemo(() => {
         return determineCategory(msgID, category);
@@ -144,7 +145,11 @@ export default function DataRow({ msgID, name, category, data, rawData, lastUpda
 
                 {/* Time column */}
                 <div className="col-span-2 flex justify-left items-center ps-3">
-                    {timeDiff}ms
+                    {hz === 0 ? (
+                        <span className="text-orange-500 font-bold animate-pulse">STOPPED</span>
+                    ) : (
+                        `${hz.toFixed(1)} Hz`
+                    )}
                 </div>
             </div>
 

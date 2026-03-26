@@ -109,13 +109,16 @@ class BridgeState(Enum):
 
 @dataclasses.dataclass
 class BridgeStatus:
-    state:       BridgeState = BridgeState.IDLE
-    channel:     int         = config.DEFAULT_CHANNEL
-    bitrate:     int         = config.DEFAULT_BITRATE
-    ws_port:     int         = config.DEFAULT_WS_PORT
-    frames_rx:   int         = 0
-    clients:     int         = 0
-    error_msg:   str         = ''
+    state:         BridgeState = BridgeState.IDLE
+    channel:       int         = config.DEFAULT_CHANNEL
+    bitrate:       int         = config.DEFAULT_BITRATE
+    ws_port:       int         = config.DEFAULT_WS_PORT
+    frames_rx:     int         = 0
+    frames_tx:     int         = 0
+    clients:       int         = 0
+    error_msg:     str         = ''
+    can_interface: str         = config.DEFAULT_CAN_INTERFACE
+    tls:           bool        = True
 
 
 class Bridge:
@@ -124,16 +127,18 @@ class Bridge:
     to all connected WebSocket clients via a local server.
     """
 
-    def __init__(self, channel: int, bitrate: int, ws_port: int) -> None:
+    def __init__(self, channel: int, bitrate: int, ws_port: int, can_interface: str, tls: bool = True) -> None:
         self._channel = channel
         self._bitrate = bitrate
         self._ws_port = ws_port
+        self._can_interface = can_interface
+        self._tls = tls
 
         self._bus: can.BusABC | None = None
         self._clients: set = set()
         self._server = None
 
-        self._status      = BridgeStatus(channel=channel, bitrate=bitrate, ws_port=ws_port)
+        self._status      = BridgeStatus(channel=channel, bitrate=bitrate, ws_port=ws_port, can_interface=can_interface, tls=tls)
         self._status_lock = threading.Lock()
 
         self._running  = False
@@ -152,33 +157,43 @@ class Bridge:
 
         # Open CAN bus
         try:
-            if config.DEFAULT_CAN_INTERFACE == 'socketcan':
+            if self._can_interface == 'socketcan':
                 ch = config.DEFAULT_SOCKETCAN_CHANNEL
                 _socketcan_setup(ch, self._bitrate)
                 self._bus = can.interface.Bus(channel=ch, interface='socketcan')
+            elif self._can_interface == 'vcan':
+                # Virtual CAN interface — already up (created by simulation-bridge/setup_vcan.sh).
+                # No ip-link setup needed; vcan interfaces don't have a hardware bitrate.
+                self._bus = can.interface.Bus(
+                    channel=config.DEFAULT_VCAN_CHANNEL,
+                    interface='socketcan',
+                )
+            elif self._can_interface == 'maccan':
+                self._bus = open_maccan_bus(channel=self._channel, bitrate=self._bitrate)
             else:
                 self._bus = can.interface.Bus(
                     interface='kvaser',
                     channel=self._channel,
                     bitrate=self._bitrate,
                 )
-            log.info('CAN bus opened: interface=%s bitrate=%d', config.DEFAULT_CAN_INTERFACE, self._bitrate)
+            log.info('CAN bus opened: interface=%s bitrate=%d', self._can_interface, self._bitrate)
         except Exception as e:
             log.error('Failed to open CAN bus: %s', e)
             self._set_state(BridgeState.ERROR, str(e))
             self._running = False
             return
 
-        # Start local WebSocket server (WSS with bundled self-signed cert)
+        # Start local WebSocket server (TLS or plain depending on config)
         try:
-            ssl_ctx = _make_ssl_context()
+            ssl_ctx = _make_ssl_context() if self._tls else None
             self._server = await serve(
                 self._ws_handler,
                 '0.0.0.0',
                 self._ws_port,
                 ssl=ssl_ctx,
             )
-            log.info('WebSocket server listening on wss://0.0.0.0:%d', self._ws_port)
+            scheme = 'wss' if self._tls else 'ws'
+            log.info('WebSocket server listening on %s://0.0.0.0:%d', scheme, self._ws_port)
         except Exception as e:
             log.error('Failed to start WebSocket server: %s', e)
             self._close_bus()
@@ -198,18 +213,19 @@ class Bridge:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks = []
 
-        if self._server:
-            self._server.close()
-            await self._server.wait_closed()
-            self._server = None
-
-        # Close all client connections
+        # Close all client connections before waiting for server to close,
+        # otherwise wait_closed() hangs waiting for connections to finish.
         for ws in list(self._clients):
             try:
                 await ws.close()
             except Exception:
                 pass
         self._clients.clear()
+
+        if self._server:
+            self._server.close()
+            await self._server.wait_closed()
+            self._server = None
 
         self._close_bus()
         with self._status_lock:
@@ -232,6 +248,11 @@ class Bridge:
         with self._status_lock:
             self._status.ws_port = port
 
+    def set_can_interface(self, iface: str) -> None:
+        self._can_interface = iface
+        with self._status_lock:
+            self._status.can_interface = iface
+
     def get_status(self) -> BridgeStatus:
         with self._status_lock:
             return dataclasses.replace(self._status)
@@ -249,15 +270,34 @@ class Bridge:
         log.info('Dashboard client connected (%d total)', len(self._clients))
 
         try:
-            # Keep connection alive; handle any incoming messages (e.g. ping)
+            # Keep connection alive; handle incoming messages (ping or CAN TX)
+            loop = asyncio.get_event_loop()
             async for message in websocket:
                 try:
                     data = json.loads(message)
-                    if isinstance(data, dict) and data.get('type') == 'ping':
+                    if not isinstance(data, dict):
+                        continue
+                    msg_type = data.get('type')
+                    if msg_type == 'ping':
                         await websocket.send(json.dumps({
                             'type': 'pong',
                             'server_ts': int(time.time() * 1000),
                         }))
+                    elif msg_type == 'tx' and self._bus is not None:
+                        # Dashboard → CAN bus: {"type": "tx", "canId": N, "data": [...]}
+                        can_id = int(data['canId'])
+                        payload = bytes(data['data'])
+                        if len(payload) > 8:
+                            continue
+                        frame = can.Message(
+                            arbitration_id=can_id,
+                            data=payload,
+                            is_extended_id=can_id > 0x7FF,
+                        )
+                        await loop.run_in_executor(None, self._bus.send, frame)
+                        with self._status_lock:
+                            self._status.frames_tx += 1
+                        self._notify()
                 except Exception:
                     pass
         except websockets.ConnectionClosed:

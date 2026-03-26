@@ -644,7 +644,7 @@ function Dashboard() {
                   </div>
                   {/* Time column */}
                   <div className="col-span-2 flex justify-left items-center ps-3">
-                    Time
+                    Freq
                   </div>
                 </div>
 

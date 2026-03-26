@@ -62,11 +62,11 @@ jobs:
         docker build -t car-jitsi-client:test ./universal-telemetry-software/car-jitsi-client
         docker save car-jitsi-client:test -o /tmp/jitsi.tar
 
-    # Build pecan with the same args used in docker-compose.test.yml
+    # Build pecan pointing at the local base station WebSocket for E2E tests
     - name: Build pecan image
       run: |
         docker build \
-          --build-arg VITE_WS_URL=wss://ws-wfr.0001200.xyz:9443 \
+          --build-arg VITE_WS_URL=ws://localhost:9080 \
           -t pecan:test ./pecan
         docker save pecan:test -o /tmp/pecan.tar
 
@@ -192,7 +192,7 @@ jobs:
         pip install \
           pytest pytest-asyncio pytest-timeout \
           cantools influxdb-client \
-          websockets redis requests \
+          websockets redis requests aiohttp \
           playwright \
           "slicks>=0.2.0"
 
@@ -227,7 +227,7 @@ jobs:
     - name: Run integration tests
       working-directory: ./universal-telemetry-software
       run: |
-        python -m pytest tests/test_integration.py tests/test_websocket_v2.py -v -s --timeout=120
+        python -m pytest tests/test_integration.py tests/test_websocket_v2.py tests/test_ui_e2e.py -v -s --timeout=120
 
     - name: Collect logs on failure
       if: failure()
@@ -526,7 +526,8 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-      
+          VITE_GRAFANA_BRIDGE_URL: https://grafana.westernformularacing.org/grafana-bridge/api/grafana
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -573,6 +574,7 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET_DEV }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID_DEV }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID_DEV }}
+          VITE_GRAFANA_BRIDGE_URL: https://grafana.westernformularacing.org/grafana-bridge/api/grafana
       
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1

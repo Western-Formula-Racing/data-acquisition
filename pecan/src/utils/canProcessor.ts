@@ -327,10 +327,10 @@ export async function processTestMessages() {
 
           decoded.boundSignals.forEach((signal, signalName) => {
             const parsed = parsePhysValue(signal.physValue);
+            const isEnum = isNaN(parsed.value);
             signals[signalName] = {
-              sensorReading: parsed.value,
-              unit: parsed.unit,
-              // rawValue: signal.rawValue
+              sensorReading: isEnum ? signal.rawValue : parsed.value,
+              unit: isEnum ? signal.physValue : parsed.unit,
             };
           });
 
@@ -450,10 +450,10 @@ export function decodeCanMessage(
     if (decoded.boundSignals && decoded.boundSignals instanceof Map) {
       decoded.boundSignals.forEach((signal, signalName) => {
         const parsed = parsePhysValue(signal.physValue);
+        const isEnum = isNaN(parsed.value);
         signals[signalName] = {
-          sensorReading: parsed.value,
-          unit: parsed.unit,
-          // rawValue: signal.rawValue
+          sensorReading: isEnum ? signal.rawValue : parsed.value,
+          unit: isEnum ? signal.physValue : parsed.unit,
         };
       });
     }

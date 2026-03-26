@@ -159,4 +159,3 @@ volumes:
     # 8087 - Grafana dashboards
     # 9000 - InfluxDB3 API
     # 9080 - WebSocket for PECAN dashboard
-    # 3000 - PECAN dashboard UI

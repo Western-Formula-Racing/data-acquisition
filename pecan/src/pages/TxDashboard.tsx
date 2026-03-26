@@ -334,7 +334,7 @@ function TxDashboard() {
                 </div>
 
                 <div className="col-span-1 flex justify-left items-center ps-3">
-                  Time
+                  Freq
                 </div>
               </div>
 

@@ -16,14 +16,23 @@ DEFAULT_CHANNEL  = 0
 # ---------------------------------------------------------------------------
 # Linux uses socketcan (kernel driver, no CANlib needed)
 # Windows uses kvaser (requires Kvaser CANlib SDK)
-DEFAULT_CAN_INTERFACE = 'socketcan' if platform.system() == 'Linux' else 'kvaser'
+if platform.system() == 'Linux':
+    DEFAULT_CAN_INTERFACE = 'socketcan'
+elif platform.system() == 'Darwin':
+    DEFAULT_CAN_INTERFACE = 'maccan'
+else:
+    DEFAULT_CAN_INTERFACE = 'kvaser'
+
+SUPPORTED_CAN_INTERFACES = {'socketcan', 'kvaser', 'maccan', 'vcan'}
 # socketcan channel name (e.g. 'can0'); kvaser uses integer channel index
 DEFAULT_SOCKETCAN_CHANNEL = 'can0'
+# vcan channel name — virtual CAN interface created by simulation-bridge/setup_vcan.sh
+DEFAULT_VCAN_CHANNEL = 'vcan0'
 
 # ---------------------------------------------------------------------------
 # WebSocket server (bridge runs its own server, dashboard connects to it)
 # ---------------------------------------------------------------------------
-DEFAULT_WS_PORT = 9081
+DEFAULT_WS_PORT = 9081  # same port for both TLS (wss://) and plain (ws://)
 
 # ---------------------------------------------------------------------------
 # Config file location

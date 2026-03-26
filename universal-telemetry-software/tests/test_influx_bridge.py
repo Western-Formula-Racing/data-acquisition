@@ -35,9 +35,9 @@ class TestLineProtocol:
     def test_frame_to_line_protocol_basic(self):
         """frame_to_line_protocol produces valid wide line protocol."""
         frame = slicks.DecodedFrame(
-            message_name="BMS_Status",
-            can_id=512,
-            signals={"PackCurrent": -3264.0, "SOC": 85.0},
+            message_name="BMS_Current_Limit",
+            can_id=514,
+            signals={"BMS_Max_Discharge_Current": 4096.0, "BMS_Max_Charge_Current": 0.0},
         )
         line = slicks.frame_to_line_protocol(
             measurement="WFR26_base",
@@ -45,18 +45,18 @@ class TestLineProtocol:
             ts_ns=1700000000000000000,
         )
         assert line.startswith("WFR26_base,")
-        assert "messageName=BMS_Status" in line
-        assert "canId=512" in line
-        assert "PackCurrent=" in line
-        assert "SOC=" in line
+        assert "messageName=BMS_Current_Limit" in line
+        assert "canId=514" in line
+        assert "BMS_Max_Discharge_Current=" in line
+        assert "BMS_Max_Charge_Current=" in line
         assert line.endswith("1700000000000000000")
 
     def test_frame_to_line_protocol_no_tags(self):
         """include_tags=False omits messageName/canId tags."""
         frame = slicks.DecodedFrame(
-            message_name="BMS_Status",
-            can_id=512,
-            signals={"PackCurrent": -3264.0},
+            message_name="BMS_Current_Limit",
+            can_id=514,
+            signals={"BMS_Max_Discharge_Current": 4096.0},
         )
         line = slicks.frame_to_line_protocol(
             measurement="WFR26_base",
@@ -66,7 +66,7 @@ class TestLineProtocol:
         )
         assert "messageName=" not in line
         assert "canId=" not in line
-        assert "PackCurrent=" in line
+        assert "BMS_Max_Discharge_Current=" in line
 
     def test_frame_to_line_protocol_special_chars_in_measurement(self):
         """Measurement names with special chars are escaped."""
@@ -102,11 +102,11 @@ class TestCANDecoding:
         """Decode a CAN ID that exists in the DBC."""
         db = slicks.load_dbc(DBC_PATH)
         data = bytes([0x00, 0x10, 0x00, 0x00, 0x64, 0x00, 0x00, 0x00])
-        frame = slicks.decode_frame(db, can_id=512, data=data)
+        frame = slicks.decode_frame(db, can_id=514, data=data)
 
         assert frame is not None
         assert len(frame.signals) > 0
-        assert frame.can_id == 512
+        assert frame.can_id == 514
 
     def test_decode_unknown_can_id(self):
         """Unknown CAN IDs should return None (no crash)."""
@@ -121,7 +121,7 @@ class TestCANDecoding:
             bridge = InfluxBridge()
             msg = json.dumps([{
                 "time": 1700000000000,
-                "canId": 512,
+                "canId": 514,
                 "data": [0, 16, 0, 0, 100, 0, 0, 0],
             }])
             with patch.object(
@@ -137,8 +137,8 @@ class TestCANDecoding:
         """Extended CAN IDs (bit 31 set) should be stripped before DBC lookup."""
         db = slicks.load_dbc(DBC_PATH)
         data = bytes([0x00, 0x10, 0x00, 0x00, 0x64, 0x00, 0x00, 0x00])
-        frame_normal = slicks.decode_frame(db, can_id=512, data=data)
-        frame_extended = slicks.decode_frame(db, can_id=512 | 0x80000000, data=data)
+        frame_normal = slicks.decode_frame(db, can_id=514, data=data)
+        frame_extended = slicks.decode_frame(db, can_id=514 | 0x80000000, data=data)
         # Both should decode to the same message
         if frame_normal is not None:
             assert frame_extended is not None
@@ -162,7 +162,7 @@ class TestMessageProcessing:
         """Process a well-formed Redis CAN message — returns positive count."""
         msg = json.dumps([{
             "time": 1700000000000,
-            "canId": 512,
+            "canId": 514,
             "data": [0, 16, 0, 0, 100, 0, 0, 0],
         }])
         count = bridge.process_message(msg)
@@ -202,7 +202,7 @@ class TestMessageProcessing:
         """process_message always returns an int, not a list."""
         msg = json.dumps([{
             "time": 1700000000000,
-            "canId": 512,
+            "canId": 514,
             "data": [0]*8,
         }])
         result = bridge.process_message(msg)
