@@ -41,8 +41,8 @@ trap cleanup EXIT
 
 # ── Unit tests ───────────────────────────────────────────────────────────────
 echo -e "\n${YELLOW}Running unit tests (no containers)...${NC}"
-pip install -q pytest cantools influxdb-client redis websockets requests pytest-asyncio 2>/dev/null || true
-python -m pytest tests/test_leds.py tests/test_influx_bridge.py -v || {
+uv sync --frozen --extra dev
+uv run -- python -m pytest tests/test_leds.py tests/test_influx_bridge.py -v || {
     echo -e "${RED}✗ Unit tests failed${NC}"
     exit 1
 }
@@ -101,7 +101,7 @@ docker logs daq-test-influxdb3 --tail 10 2>&1 || true
 
 # ── Integration tests ────────────────────────────────────────────────────────
 echo -e "\n${YELLOW}Running integration tests...${NC}"
-python -m pytest tests/test_integration.py -v -s --timeout=120 || {
+uv run -- python -m pytest tests/test_integration.py -v -s --timeout=120 || {
     TEST_EXIT_CODE=$?
     echo -e "\n${RED}✗ Integration tests failed${NC}"
 
@@ -119,7 +119,7 @@ python -m pytest tests/test_integration.py -v -s --timeout=120 || {
 
 # Step 7: Run WebSocket v2 protocol tests
 echo -e "\n${YELLOW}Step 7: Running WebSocket v2 protocol tests...${NC}"
-python3 -m pytest tests/test_websocket_v2.py -v -s || {
+uv run -- python -m pytest tests/test_websocket_v2.py -v -s || {
     TEST_EXIT_CODE=$?
     echo -e "\n${RED}✗ WebSocket v2 tests failed${NC}"
 
@@ -157,7 +157,7 @@ if ip link show can0 &>/dev/null; then
         exit 1
     fi
 
-    python -m pytest tests/test_can_pipeline.py -v -s --timeout=60 || {
+    uv run -- python -m pytest tests/test_can_pipeline.py -v -s --timeout=60 || {
         TEST_EXIT_CODE=$?
         echo -e "\n${RED}✗ vCAN pipeline tests failed${NC}"
 
