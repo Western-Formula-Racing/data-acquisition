@@ -1,6 +1,6 @@
 services:
   telemetry:
-    image: ghcr.io/western-formula-racing/universal-telemetry:latest
+    image: ghcr.io/western-formula-racing/daq-radio/universal-telemetry:latest
     container_name: daq-telemetry
     privileged: true
     restart: unless-stopped
@@ -74,7 +74,7 @@ services:
         max-file: "2"
 
   pecan:
-    image: ghcr.io/western-formula-racing/pecan:latest
+    image: ghcr.io/western-formula-racing/daq-radio/pecan:latest
     container_name: daq-pecan
     restart: unless-stopped
     ports:
