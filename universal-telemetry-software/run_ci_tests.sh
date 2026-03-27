@@ -33,8 +33,8 @@ cleanup() {
         echo -e "\n${YELLOW}Cleaning up test environment...${NC}"
         # compose down -v already removes the project network; skip network prune
         # to avoid zsh sort-specifier errors from docker network prune output.
-        docker compose -f docker-compose.test.yml down -v 2>/dev/null || true
-        docker compose -f docker-compose.can-test.yml down -v 2>/dev/null || true
+        docker compose -f deploy/docker-compose.test.yml down -v 2>/dev/null || true
+        docker compose -f deploy/docker-compose.can-test.yml down -v 2>/dev/null || true
     fi
 }
 trap cleanup EXIT
@@ -62,16 +62,16 @@ fi
 
 # ── Validate compose configs ─────────────────────────────────────────────────
 echo -e "\n${YELLOW}Validating compose configs...${NC}"
-docker compose -f docker-compose.yml config --quiet
-docker compose -f docker-compose.test.yml config --quiet
-docker compose -f docker-compose.prod.yml config --quiet
-docker compose -f docker-compose.can-test.yml config --quiet
+docker compose -f deploy/docker-compose.yml config --quiet
+docker compose -f deploy/docker-compose.test.yml config --quiet
+docker compose -f deploy/docker-compose.prod.yml config --quiet
+docker compose -f deploy/docker-compose.can-test.yml config --quiet
 echo -e "${GREEN}✓ All compose configs valid${NC}"
 
 # ── Start test environment ───────────────────────────────────────────────────
 if [ "$NO_BUILD" = false ]; then
     echo -e "\n${YELLOW}Starting test stack (including InfluxDB3)...${NC}"
-    docker compose -f docker-compose.test.yml up -d --build || {
+    docker compose -f deploy/docker-compose.test.yml up -d --build || {
         echo -e "${RED}✗ Failed to start containers${NC}"
         exit 1
     }
@@ -82,7 +82,7 @@ fi
 
 # ── Verify containers ────────────────────────────────────────────────────────
 echo -e "\n${YELLOW}Verifying containers...${NC}"
-docker compose -f docker-compose.test.yml ps
+docker compose -f deploy/docker-compose.test.yml ps
 
 for container in daq-car daq-base daq-car-redis daq-base-redis daq-pecan-test daq-test-influxdb3; do
     if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
@@ -106,7 +106,7 @@ python -m pytest tests/test_integration.py -v -s --timeout=120 || {
     echo -e "\n${RED}✗ Integration tests failed${NC}"
 
     mkdir -p test-logs
-    docker compose -f docker-compose.test.yml logs --no-color > test-logs/docker-compose.log 2>&1
+    docker compose -f deploy/docker-compose.test.yml logs --no-color > test-logs/docker-compose.log 2>&1
     docker logs daq-car            > test-logs/car.log 2>&1 || true
     docker logs daq-base           > test-logs/base.log 2>&1 || true
     docker logs daq-car-redis      > test-logs/car-redis.log 2>&1 || true
@@ -124,7 +124,7 @@ python3 -m pytest tests/test_websocket_v2.py -v -s || {
     echo -e "\n${RED}✗ WebSocket v2 tests failed${NC}"
 
     mkdir -p test-logs
-    docker compose -f docker-compose.test.yml logs --no-color > test-logs/docker-compose.log 2>&1
+    docker compose -f deploy/docker-compose.test.yml logs --no-color > test-logs/docker-compose.log 2>&1
     docker logs daq-car            > test-logs/car.log 2>&1 || true
     docker logs daq-base           > test-logs/base.log 2>&1 || true
     docker logs daq-test-influxdb3 > test-logs/influxdb3.log 2>&1 || true
@@ -134,14 +134,14 @@ python3 -m pytest tests/test_websocket_v2.py -v -s || {
 
 # ── Tear down integration stack before vCAN tests ─────────────────────────────
 echo -e "\n${YELLOW}Tearing down integration test stack...${NC}"
-docker compose -f docker-compose.test.yml down -v 2>/dev/null || true
+docker compose -f deploy/docker-compose.test.yml down -v 2>/dev/null || true
 
 # ── vCAN pipeline tests ──────────────────────────────────────────────────────
 # Requires: can0 (vcan or physical) UP, can-utils installed
 if ip link show can0 &>/dev/null; then
     echo -e "\n${YELLOW}Running vCAN pipeline tests (can0 detected)...${NC}"
 
-    docker compose -f docker-compose.can-test.yml up -d --build || {
+    docker compose -f deploy/docker-compose.can-test.yml up -d --build || {
         echo -e "${RED}✗ Failed to start vCAN test stack${NC}"
         exit 1
     }
@@ -169,7 +169,7 @@ if ip link show can0 &>/dev/null; then
     }
     echo -e "${GREEN}✓ vCAN pipeline tests passed${NC}"
 
-    docker compose -f docker-compose.can-test.yml down -v 2>/dev/null || true
+    docker compose -f deploy/docker-compose.can-test.yml down -v 2>/dev/null || true
 else
     echo -e "\n${YELLOW}Skipping vCAN pipeline tests (can0 not found)${NC}"
     echo -e "${YELLOW}  To run: sudo modprobe vcan && sudo ip link add dev can0 type vcan && sudo ip link set up can0${NC}"

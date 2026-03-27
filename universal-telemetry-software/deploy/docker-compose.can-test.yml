@@ -3,7 +3,7 @@
 # Container uses network_mode: host so it sees the host CAN interface.
 services:
   telemetry:
-    build: .
+    build: ..
     container_name: daq-can-test
     privileged: true
     network_mode: host

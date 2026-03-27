@@ -73,11 +73,11 @@ jobs:
     - name: Validate compose configurations
       working-directory: ./universal-telemetry-software
       run: |
-        docker compose -f docker-compose.yml config --quiet
-        docker compose -f docker-compose.test.yml config --quiet
-        docker compose -f docker-compose.prod.yml config --quiet
-        docker compose -f docker-compose.staging.yml config --quiet
-        docker compose -f docker-compose.can-test.yml config --quiet
+        docker compose -f deploy/docker-compose.yml config --quiet
+        docker compose -f deploy/docker-compose.test.yml config --quiet
+        docker compose -f deploy/docker-compose.prod.yml config --quiet
+        docker compose -f deploy/docker-compose.staging.yml config --quiet
+        docker compose -f deploy/docker-compose.can-test.yml config --quiet
         echo "✓ All compose configs valid"
 
     - name: Upload Docker image artifacts
@@ -202,15 +202,15 @@ jobs:
     - name: Start integration test environment
       working-directory: ./universal-telemetry-software
       run: |
-        docker compose -f docker-compose.test.yml up -d --build
+        docker compose -f deploy/docker-compose.test.yml up -d --build
         echo "Waiting for all services (InfluxDB3 needs ~15s)..."
         sleep 20
 
     - name: Check container health
       working-directory: ./universal-telemetry-software
       run: |
-        docker compose -f docker-compose.test.yml ps
-        docker compose -f docker-compose.test.yml logs --tail 30
+        docker compose -f deploy/docker-compose.test.yml ps
+        docker compose -f deploy/docker-compose.test.yml logs --tail 30
 
     - name: Verify containers
       run: |
@@ -234,7 +234,7 @@ jobs:
       working-directory: ./universal-telemetry-software
       run: |
         mkdir -p test-logs
-        docker compose -f docker-compose.test.yml logs --no-color > test-logs/docker-compose.log 2>&1
+        docker compose -f deploy/docker-compose.test.yml logs --no-color > test-logs/docker-compose.log 2>&1
         docker logs daq-car              > test-logs/car.log 2>&1 || true
         docker logs daq-base             > test-logs/base.log 2>&1 || true
         docker logs daq-car-redis        > test-logs/car-redis.log 2>&1 || true
@@ -254,7 +254,7 @@ jobs:
       if: always()
       working-directory: ./universal-telemetry-software
       run: |
-        docker compose -f docker-compose.test.yml down -v
+        docker compose -f deploy/docker-compose.test.yml down -v
 
   # ── vCAN pipeline tests: real CAN code path ──────────────────────────────
   vcan:
@@ -308,7 +308,7 @@ jobs:
     - name: Start vCAN test stack
       working-directory: ./universal-telemetry-software
       run: |
-        docker compose -f docker-compose.can-test.yml up -d --build
+        docker compose -f deploy/docker-compose.can-test.yml up -d --build
         echo "Waiting for telemetry container to start CAN reader..."
         sleep 15
 
@@ -366,7 +366,7 @@ jobs:
       if: always()
       working-directory: ./universal-telemetry-software
       run: |
-        docker compose -f docker-compose.can-test.yml down -v 2>/dev/null || true
+        docker compose -f deploy/docker-compose.can-test.yml down -v 2>/dev/null || true
         sudo ip link delete can0 2>/dev/null || true
 
   publish-telemetry:

@@ -74,7 +74,7 @@ services:
       - "8555:8555/udp"
       - "5600:5600/udp"
     volumes:
-      - ./go2rtc.yaml:/config/go2rtc.yaml:ro
+      - ../go2rtc.yaml:/config/go2rtc.yaml:ro
     logging:
       driver: "json-file"
       options:
@@ -132,7 +132,7 @@ services:
       - "9000:8181"
     volumes:
       - influxdb3_data:/var/lib/influxdb3
-      - ./influxdb3-admin-token.json:/influxdb3-admin-token.json:ro
+      - ../influxdb3-admin-token.json:/influxdb3-admin-token.json:ro
     logging:
       driver: "json-file"
       options:
