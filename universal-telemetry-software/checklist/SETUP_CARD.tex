@@ -68,6 +68,9 @@
 \section*{0 -- RPi INITIAL SETUP}
 % ─────────────────────────────────────────────────────────────────────────────
 
+\noindent\textbf{OS:} Flash \textbf{Raspberry Pi OS 64-bit Desktop} (not Lite, not Server) before starting.
+\vspace{1mm}
+
 \checkbox{System Packages}
 
 \noindent
@@ -103,16 +106,30 @@
 \noindent
 \begin{tabular}{p{126mm}}
   \textbf{Car RPi:} \cmd{192.168.1.10} \quad \textbf{Base RPi:} \cmd{192.168.1.20} \\[1mm]
-  Find the active netplan file: \cmd{ls /etc/netplan/} \\
-  \cmd{sudo nano /etc/netplan/01-netcfg.yaml} \quad (filename may differ) \\[1mm]
-  \cmd{network:} \\
-  \cmd{\ \ version: 2} \\
-  \cmd{\ \ ethernets:} \\
-  \cmd{\ \ \ \ eth0:} \quad \textit{(check interface name with \cmd{ip link})} \\
-  \cmd{\ \ \ \ \ \ dhcp4: no} \\
-  \cmd{\ \ \ \ \ \ addresses: [192.168.1.10/24]} \quad (car) or \cmd{[192.168.1.20/24]} (base) \\[1mm]
-  \cmd{sudo netplan apply} \\[1mm]
+  Via the desktop: click the \textbf{network icon} (top-right taskbar) $\rightarrow$ \\
+  \textbf{Advanced Options} $\rightarrow$ \textbf{Edit Connections} $\rightarrow$ select \cmd{eth0} $\rightarrow$ \textbf{Edit} \\
+  $\rightarrow$ \textbf{IPv4 Settings} tab $\rightarrow$ Method: \textbf{Manual} $\rightarrow$ \textbf{Add}: \\[1mm]
+  \begin{tabular}{p{28mm}p{36mm}p{36mm}}
+    \rowcolor{tblhd}
+    & \textbf{Car RPi} & \textbf{Base RPi} \\
+    Address   & \cmd{192.168.1.10} & \cmd{192.168.1.20} \\
+    Netmask   & \cmd{255.255.255.0} & \cmd{255.255.255.0} \\
+    Gateway   & (leave blank) & (leave blank) \\
+  \end{tabular} \\[1mm]
+  Click \textbf{Save}, then disconnect and reconnect the Ethernet cable. \\[1mm]
   \textbf{PASS:} \cmd{ip addr show eth0} shows the assigned IP \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{Bench LAN Ping Test -- Both RPis (do this before installing on car)}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Connect a LAN cable directly between the two RPis. Then from each RPi, ping the other: \\[1mm]
+  \textbf{From car RPi:} \cmd{ping -c 4 192.168.1.20} \\
+  \textbf{From base RPi:} \cmd{ping -c 4 192.168.1.10} \\[1mm]
+  \textbf{PASS:} 4/4 replies, latency $<$ 1\,ms \\
+  \textbf{FAIL:} 100\% loss \quad \textit{Fix:} re-check static IP assignment, reconnect cable \\
 \end{tabular}
 
 \vspace{1mm}
@@ -163,6 +180,45 @@
   \textbf{FAIL:} \cmd{unauthorized} \quad \textit{Fix:} ensure your GitHub account is a member of the \\
   \cmd{Western-Formula-Racing} org, then re-run \cmd{gh auth login} \\[1mm]
   \textit{Note:} this login persists in \cmd{\textasciitilde/.docker/config.json} -- only needed once per RPi. \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{Install NoMachine -- Both RPis}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Download the \textbf{ARM64 .deb} from \cmd{nomachine.com/download} and install: \\[1mm]
+  \cmd{sudo dpkg -i nomachine\_*\_arm64.deb} \\[1mm]
+  NoMachine starts automatically on boot. Connect from any machine on the same network: \\
+  \cmd{nomachine://192.168.1.10} (car) \quad \cmd{nomachine://192.168.1.20} (base) \\[1mm]
+  \textbf{PASS:} desktop appears in NoMachine client \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{Install Tailscale -- Both RPis}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{curl -fsSL https://tailscale.com/install.sh | sh} \\[1mm]
+  \cmd{sudo tailscale up} \\[1mm]
+  Authenticate via the printed URL. After joining, RPis are reachable by Tailscale hostname \\
+  from any network -- useful for remote debugging between test days. \\[1mm]
+  \textbf{PASS:} \cmd{tailscale status} shows both RPis as connected peers \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{SocketCAN Setup -- Car RPi only}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Run the one-click setup script (safe to run before the HAT is physically attached -- \\
+  all config is written to disk and takes effect on next reboot with the HAT installed): \\[1mm]
+  \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software} \\
+  \cmd{sudo ./setup-socketcan.sh} \\
+  \cmd{sudo reboot} \\[1mm]
+  After reboot with HAT plugged in, \cmd{can0} comes up automatically at 500\,kbps. \\[1mm]
+  \textbf{PASS:} \cmd{ip link show can0} shows \cmd{<NOARP,UP,LOWER\_UP>} \\
+  \textbf{FAIL:} HAT not detected -- check HAT seating + SPI enabled in \cmd{/boot/firmware/config.txt} \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -223,10 +279,7 @@
   \cmd{dmesg $\vert$ grep -i mcp} \\[1mm]
   \textbf{PASS:} modules loaded, no kernel errors \\
   \textbf{FAIL:} empty output or errors \\
-  \textit{Fix:} See README \S Hardware Setup. Add \cmd{can can\_raw mcp251xfd} to \cmd{/etc/modules}.
-  Edit \cmd{/boot/firmware/config.txt}:
-  \cmd{dtoverlay=mcp251xfd,oscillator=20000000,interrupt=25}.
-  Reboot. \\
+  \textit{Fix:} Run \cmd{sudo ./setup-socketcan.sh} and reboot (see \S 0 SocketCAN Setup). \\
 \end{tabular}
 
 \vspace{1mm}

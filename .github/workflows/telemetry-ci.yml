@@ -370,9 +370,9 @@ jobs:
         sudo ip link delete can0 2>/dev/null || true
 
   publish-telemetry:
-    needs: [unit-tests, integration, vcan, detect-changes]
+    needs: [unit-tests, integration, vcan]
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || (github.event_name != 'pull_request' && needs.detect-changes.outputs.telemetry == 'true')
+    if: github.event_name == 'workflow_dispatch' || github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write
@@ -439,9 +439,9 @@ jobs:
         cache-to: type=gha,mode=max
 
   publish-pecan:
-    needs: [unit-tests, integration, vcan, detect-changes]
+    needs: [unit-tests, integration, vcan]
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || (github.event_name != 'pull_request' && needs.detect-changes.outputs.pecan == 'true')
+    if: github.event_name == 'workflow_dispatch' || github.event_name != 'pull_request'
     permissions:
       contents: read
       packages: write
