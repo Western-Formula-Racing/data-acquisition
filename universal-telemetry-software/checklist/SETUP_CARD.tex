@@ -308,9 +308,10 @@
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{grep REMOTE\_IP docker-compose.prod.yml} \\[1mm]
-  \textbf{CAR RPi} (\cmd{192.168.1.10}): set \cmd{REMOTE\_IP=192.168.1.20} (base IP) \\
-  \textbf{BASE RPi} (\cmd{192.168.1.20}): set \cmd{REMOTE\_IP=192.168.1.10} (car IP) \\[1mm]
-  Default in \cmd{docker-compose.prod.yml} is \cmd{192.168.1.20} -- correct for car, change on base. \\[1mm]
+  \textbf{CAR RPi} (\cmd{192.168.1.10}): \cmd{REMOTE\_IP=192.168.1.20} (base IP) \\
+  \textbf{BASE RPi} (\cmd{192.168.1.20}): \cmd{REMOTE\_IP=192.168.1.10} (car IP) \\[1mm]
+  Must be set \textbf{manually per-device} -- there is no auto-resolution. Default is \cmd{192.168.1.20}. \\[1mm]
+  \textit{Future ChargeCart RPi planned at} \cmd{192.168.1.30} -- set \cmd{REMOTE\_IP=192.168.1.20} (base). \\[1mm]
   Edit: \cmd{nano docker-compose.prod.yml} \quad Apply: \cmd{docker compose -f docker-compose.prod.yml --profile car down \&\& ... --profile car up -d} \\
   (use \cmd{--profile base} on the base RPi) \\
 \end{tabular}
@@ -401,9 +402,13 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "CAN Reader"} \\[1mm]
-  \textbf{PASS:} \cmd{CAN Reader started on can0} \\
-  \textbf{FAIL:} silent \quad \textit{Fix:} \cmd{... logs telemetry $\vert$ grep -i can} \\
+  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep -E "CAN Reader$\vert$SIMULATION MODE"} \\[1mm]
+  \textbf{PASS (real CAN):} \cmd{CAN Reader started on can0} \\
+  \textbf{PASS (explicit sim):} \cmd{SIMULATION MODE ACTIVE} banner (\cmd{SIMULATE=true}) \\
+  \textbf{FAIL:} \cmd{CAN Bus constructor failed} then \cmd{SIMULATION MODE ACTIVE} -- \cmd{can0} could not open. \\
+  \textbf{FAIL:} \cmd{CAN recv() error \#N} -- \cmd{can0} opened but is faulting. Reader retries; stops after 50. \\[1mm]
+  \textit{Note:} runtime \cmd{recv()} errors do \textbf{not} fall through to simulation. Only the \cmd{Bus()} \\[1pt]
+  \textit{constructor failure triggers sim. Use} \cmd{SIMULATE=true} \textit{to force simulation explicitly.} \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -474,7 +479,21 @@ and point their own Pecan instance at the car's WSS endpoint.
   \cmd{curl http://localhost:9000/health} \\[1mm]
   \textbf{PASS:} \cmd{\{"status":"ok"\}} \quad \textbf{FAIL:} connection refused -- wait 30s, retry \\
   Grafana: \cmd{http://192.168.1.20:8087} \quad user: \cmd{admin} \quad pass: \cmd{admin} \\
-  \textit{Token file:} \cmd{influxdb3-admin-token.json} is pre-committed -- no manual setup needed. \\
+  \textit{Token file:} \cmd{influxdb3-admin-token.json} is pre-committed -- no manual setup needed. \\[1mm]
+  \warnbox{RPi 5 (DEFAULT) -- QEMU Setup Required} \\
+  \noindent
+  \begin{tabular}{p{126mm}}
+    InfluxDB 3 defaults to \cmd{linux/amd64} to support RPi 5's 16KB page size. \\
+    You \textbf{must} install QEMU on the Pi 5 before starting: \\
+    \cmd{sudo apt install -y qemu-user-static binfmt-support} \\
+  \end{tabular} \\[1mm]
+  \warnbox{RPi 4B ONLY -- Native ARM64 Override} \\
+  \noindent
+  \begin{tabular}{p{126mm}}
+    To run native ARM64 on an RPi 4B, use the provided override file: \\
+    \cmd{docker compose -f docker-compose.prod.yml -f docker-compose.rpi4.yml \textbackslash} \\
+    \ \ \ \cmd{--profile base up -d} \\
+  \end{tabular} \\
 \end{tabular}
 
 \vspace{1mm}
@@ -683,12 +702,12 @@ and point their own Pecan instance at the car's WSS endpoint.
   \textbf{Variable} & \textbf{Default} & \textbf{Description} \\
   \midrule
   ROLE & auto & Force car or base (auto-detected from can0) \\
-  REMOTE\_IP & 192.168.1.20 & IP of the other RPi (change on base to .10) \\
+  REMOTE\_IP & 192.168.1.20 & IP of the other RPi. Set manually per device -- no auto-resolution. Car: .20, Base: .10, ChargeCart: .20 \\
   UDP\_PORT & 5005 & Real-time UDP streaming port \\
   TCP\_PORT & 5006 & Retransmission port \\
   WS\_PORT & 9080 & WebSocket port for PECAN \\
   ENABLE\_TX\_WS & false & Enable CAN writes from TX page \\
-  SIMULATE & false & Simulate CAN (no hardware needed) \\
+  SIMULATE & false & Force CAN simulation (fake IDs 192/256/512/768 at 100\,Hz). Bus() failure triggers sim with warning banner; recv() errors do not. \\
   ENABLE\_VIDEO & false & Video streaming \\
   ENABLE\_AUDIO & false & Audio streaming \\
   ENABLE\_INFLUX\_LOGGING & true & Log telemetry to local InfluxDB3 \\

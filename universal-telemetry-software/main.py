@@ -112,6 +112,7 @@ if __name__ == "__main__":
 
     # Export ROLE so child processes (e.g. websocket_bridge) can read it
     os.environ["ROLE"] = role
+    logger.info(f"REMOTE_IP={remote_ip} (role={role})")
 
     processes = []
 

@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DAQ Base Station Status</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap');
+
         * {
             margin: 0;
             padding: 0;
@@ -13,11 +15,17 @@
         }
 
         body {
-            font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-            background: #0d0c11;
-            color: #fff;
-            padding: 20px;
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #000000;
+            color: #d1d1d1;
+            padding: 15px;
             min-height: 100vh;
+            font-size: 14px;
+        }
+
+        /* Use monospace for all data */
+        .metric-value, .timestamp, #connectionStatus, .sparkline, .sync-banner, .performance-stats {
+            font-family: 'JetBrains Mono', monospace;
         }
 
         .container {
@@ -26,204 +34,204 @@
         }
 
         header {
-            text-align: center;
-            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #333;
         }
 
         h1 {
-            font-size: 2.5rem;
-            margin-bottom: 5px;
+            font-size: 1.5rem;
             color: #fff;
+            letter-spacing: -0.5px;
+            font-weight: 600;
+            text-transform: uppercase;
         }
 
         .subtitle {
-            font-size: 1rem;
-            color: #8e8eab;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: #6b7280;
+            text-transform: uppercase;
         }
 
         .status-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 10px;
+            margin-bottom: 10px;
         }
 
         .card {
-            background: #20202f;
-            border-radius: 8px;
-            padding: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            background: #080808;
+            padding: 15px;
+            border: 1px solid #222;
         }
 
         .card-title {
-            font-size: 0.85rem;
-            margin-bottom: 15px;
-            color: #8e8eab;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            margin-bottom: 12px;
+            color: #6b7280;
             text-transform: uppercase;
             letter-spacing: 1px;
-            font-weight: 600;
+            border-bottom: 1px solid #1a1a1a;
+            padding-bottom: 5px;
         }
 
         .metric {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin: 10px 0;
-            padding: 12px;
-            background: #35354c;
-            border-radius: 6px;
+            margin: 6px 0;
+            padding: 6px 0;
+            border-bottom: 1px dotted #222;
+        }
+        
+        .metric:last-child {
+            border-bottom: none;
         }
 
         .metric-label {
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: #8e8eab;
         }
 
         .metric-value {
-            font-size: 1.3rem;
-            font-weight: 600;
+            font-size: 1rem;
+            font-weight: 700;
             color: #fff;
         }
 
         .status-indicator {
             display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
+            width: 8px;
+            height: 8px;
             margin-right: 8px;
-            animation: pulse 2s infinite;
+            vertical-align: middle;
         }
 
         .status-connected {
             background: #4ade80;
-            box-shadow: 0 0 8px #4ade80;
+            box-shadow: 0 0 6px rgba(74, 222, 128, 0.4);
         }
 
         .status-warning {
             background: #fbbf24;
-            box-shadow: 0 0 8px #fbbf24;
+            box-shadow: 0 0 6px rgba(251, 191, 36, 0.4);
         }
 
         .status-disconnected {
             background: #ef4444;
-            box-shadow: 0 0 8px #ef4444;
-        }
-
-        @keyframes pulse {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.6;
-            }
+            box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
         }
 
         .connection-status {
-            font-size: 1.5rem;
-            font-weight: 600;
-            text-align: center;
-            padding: 20px;
-            margin-bottom: 20px;
-            background: #20202f;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 1rem;
+            text-align: left;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            background: #0a0a0a;
+            border: 1px solid #222;
+            color: #e5e7eb;
+            display: flex;
+            align-items: center;
         }
 
         .chart-container {
-            background: #20202f;
-            border-radius: 8px;
-            padding: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            margin-top: 15px;
+            background: #080808;
+            padding: 15px;
+            border: 1px solid #222;
+            margin-top: 10px;
         }
 
         .sparkline {
             width: 100%;
-            height: 100px;
-            margin-top: 15px;
+            height: 80px;
+            margin-top: 10px;
         }
 
         .timestamp {
-            text-align: center;
-            color: #8e8eab;
-            margin-top: 20px;
-            font-size: 0.85rem;
+            text-align: right;
+            color: #4b5563;
+            margin-top: 10px;
+            font-size: 0.75rem;
         }
 
         .error-message {
-            background: rgba(239, 68, 68, 0.15);
-            border: 1px solid #ef4444;
-            border-radius: 8px;
-            padding: 15px;
-            margin-top: 20px;
-            text-align: center;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            padding: 10px;
+            margin-top: 10px;
             color: #fca5a5;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
         }
 
         .sync-banner {
-            border-radius: 8px;
-            padding: 16px 20px;
-            margin-bottom: 20px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 16px;
             flex-wrap: wrap;
+            border: 1px solid #222;
+            background: #080808;
         }
         .sync-banner.waiting {
-            background: rgba(251, 191, 36, 0.12);
-            border: 1px solid #fbbf24;
+            border-color: #fbbf24;
         }
         .sync-banner.synced {
-            background: rgba(74, 222, 128, 0.08);
-            border: 1px solid #4ade80;
+            border-color: #4ade80;
         }
-        .sync-banner-text { font-size: 0.95rem; }
-        .sync-banner-text strong { display: block; margin-bottom: 4px; font-size: 1.05rem; }
         .sync-banner.waiting .sync-banner-text strong { color: #fbbf24; }
         .sync-banner.synced  .sync-banner-text strong { color: #4ade80; }
-        .sync-banner-text small { color: #8e8eab; font-size: 0.8rem; }
+        .sync-banner-text { font-size: 0.85rem; }
+        .sync-banner-text strong { display: block; margin-bottom: 2px; font-size: 0.95rem; text-transform: uppercase; }
+        .sync-banner-text small { color: #8e8eab; font-size: 0.75rem; }
 
         .time-form {
             display: flex;
             align-items: center;
             gap: 8px;
             flex-wrap: wrap;
+            font-family: 'JetBrains Mono', monospace;
         }
         .time-form input[type="datetime-local"] {
-            background: #35354c;
-            border: 1px solid rgba(255,255,255,0.15);
-            border-radius: 6px;
+            background: #000;
+            border: 1px solid #333;
             color: #fff;
-            padding: 7px 10px;
-            font-size: 0.85rem;
+            padding: 5px 8px;
+            font-size: 0.8rem;
+            font-family: 'JetBrains Mono', monospace;
         }
         .time-form button, .btn {
-            padding: 7px 16px;
-            border-radius: 6px;
-            border: none;
-            font-size: 0.85rem;
+            padding: 5px 12px;
+            border: 1px solid;
+            font-size: 0.8rem;
             font-weight: 600;
             cursor: pointer;
+            text-transform: uppercase;
+            font-family: 'JetBrains Mono', monospace;
+            background: transparent;
         }
-        .btn-amber { background: #fbbf24; color: #1a1a1a; }
-        .btn-amber:hover { background: #f59e0b; }
-        .btn-green { background: #4ade80; color: #1a1a1a; }
-        .btn-green:hover { background: #22c55e; }
-        .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+        .btn-amber { border-color: #fbbf24; color: #fbbf24; }
+        .btn-amber:hover { background: rgba(251, 191, 36, 0.1); }
+        .btn-green { border-color: #4ade80; color: #4ade80; }
+        .btn-green:hover { background: rgba(74, 222, 128, 0.1); }
+        .btn-sm { padding: 4px 10px; font-size: 0.75rem; }
 
         .performance-footer {
-            position: sticky;
+            position: fixed;
             bottom: 0;
+            left: 0;
             width: 100%;
-            padding: 12px 20px;
-            background: rgba(53, 53, 76, 0.9);
-            backdrop-filter: blur(10px);
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            margin-top: 20px;
+            padding: 8px 15px;
+            background: #000;
+            border-top: 1px solid #222;
         }
 
         .performance-stats {
@@ -233,20 +241,22 @@
             max-width: 1400px;
             margin: 0 auto;
             font-size: 0.75rem;
-            color: #8e8eab;
+            color: #6b7280;
         }
 
         .performance-stats span {
             margin: 0 10px;
         }
+        
+        .highlight-green { color: #4ade80; }
     </style>
 </head>
 
 <body>
     <div class="container">
         <header>
-            <h1>🏎️ DAQ Base Station</h1>
-            <p class="subtitle">Real-Time Connection Monitor</p>
+            <h1>[DAQ_BASE_STATION]</h1>
+            <p class="subtitle">REAL-TIME CONNECTION MONITOR</p>
         </header>
 
         <div class="connection-status" id="connectionStatus">
@@ -269,7 +279,7 @@
 
         <div class="status-grid">
             <div class="card">
-                <div class="card-title">📡 Connection</div>
+                <div class="card-title">[CONNECTION]</div>
                 <div class="metric">
                     <span class="metric-label">Status</span>
                     <span class="metric-value" id="connStatus">--</span>
@@ -285,9 +295,13 @@
             </div>
 
             <div class="card">
-                <div class="card-title">📊 Packet Statistics</div>
+                <div class="card-title">[PACKET_STATS]</div>
                 <div class="metric">
-                    <span class="metric-label">Received/sec</span>
+                    <span class="metric-label">CAN Msgs/sec</span>
+                    <span class="metric-value highlight-green" id="msgRateCard">0</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Batches/sec</span>
                     <span class="metric-value" id="rxRate">0</span>
                 </div>
                 <div class="metric">
@@ -301,7 +315,7 @@
             </div>
 
             <div class="card">
-                <div class="card-title">⚡ Performance</div>
+                <div class="card-title">[PERFORMANCE]</div>
                 <div class="metric">
                     <span class="metric-label">Packet Loss</span>
                     <span class="metric-value" id="lossPercent">0%</span>
@@ -317,7 +331,7 @@
             </div>
 
             <div class="card">
-                <div class="card-title">🔗 Link Diagnostics</div>
+                <div class="card-title">[LINK_DIAGNOSTICS]</div>
                 <div class="metric">
                     <span class="metric-label">Ping RTT</span>
                     <span class="metric-value" id="pingRtt">--</span>
@@ -334,7 +348,7 @@
         </div>
 
         <div class="chart-container">
-            <div class="card-title">📈 Packet Rate (Last 60s)</div>
+            <div class="card-title">[PACKET_RATE_60s]</div>
             <canvas id="rateChart" class="sparkline"></canvas>
         </div>
 
@@ -473,16 +487,17 @@
         }
 
         function updateStats(stats) {
-            const { received, missing, recovered } = stats;
+            const { received, missing, recovered, messages } = stats;
 
             if (stats.ecu_synced !== undefined) {
                 updateSyncBanner(stats.ecu_synced, stats.ecu_sync_source || 'none');
             }
 
+            document.getElementById('msgRateCard').textContent = messages || 0;
             document.getElementById('rxRate').textContent = received || 0;
             document.getElementById('missRate').textContent = missing || 0;
             document.getElementById('recRate').textContent = recovered || 0;
-            document.getElementById('msgRate').textContent = received || 0;
+            document.getElementById('msgRate').textContent = messages || 0;
 
             totalReceived += received || 0;
             totalMissing += missing || 0;
@@ -496,7 +511,7 @@
                 : 0;
             document.getElementById('lossPercent').textContent = lossPercent + '%';
 
-            rateHistory.push(received || 0);
+            rateHistory.push(messages || 0);
             if (rateHistory.length > MAX_HISTORY) {
                 rateHistory.shift();
             }

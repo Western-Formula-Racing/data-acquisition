@@ -130,18 +130,55 @@ class TelemetryNode:
 
         # CAN Reader Task
         async def can_reader():
-            try:
-                # Check for simulation mode
-                if os.getenv("SIMULATE", "false").lower() == "true":
-                    raise Exception("Simulation requested")
+            use_simulation = os.getenv("SIMULATE", "false").lower() == "true"
+            bus = None
 
-                # Note: Adjust interface as needed for RPi (e.g., mcp2515)
-                bus = can.interface.Bus(channel='can0', bustype='socketcan')
-                logger.info("CAN Reader started on can0")
-                loop = asyncio.get_running_loop()
+            if not use_simulation:
+                try:
+                    bus = can.interface.Bus(channel='can0', bustype='socketcan')
+                    logger.info("CAN Reader started on can0")
+                except Exception as e:
+                    logger.critical(f"FATAL: CAN Bus initialization failed ({e}). "
+                                    f"Ensure 'can0' is UP or set SIMULATE=true.")
+                    raise RuntimeError(f"CAN Bus initialization failed: {e}") from e
+
+            if use_simulation:
+                logger.warning("="*60)
+                logger.warning("  ███  SIMULATION MODE ACTIVE  ███")
+                logger.warning("  Generating fake CAN frames — NOT reading real hardware!")
+                logger.warning("="*60)
+                import random
+
+                # Standard IDs from example.dbc: 192 (VCU), 256 (MC), 512 (BMS), 768 (Wheels)
+                # Extended IDs from example.dbc (actual 29-bit arbitration IDs, no EFF bit):
+                #   403105268 = 0x1806E5F4  Charger_Command  (DBC ID 2550588916)
+                #   419385573 = 0x18FF50E5  Charger_Status   (DBC ID 2566869221)
+                sim_ids = [192, 256, 512, 768, 403105268, 419385573]
+
                 while True:
+                    await asyncio.sleep(0.01)  # ~100 Hz
+                    can_id = random.choice(sim_ids)
+                    data = bytes([random.randint(0, 255) for _ in range(8)])
+                    if self.can_event is not None:
+                        self.can_event.set()
+                    telemetry_msg = CANMessage(self._corrected_time(), can_id, data)
+                    await queue.put(telemetry_msg)
+                return  # unreachable, but makes intent clear
+
+            # ── Real CAN read loop ────────────────────────────────────────
+            loop = asyncio.get_running_loop()
+            consecutive_errors = 0
+            MAX_CONSECUTIVE_ERRORS = 50  # give up after sustained failures
+
+            while True:
+                try:
                     msg = await loop.run_in_executor(None, lambda: bus.recv(0.1))
+                    consecutive_errors = 0  # reset on any successful call
                     if msg:
+                        # Skip error/remote frames (generated when can0 is up but bus disconnected)
+                        if msg.is_error_frame or msg.is_remote_frame:
+                            logger.debug(f"Filtered CAN noise/error frame: ID={msg.arbitration_id}")
+                            continue
                         if self.can_event is not None:
                             self.can_event.set()
                         if msg.arbitration_id == ECU_TIMESTAMP_ID:
@@ -152,32 +189,17 @@ class TelemetryNode:
                             continue  # hold all data until a time source is established
                         telemetry_msg = CANMessage(self._corrected_time(), msg.arbitration_id, msg.data)
                         await queue.put(telemetry_msg)
-            except Exception as e:
-                logger.warning(f"CAN Interface unavailable ({e}). Starting simulation mode.")
-                import random
-                
-                # Standard IDs from example.dbc: 192 (VCU), 256 (MC), 512 (BMS), 768 (Wheels)
-                # Extended IDs from example.dbc (actual 29-bit arbitration IDs, no EFF bit):
-                #   403105268 = 0x1806E5F4  Charger_Command  (DBC ID 2550588916)
-                #   419385573 = 0x18FF50E5  Charger_Status   (DBC ID 2566869221)
-                sim_ids = [192, 256, 512, 768, 403105268, 419385573]
-                
-                while True:
-                    # Generate a fake message every ~10ms (100Hz)
-                    await asyncio.sleep(0.01) 
-                    
-                    can_id = random.choice(sim_ids)
-                    data = bytes([random.randint(0, 255) for _ in range(8)])
-                    
-                    # Create valid-looking data for specific IDs to make graphs look nice
-                    if can_id == 192: # VCU
-                        # specific byte manipulation if needed, else random is fine for "alive" check
-                        pass
-                        
-                    if self.can_event is not None:
-                        self.can_event.set()
-                    telemetry_msg = CANMessage(self._corrected_time(), can_id, data)
-                    await queue.put(telemetry_msg)
+                except Exception as e:
+                    consecutive_errors += 1
+                    logger.error(f"CAN recv() error #{consecutive_errors}: {e}")
+                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                        logger.error(
+                            f"CAN recv() failed {MAX_CONSECUTIVE_ERRORS} times in a row. "
+                            "CAN interface is likely dead. Stopping CAN reader "
+                            "(restart container to retry). NOT entering simulation."
+                        )
+                        return
+                    await asyncio.sleep(1.0)  # backoff before retry
 
         # UDP Sender Task
         async def udp_sender():
@@ -348,7 +370,7 @@ class TelemetryNode:
         logger.info("Starting Base Station Mode...")
         expected_seq = None
         missing_seqs = set()
-        stats = {"received": 0, "missing": 0, "recovered": 0}
+        stats = {"received": 0, "missing": 0, "recovered": 0, "messages": 0}
         
         # UDP Receiver Task
         async def udp_receiver():
@@ -369,12 +391,17 @@ class TelemetryNode:
 
                 if len(data) < 10: continue
                 
-                stats["received"] += 1
                 seq, count = struct.unpack("!QH", data[:10])
                 
                 if expected_seq is None:
                     expected_seq = seq
                     logger.info(f"Initial sequence: {seq}")
+
+                # Sequence reset detection (e.g. car restarted)
+                if expected_seq is not None and seq < expected_seq - 1000:
+                    logger.info(f"Sequence reset detected. Expected {expected_seq}, got {seq}. Resetting expected_seq.")
+                    expected_seq = seq
+                    missing_seqs.clear()
                 
                 if seq > expected_seq:
                     # Gap detected
@@ -385,9 +412,20 @@ class TelemetryNode:
                         # Keep missing list manageable
                         if len(missing_seqs) > 1000:
                             missing_seqs.remove(min(missing_seqs))
-                
-                if seq in missing_seqs:
-                    missing_seqs.remove(seq)
+                elif seq < expected_seq:
+                    # Out of order or duplicate
+                    if seq in missing_seqs:
+                        missing_seqs.remove(seq)
+                        stats["recovered"] += 1
+                        stats["received"] += 1
+                        stats["messages"] += count
+                    else:
+                        # Duplicate packet: ignore
+                        continue
+                        
+                if seq >= expected_seq:
+                    stats["received"] += 1
+                    stats["messages"] += count
                 
                 expected_seq = max(expected_seq, seq + 1)
                 
@@ -454,6 +492,7 @@ class TelemetryNode:
                 stats["received"] = 0
                 stats["missing"] = 0
                 stats["recovered"] = 0
+                stats["messages"] = 0
 
         # Uplink Relay Task — subscribe to Redis can_uplink and forward to car via UDP
         async def uplink_relay():
