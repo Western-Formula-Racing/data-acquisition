@@ -1,0 +1,78 @@
+name: SETUP_CARD PDF Build
+
+on:
+  push:
+    paths:
+      - 'universal-telemetry-software/checklist/SETUP_CARD.tex'
+  workflow_dispatch:
+
+jobs:
+  build_pdf:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to count commits
+
+      - name: Extract metadata
+        id: metadata
+        run: |
+          COUNT=$(git rev-list --count HEAD)
+          HASH=$(git rev-parse --short HEAD)
+          DATE=$(date +'%Y-%m-%d')
+          VERSION="Build #$COUNT ($HASH) - $DATE"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "date=$DATE" >> $GITHUB_OUTPUT
+
+      - name: Inject metadata
+        run: |
+          # Escape # as \# for LaTeX
+          ESCAPED_VERSION=$(echo "${{ steps.metadata.outputs.version }}" | sed 's/#/\\#/g')
+          sed -i "s|\\\\newcommand{\\\\buildversion}{Local Build}|\\\\newcommand{\\\\buildversion}{$ESCAPED_VERSION}|" universal-telemetry-software/checklist/SETUP_CARD.tex
+
+      - name: Compile LaTeX document
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: universal-telemetry-software/checklist/SETUP_CARD.tex
+          compiler: pdflatex
+          args: "-jobname=SETUP_CARD -interaction=nonstopmode -halt-on-error"
+
+      - name: Rename and Prepare PDF
+        run: |
+          mv SETUP_CARD.pdf "SETUP_CARD-build-${{ steps.metadata.outputs.count }}-${{ steps.metadata.outputs.hash }}.pdf"
+
+      - name: Manage Release and Maintain 5 Versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE_TAG="checklist-builds"
+          FILE_NAME="SETUP_CARD-build-${{ steps.metadata.outputs.count }}-${{ steps.metadata.outputs.hash }}.pdf"
+          
+          # Create release if it doesn't exist
+          if ! gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            echo "Creating new release $RELEASE_TAG"
+            gh release create "$RELEASE_TAG" --title "Latest Checklist Builds" --notes "Automated builds of the SETUP_CARD quick reference."
+          fi
+          
+          # Upload new artifact
+          echo "Uploading $FILE_NAME"
+          gh release upload "$RELEASE_TAG" "$FILE_NAME" --clobber
+          
+          # Maintain last 5 versions
+          echo "Pruning old builds... (keeping 5 most recent)"
+          ASSETS=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | grep '^SETUP_CARD-build-' | sort -V -r)
+          
+          COUNT=0
+          while read -r asset; do
+            COUNT=$((COUNT+1))
+            if [ $COUNT -gt 5 ]; then
+              echo "Deleting old asset: $asset"
+              gh release delete-asset "$RELEASE_TAG" "$asset" -y
+            fi
+          done <<< "$ASSETS"

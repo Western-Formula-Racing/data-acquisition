@@ -31,6 +31,8 @@
 % ─── Column helpers ──────────────────────────────────────────────────────────
 % A5 text width ≈ 126mm
 
+% ─── Metadata ────────────────────────────────────────────────────────────────
+\newcommand{\buildversion}{Local Build}
 \begin{document}
 \raggedright
 \small
@@ -39,7 +41,15 @@
 % ─────────────────────────────────────────────────────────────────────────────
 % TITLE
 % ─────────────────────────────────────────────────────────────────────────────
-\noindent\colorbox{headbg}{\textcolor{white}{\textbf{\strut\ UTS QUICK REFERENCE CARD -- DAQ RADIO}}}
+\noindent
+\colorbox{headbg}{
+  \parbox{\dimexpr\linewidth-2\fboxsep}{
+    \textcolor{white}{\textbf{\strut
+    UNIVERSAL TELEMETRY SOFTWARE QUICK REFERENCE CARD\\
+    WFR DATA ACQUISITION
+    }}
+  }
+}
 \vspace{1mm}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -747,5 +757,8 @@ and point their own Pecan instance at the car's WSS endpoint.
   \cmd{grep "time sync"} -- ECU clock synced? & \cmd{grep "trusting RPi"} -- System clock fallback? \\
   \hline
 \end{tabularx}
+
+\vfill
+\noindent\textcolor{gray}{\tiny \buildversion}
 
 \end{document}
