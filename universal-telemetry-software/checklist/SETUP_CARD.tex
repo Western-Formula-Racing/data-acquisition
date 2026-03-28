@@ -6,7 +6,10 @@
 \usepackage[table]{xcolor}
 \usepackage{array}
 \usepackage{tabularx}
+\usepackage{textcomp}
 \usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{pifont}
 \usepackage{helvet}
 \usepackage[scaled=0.85]{sourcecodepro}
 \usepackage[T1]{fontenc}
@@ -613,8 +616,8 @@ and point their own Pecan instance at the car's WSS endpoint.
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{docker compose -f docker-compose.prod.yml exec telemetry python -m src.cloud\_sync --check-only} \\[1mm]
-  \textbf{PASS:} \cmd{✓ Cloud reachable} \\
-  \textbf{FAIL:} \cmd{✗ Cloud unreachable} \quad \textit{Fix:} check base RPi internet connection \\
+  \textbf{PASS:} \cmd{\text{\checkmark}\ Cloud reachable} \\
+  \textbf{FAIL:} \cmd{\ding{55}\ Cloud unreachable} \quad \textit{Fix:} check base RPi internet connection \\
 \end{tabular}
 
 \vspace{1mm}
@@ -623,9 +626,9 @@ and point their own Pecan instance at the car's WSS endpoint.
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "CloudSync"} \\[1mm]
-  \textbf{PASS:} \cmd{✓ Synced N points to cloud} every 60s \\
+  \textbf{PASS:} \cmd{\text{\checkmark}\ Synced N points to cloud} every 60s \\
   \textbf{FAIL:} \cmd{CLOUD\_INFLUX\_TOKEN not set} \quad \textit{Fix:} see token step above \\
-  \textbf{FAIL:} \cmd{Cloud unreachable} \quad sync will retry next interval automatically \\[1mm]
+  \textbf{FAIL:} \cmd{\ding{55}\ Cloud unreachable} \quad sync will retry next interval automatically \\[1mm]
   Manual one-off sync: \cmd{python -m src.cloud\_sync --last-hours 24} \\
   Dry run (no write): \cmd{python -m src.cloud\_sync --dry-run} \\
   State file (tracks cursor): \cmd{/tmp/influx\_cloud\_sync\_state.json} \\
