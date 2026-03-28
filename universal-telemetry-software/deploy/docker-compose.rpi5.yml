@@ -14,5 +14,3 @@ services:
   influxdb3:
     platform: linux/amd64
 
-  test-influxdb3:
-    platform: linux/amd64

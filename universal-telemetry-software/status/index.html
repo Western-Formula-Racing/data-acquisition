@@ -315,6 +315,22 @@
                     <span class="metric-value" id="totalMiss">0</span>
                 </div>
             </div>
+
+            <div class="card">
+                <div class="card-title">🔗 Link Diagnostics</div>
+                <div class="metric">
+                    <span class="metric-label">Ping RTT</span>
+                    <span class="metric-value" id="pingRtt">--</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Throughput</span>
+                    <span class="metric-value" id="throughput">--</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Link Loss</span>
+                    <span class="metric-value" id="linkLoss">--</span>
+                </div>
+            </div>
         </div>
 
         <div class="chart-container">
@@ -373,8 +389,12 @@
                     try {
                         const data = JSON.parse(event.data);
 
-                        if (data.received !== undefined) {
+                        if (data.type === 'system_stats' || (data.received !== undefined && !data.type)) {
                             updateStats(data);
+                        } else if (data.type === 'ping') {
+                            updatePing(data);
+                        } else if (data.type === 'throughput') {
+                            updateThroughput(data);
                         }
 
                         lastMessageTime = Date.now();
@@ -564,6 +584,31 @@
 
         function hideError() {
             document.getElementById('errorMsg').style.display = 'none';
+        }
+
+        function updatePing(data) {
+            const rtt = data.rtt_ms;
+            if (rtt == null) return;
+            const el = document.getElementById('pingRtt');
+            if (rtt < 0) {
+                el.textContent = 'Timeout';
+                el.style.color = '#ef4444';
+            } else {
+                el.textContent = rtt.toFixed(1) + ' ms';
+                el.style.color = rtt > 80 ? '#ef4444' : rtt > 20 ? '#fbbf24' : '#4ade80';
+            }
+        }
+
+        function updateThroughput(data) {
+            const mbps = data.mbps;
+            const loss = data.loss_pct;
+            if (mbps != null) {
+                document.getElementById('throughput').textContent =
+                    mbps < 0 ? 'Error' : mbps.toFixed(2) + ' Mbps';
+            }
+            if (loss != null) {
+                document.getElementById('linkLoss').textContent = loss.toFixed(1) + '%';
+            }
         }
 
         connect();

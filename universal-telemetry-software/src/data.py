@@ -445,6 +445,7 @@ class TelemetryNode:
             while True:
                 await asyncio.sleep(1)
                 payload = {
+                    "type": "system_stats",
                     **stats,
                     "ecu_synced": self._ecu_synced,
                     "ecu_sync_source": self._sync_source,

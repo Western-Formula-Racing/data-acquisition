@@ -266,34 +266,64 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                             </div>
 
                             {/* WebSocket URL Section */}
-                            <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
-                                <div className="flex flex-col">
-                                    <span className="text-sm font-medium">Custom WebSocket URL</span>
-                                    <span className="text-xs text-gray-400">Leave empty to use auto (Local/Cloud)</span>
+                            <div className="flex flex-col w-full rounded-lg text-white bg-option gap-2 px-4 py-3">
+                                <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-medium">Custom WebSocket URL</span>
+                                        <span className="text-xs text-gray-400">Leave empty to use auto (Local/Cloud)</span>
+                                    </div>
+                                    <div className="flex gap-2 items-center">
+                                        <input
+                                            type="text"
+                                            placeholder="ws://localhost:9080"
+                                            className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none flex-1 min-w-0 md:w-48 h-9"
+                                            value={customWsUrl}
+                                            onChange={(e) => setCustomWsUrl(e.target.value)}
+                                        />
+                                        <Button
+                                            onClick={() => {
+                                                if (customWsUrl) {
+                                                    localStorage.setItem("custom-ws-url", customWsUrl);
+                                                } else {
+                                                    localStorage.removeItem("custom-ws-url");
+                                                }
+                                                webSocketService.reconnect();
+                                                onClose();
+                                            }}
+                                            variant="primary"
+                                        >
+                                            Apply
+                                        </Button>
+                                    </div>
                                 </div>
-                                <div className="flex gap-2 items-center">
-                                    <input
-                                        type="text"
-                                        placeholder="ws://localhost:9080"
-                                        className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none flex-1 min-w-0 md:w-48 h-9"
-                                        value={customWsUrl}
-                                        onChange={(e) => setCustomWsUrl(e.target.value)}
-                                    />
-                                    <Button
-                                        onClick={() => {
-                                            if (customWsUrl) {
-                                                localStorage.setItem("custom-ws-url", customWsUrl);
-                                            } else {
-                                                localStorage.removeItem("custom-ws-url");
-                                            }
-                                            webSocketService.reconnect();
-                                            onClose();
-                                        }}
-                                        variant="primary"
-                                    >
-                                        Apply
-                                    </Button>
-                                </div>
+                                {(() => {
+                                    try {
+                                        const presets: { label: string; url: string }[] = JSON.parse(
+                                            import.meta.env.VITE_WS_PRESETS ?? "[]"
+                                        );
+                                        if (presets.length === 0) return null;
+                                        return (
+                                            <div className="flex flex-wrap gap-2">
+                                                {presets.map((preset) => (
+                                                    <button
+                                                        key={preset.url}
+                                                        className="text-xs px-3 py-1 rounded border border-gray-500 text-gray-300 hover:border-blue-400 hover:text-white transition-colors"
+                                                        onClick={() => {
+                                                            setCustomWsUrl(preset.url);
+                                                            localStorage.setItem("custom-ws-url", preset.url);
+                                                            webSocketService.reconnect();
+                                                            onClose();
+                                                        }}
+                                                    >
+                                                        {preset.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        );
+                                    } catch {
+                                        return null;
+                                    }
+                                })()}
                             </div>
 
                             {/* Performance Overlay Toggle */}

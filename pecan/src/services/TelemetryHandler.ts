@@ -8,7 +8,12 @@ export const DIAG_MSG_IDS = {
   LINK_PING: '__link_ping__',
   LINK_THROUGHPUT: '__link_throughput__',
   LINK_RADIO: '__link_radio__',
+  CAR_LINK: '__car_link__',
+  HEARTBEAT: '__heartbeat__',
 } as const;
+
+// CAN ID of the UTS heartbeat frame (timestamp sync injected by car Pi)
+const HEARTBEAT_CAN_ID = 1999; // 0x7CF
 
 class TelemetryHandler {
   private isInitialized = false;
@@ -29,24 +34,39 @@ class TelemetryHandler {
 
       const messages = Array.isArray(decoded) ? decoded : [decoded];
       messages.forEach(msg => {
-        if (msg?.signals) {
-          const hexId = formatCanId(msg.canId);
+        if (!msg?.signals) return;
+
+        // Intercept UTS heartbeat — it's a timestamp sync frame, not real CAN data
+        if (msg.canId === HEARTBEAT_CAN_ID) {
           dataStore.ingestMessage({
-            msgID: hexId,
-            messageName: msg.messageName || `CAN_${hexId}`,
-            data: msg.signals,
+            msgID: DIAG_MSG_IDS.HEARTBEAT,
+            messageName: 'Heartbeat',
+            data: {},
             rawData: msg.rawData,
-            timestamp: msg.time || Date.now()
+            timestamp: msg.time || Date.now(),
           });
+          return;
         }
+
+        const hexId = formatCanId(msg.canId);
+        dataStore.ingestMessage({
+          msgID: hexId,
+          messageName: msg.messageName || `CAN_${hexId}`,
+          data: msg.signals,
+          rawData: msg.rawData,
+          timestamp: msg.time || Date.now()
+        });
       });
     });
 
-    // Listen for raw messages to catch diagnostic data
-    webSocketService.on('raw', (messageData: any) => {
-      if (webSocketService.isIngestionSuppressed()) return;
-      this.handleDiagnosticMessage(messageData);
-    });
+    // Listen for named diagnostic events (type field set by UTS/bridge)
+    // This is more reliable than 'raw' because WebSocketService routes by type first.
+    for (const eventType of ['system_stats', 'ping', 'throughput', 'radio'] as const) {
+      webSocketService.on(eventType, (messageData: any) => {
+        if (webSocketService.isIngestionSuppressed()) return;
+        this.handleDiagnosticMessage(messageData);
+      });
+    }
 
     this.isInitialized = true;
     console.log('[TelemetryHandler] Initialized');
@@ -57,6 +77,7 @@ class TelemetryHandler {
 
     // system_stats: {"received": N, "missing": N, "recovered": N}
     if ('received' in msg && 'missing' in msg && 'recovered' in msg && !('canId' in msg)) {
+      const ts = Date.now();
       dataStore.ingestMessage({
         msgID: DIAG_MSG_IDS.SYSTEM_STATS,
         messageName: 'System Stats',
@@ -66,7 +87,20 @@ class TelemetryHandler {
           recovered: { sensorReading: Number(msg.recovered), unit: 'pkt/s' },
         },
         rawData: '',
-        timestamp: Date.now(),
+        timestamp: ts,
+      });
+      // Car link status: car Pi sends heartbeat packets even without CAN bus connected,
+      // so received > 0 reliably means the radio link between car and base is up.
+      const carPktRate = Number(msg.received);
+      dataStore.ingestMessage({
+        msgID: DIAG_MSG_IDS.CAR_LINK,
+        messageName: 'Car Link',
+        data: {
+          linked: { sensorReading: carPktRate > 0 ? 1 : 0, unit: carPktRate > 0 ? '✓ LINKED' : '✗ NO SIGNAL' },
+          pkt_rate: { sensorReading: carPktRate, unit: 'pkt/s' },
+        },
+        rawData: '',
+        timestamp: ts,
       });
       return true;
     }

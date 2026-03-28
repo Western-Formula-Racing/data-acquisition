@@ -106,18 +106,24 @@
 \noindent
 \begin{tabular}{p{126mm}}
   \textbf{Car RPi:} \cmd{192.168.1.10} \quad \textbf{Base RPi:} \cmd{192.168.1.20} \\[1mm]
-  Via the desktop: click the \textbf{network icon} (top-right taskbar) $\rightarrow$ \\
-  \textbf{Advanced Options} $\rightarrow$ \textbf{Edit Connections} $\rightarrow$ select \cmd{eth0} $\rightarrow$ \textbf{Edit} \\
-  $\rightarrow$ \textbf{IPv4 Settings} tab $\rightarrow$ Method: \textbf{Manual} $\rightarrow$ \textbf{Add}: \\[1mm]
-  \begin{tabular}{p{28mm}p{36mm}p{36mm}}
-    \rowcolor{tblhd}
-    & \textbf{Car RPi} & \textbf{Base RPi} \\
-    Address   & \cmd{192.168.1.10} & \cmd{192.168.1.20} \\
-    Netmask   & \cmd{255.255.255.0} & \cmd{255.255.255.0} \\
-    Gateway   & (leave blank) & (leave blank) \\
-  \end{tabular} \\[1mm]
-  Click \textbf{Save}, then disconnect and reconnect the Ethernet cable. \\[1mm]
-  \textbf{PASS:} \cmd{ip addr show eth0} shows the assigned IP \\
+  No gateway is set -- the radio link is a direct point-to-point connection. \\[1mm]
+  \textbf{Option A -- Script (recommended):} \\
+  \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software} \\
+  \cmd{sudo ./setup-static-ip.sh} \quad (prompts: 1 = car, 2 = base) \\[1mm]
+  \textbf{Option B -- Netplan (manual):} \\
+  Create \cmd{/etc/netplan/10-eth0-static.yaml}: \\
+  \cmd{\ \ network:} \\
+  \cmd{\ \ \ \ version: 2} \\
+  \cmd{\ \ \ \ ethernets:} \\
+  \cmd{\ \ \ \ \ \ eth0:} \\
+  \cmd{\ \ \ \ \ \ \ \ addresses: [192.168.1.20/24]} \quad \textit{(or .10 on car)} \\
+  \cmd{sudo chmod 600 /etc/netplan/10-eth0-static.yaml} \\
+  \cmd{sudo netplan apply} \\[1mm]
+  \textit{Note: \cmd{netplan apply} briefly resets the network -- Tailscale may drop for a few seconds.} \\[1mm]
+  \textbf{Option C -- NetworkManager GUI:} IPv4 Settings $\rightarrow$ Method: Manual $\rightarrow$ Add address. \\
+  \textit{The Gateway field cannot be left blank in the GUI -- enter \cmd{0.0.0.0} as a dummy value.} \\[1mm]
+  \textbf{PASS:} \cmd{ip addr show eth0} shows \cmd{192.168.1.10} or \cmd{192.168.1.20} \\
+  \textbf{FAIL:} no IP after reboot -- another netplan file may be overriding; check \cmd{/etc/netplan/} \\
 \end{tabular}
 
 \vspace{1mm}
