@@ -317,12 +317,12 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{grep REMOTE\_IP docker-compose.prod.yml} \\[1mm]
-  \textbf{CAR RPi} (\cmd{192.168.1.10}): \cmd{REMOTE\_IP=192.168.1.20} (base IP) \\
-  \textbf{BASE RPi} (\cmd{192.168.1.20}): \cmd{REMOTE\_IP=192.168.1.10} (car IP) \\[1mm]
-  Must be set \textbf{manually per-device} -- there is no auto-resolution. Default is \cmd{192.168.1.20}. \\[1mm]
+  \cmd{REMOTE\_IP} is read from \cmd{deploy/.env} (gitignored -- survives \cmd{git reset}). \\[1mm]
+  \textbf{CAR RPi} (\cmd{192.168.1.10}): \cmd{echo "REMOTE\_IP=192.168.1.20" > deploy/.env} \\
+  \textbf{BASE RPi} (\cmd{192.168.1.20}): \cmd{echo "REMOTE\_IP=192.168.1.10" > deploy/.env} \\[1mm]
+  \warnbox{One-time setup per RPi. Do NOT edit \cmd{docker-compose.prod.yml} for this.} \\[1mm]
   \textit{Future ChargeCart RPi planned at} \cmd{192.168.1.30} -- set \cmd{REMOTE\_IP=192.168.1.20} (base). \\[1mm]
-  Edit: \cmd{nano docker-compose.prod.yml} \quad Apply: \cmd{docker compose -f docker-compose.prod.yml --profile car down \&\& ... --profile car up -d} \\
+  Verify: \cmd{cat deploy/.env} \quad Apply: \cmd{docker compose -f docker-compose.prod.yml --profile car down \&\& ... --profile car up -d} \\
   (use \cmd{--profile base} on the base RPi) \\
 \end{tabular}
 

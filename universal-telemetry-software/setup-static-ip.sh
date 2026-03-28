@@ -4,6 +4,9 @@
 #
 # Sets eth0 to 192.168.1.10/24 (car) or 192.168.1.20/24 (base).
 # No gateway is set — the radio link is a direct point-to-point connection.
+#
+# Also writes deploy/.env with per-Pi settings (REMOTE_IP, SET_TIME_ENABLED)
+# so git reset never clobbers them.
 set -euo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
@@ -22,12 +25,14 @@ echo ""
 read -rp "Enter 1 or 2: " choice
 
 case "$choice" in
-    1) IP="192.168.1.10"; ROLE="car" ;;
-    2) IP="192.168.1.20"; ROLE="base" ;;
+    1) IP="192.168.1.10"; ROLE="car";  REMOTE_IP="192.168.1.20" ;;
+    2) IP="192.168.1.20"; ROLE="base"; REMOTE_IP="192.168.1.10" ;;
     *) echo -e "${RED}Invalid choice. Enter 1 or 2.${NC}"; exit 1 ;;
 esac
 
 NETPLAN_FILE=/etc/netplan/10-eth0-static.yaml
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/deploy/.env"
 
 # ── Write netplan config ───────────────────────────────────────────────────────
 cat > "$NETPLAN_FILE" <<EOF
@@ -57,6 +62,16 @@ else
     exit 1
 fi
 
+# ── Write deploy/.env ─────────────────────────────────────────────────────────
+cat > "$ENV_FILE" <<EOF
+REMOTE_IP=${REMOTE_IP}
+SET_TIME_ENABLED=true
+EOF
+
+echo -e "${GREEN}✓ Written $ENV_FILE${NC}"
+echo -e "    REMOTE_IP=${REMOTE_IP}"
+echo -e "    SET_TIME_ENABLED=true"
+
 echo ""
 echo -e "${GREEN}=========================================${NC}"
 echo -e "${GREEN}  Static IP set — next steps:${NC}"
@@ -66,5 +81,5 @@ if [[ "$ROLE" == "car" ]]; then
 else
     echo -e "  Ping car RPi:   ping -c 4 192.168.1.10"
 fi
-echo -e "  This IP persists across reboots."
+echo -e "  IP and deploy/.env persist across reboots and git resets."
 echo -e "${GREEN}=========================================${NC}"

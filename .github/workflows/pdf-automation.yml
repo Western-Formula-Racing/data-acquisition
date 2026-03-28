@@ -32,8 +32,8 @@ jobs:
 
       - name: Inject metadata
         run: |
-          # Escape # as \# for LaTeX
-          ESCAPED_VERSION=$(echo "${{ steps.metadata.outputs.version }}" | sed 's/#/\\#/g')
+          # Escape # as \# for LaTeX, then escape \ as \\ so sed replacement doesn't swallow the backslash
+          ESCAPED_VERSION=$(echo "${{ steps.metadata.outputs.version }}" | sed 's/#/\\#/g' | sed 's/\\/\\\\/g')
           sed -i "s|\\\\newcommand{\\\\buildversion}{Local Build}|\\\\newcommand{\\\\buildversion}{$ESCAPED_VERSION}|" universal-telemetry-software/checklist/SETUP_CARD.tex
 
       - name: Compile LaTeX document
