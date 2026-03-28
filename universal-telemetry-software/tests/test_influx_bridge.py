@@ -120,7 +120,7 @@ class TestCANDecoding:
             from src.influx_bridge import InfluxBridge
             bridge = InfluxBridge()
             msg = json.dumps([{
-                "time": 1700000000000,
+                "time": 1750000000000,
                 "canId": 514,
                 "data": [0, 16, 0, 0, 100, 0, 0, 0],
             }])
@@ -130,7 +130,7 @@ class TestCANDecoding:
                 bridge.process_message(msg)
                 if mock_q.called:
                     _, _, ts_ns = mock_q.call_args[0]
-                    assert ts_ns == 1700000000000 * 1_000_000
+                    assert ts_ns == 1750000000000 * 1_000_000
             bridge.close()
 
     def test_extended_can_id_stripped(self):
@@ -161,7 +161,7 @@ class TestMessageProcessing:
     def test_process_valid_message(self, bridge):
         """Process a well-formed Redis CAN message — returns positive count."""
         msg = json.dumps([{
-            "time": 1700000000000,
+            "time": 1750000000000,
             "canId": 514,
             "data": [0, 16, 0, 0, 100, 0, 0, 0],
         }])
@@ -171,8 +171,8 @@ class TestMessageProcessing:
     def test_process_multiple_messages(self, bridge):
         """Process a batch of CAN messages — returns cumulative count."""
         msgs = json.dumps([
-            {"time": 1700000000000, "canId": 512, "data": [0]*8},
-            {"time": 1700000000001, "canId": 192, "data": [0]*8},
+            {"time": 1750000000000, "canId": 512, "data": [0]*8},
+            {"time": 1750000000001, "canId": 192, "data": [0]*8},
         ])
         count = bridge.process_message(msgs)
         assert count >= 0
@@ -184,14 +184,14 @@ class TestMessageProcessing:
 
     def test_process_missing_fields(self, bridge):
         """Messages missing required fields should be skipped, return 0."""
-        msg = json.dumps([{"time": 1700000000000}])  # missing canId, data
+        msg = json.dumps([{"time": 1750000000000}])  # missing canId, data
         count = bridge.process_message(msg)
         assert count == 0
 
     def test_process_short_data(self, bridge):
         """CAN data shorter than 8 bytes should be skipped."""
         msg = json.dumps([{
-            "time": 1700000000000,
+            "time": 1750000000000,
             "canId": 512,
             "data": [0, 1, 2],  # only 3 bytes
         }])
@@ -201,7 +201,7 @@ class TestMessageProcessing:
     def test_process_returns_int(self, bridge):
         """process_message always returns an int, not a list."""
         msg = json.dumps([{
-            "time": 1700000000000,
+            "time": 1750000000000,
             "canId": 514,
             "data": [0]*8,
         }])

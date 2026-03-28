@@ -61,6 +61,9 @@ class TelemetryNode:
         self._clock_offset: float | None = None   # epoch_sec - monotonic at last sync
         self._last_ecu_sync: float = 0.0          # monotonic time of last valid ECU 1999
         self._sync_source: str = "none"           # "ecu_rtc" | "system_clock" | "override"
+        self._base_to_car_offset: float | None = None # Offset between base station time and car's 1970 time
+        self._last_raw_car_time: float | None = None  # Raw timestamp of last message
+        self._car_internal_jump: float | None = None  # Cumulative jump from 1970 to 2026+ internal car time
 
     def publish(self, channel, data):
         redis_utils.safe_publish(self.redis_client, channel, data, logger)
@@ -185,8 +188,6 @@ class TelemetryNode:
                             self._handle_ecu_timestamp(bytes(msg.data))
                         if not self._ecu_synced:
                             self._try_auto_sync()
-                        if not self._ecu_synced:
-                            continue  # hold all data until a time source is established
                         telemetry_msg = CANMessage(self._corrected_time(), msg.arbitration_id, msg.data)
                         await queue.put(telemetry_msg)
                 except Exception as e:
@@ -437,8 +438,50 @@ class TelemetryNode:
                     msg = CANMessage.unpack(data[offset:offset+20])
                     if msg.can_id == ECU_TIMESTAMP_ID:
                         self._handle_ecu_timestamp(bytes(msg.data))
+                        
+                    msg_time = msg.timestamp
+                    base_pi_time = time.time()
+                    
+                    # 1. Detect Car ECU Time Jump
+                    if self._last_raw_car_time is not None:
+                        jump = msg_time - self._last_raw_car_time
+                        if jump > 315360000: # Jumped > 10 years (1970 to 2026)
+                            self._car_internal_jump = jump
+                            logger.info(f"Car jump detected! size: {jump}s")
+                            # Calculate the true correction between true time and what the continuous timeline says
+                            current_offset = self._base_to_car_offset or 0.0
+                            correction = msg_time - (self._last_raw_car_time + current_offset)
+                            
+                            session_id = os.environ.get("BOOT_SESSION_ID", "default")
+                            sync_states_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sync_states")
+                            os.makedirs(sync_states_dir, exist_ok=True)
+                            
+                            sidecar_path = os.path.join(sync_states_dir, f"correction_{session_id}.json")
+                            with open(sidecar_path, "w") as f:
+                                json.dump({
+                                    "boot_session_id": session_id,
+                                    "correction_seconds": correction,
+                                    "created_at": base_pi_time,
+                                    "base_timeline_start": (self._last_raw_car_time + current_offset)
+                                }, f)
+                                
+                    self._last_raw_car_time = msg_time
+
+                    # 2. Reverse the Car's internal jump so the Base Timeline stays perfectly continuous locally
+                    effective_msg_time = msg_time
+                    if self._car_internal_jump is not None:
+                        effective_msg_time -= self._car_internal_jump
+
+                    # 3. Apply Base Pi overrides (if the car started in 1970)
+                    if effective_msg_time < 1742601600 and base_pi_time > _SYSTEM_CLOCK_TRUST_EPOCH:
+                        if self._base_to_car_offset is None:
+                            self._base_to_car_offset = base_pi_time - effective_msg_time
+                        msg_time_ms = int((effective_msg_time + self._base_to_car_offset) * 1000)
+                    else:
+                        msg_time_ms = int(effective_msg_time * 1000)
+                        
                     msgs_to_publish.append({
-                        "time": int(msg.timestamp * 1000),
+                        "time": msg_time_ms,
                         "canId": msg.can_id,
                         "data": list(msg.data)
                     })
@@ -446,6 +489,10 @@ class TelemetryNode:
                 
                 if msgs_to_publish:
                     self.publish(REDIS_CAN_CHANNEL, json.dumps(msgs_to_publish))
+
+                # Yield to the event loop so stats_publisher, heartbeat, etc.
+                # get a chance to run even when packets arrive back-to-back.
+                await asyncio.sleep(0)
 
         # Missing Packet Reporter Task
         async def missing_reporter():
@@ -469,7 +516,28 @@ class TelemetryNode:
                         for item in resends:
                             seq = item['seq']
                             if seq in missing_seqs:
-                                msgs = [{"time": int(m['t']*1000), "canId": m['id'], "data": list(bytes.fromhex(m['d']))} for m in item['msgs']]
+                                msgs = []
+                                for m in item['msgs']:
+                                    msg_time = m['t']
+                                    base_pi_time = time.time()
+                                    
+                                    # For missing messages, just use the fallback jump logic 
+                                    effective_msg_time = msg_time
+                                    if self._car_internal_jump is not None:
+                                        effective_msg_time -= self._car_internal_jump
+                                        
+                                    if effective_msg_time < 1742601600 and base_pi_time > _SYSTEM_CLOCK_TRUST_EPOCH:
+                                        if self._base_to_car_offset is None:
+                                            self._base_to_car_offset = base_pi_time - effective_msg_time
+                                        msg_time_ms = int((effective_msg_time + self._base_to_car_offset) * 1000)
+                                    else:
+                                        msg_time_ms = int(effective_msg_time * 1000)
+                                        
+                                    msgs.append({
+                                        "time": msg_time_ms,
+                                        "canId": m['id'],
+                                        "data": list(bytes.fromhex(m['d']))
+                                    })
                                 self.publish(REDIS_CAN_CHANNEL, json.dumps(msgs))
                                 missing_seqs.remove(seq)
                         
@@ -482,11 +550,14 @@ class TelemetryNode:
         async def stats_publisher():
             while True:
                 await asyncio.sleep(1)
+                influx_raw = self.redis_client.get("influx:status") if self.redis_client else None
+                influx_status = json.loads(influx_raw) if influx_raw else None
                 payload = {
                     "type": "system_stats",
                     **stats,
                     "ecu_synced": self._ecu_synced,
                     "ecu_sync_source": self._sync_source,
+                    "influx": influx_status,
                 }
                 self.publish("system_stats", json.dumps(payload))
                 stats["received"] = 0

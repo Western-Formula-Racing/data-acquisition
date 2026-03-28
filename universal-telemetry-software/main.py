@@ -1,5 +1,6 @@
 import os
 import time
+import uuid
 import multiprocessing
 import logging
 from src.data import TelemetryNode
@@ -95,6 +96,10 @@ if __name__ == "__main__":
     enable_video = os.getenv("ENABLE_VIDEO", "true").lower() == "true"
     enable_audio = os.getenv("ENABLE_AUDIO", "true").lower() == "true"
     enable_influx = os.getenv("ENABLE_INFLUX_LOGGING", "false").lower() == "true"
+    
+    boot_session_id = os.getenv("BOOT_SESSION_ID", str(uuid.uuid4())[:8])
+    os.environ["BOOT_SESSION_ID"] = boot_session_id
+    logger.info(f"Generated BOOT_SESSION_ID: {boot_session_id}")
 
     # Note: Telemetry needs to run first or alone to detect role if "auto"
     # But for simplicity, if "auto", we might need logic in main to detect first?
@@ -180,10 +185,10 @@ if __name__ == "__main__":
         processes.append(p_influx)
         logger.info(f"InfluxDB bridge started (table={os.getenv('INFLUX_TABLE', 'WFR26_base')})")
 
-        p_cloud = multiprocessing.Process(target=start_cloud_sync, name="CloudSync")
-        p_cloud.start()
-        processes.append(p_cloud)
-        logger.info("Cloud sync service started")
+        # p_cloud = multiprocessing.Process(target=start_cloud_sync, name="CloudSync")
+        # p_cloud.start()
+        # processes.append(p_cloud)
+        logger.info("Automatic cloud sync daemon is disabled; use manual trigger instead.")
 
     # 5. Video (Optional)
     if enable_video:
