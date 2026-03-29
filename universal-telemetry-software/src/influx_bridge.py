@@ -238,9 +238,10 @@ class InfluxBridge:
                 pass
         finally:
             logger.info("InfluxBridge stopping …")
-            self.writer.close()
+            self.close()
 
     def close(self):
+        self._flush_unsynced_to_parquet()
         if self.pq_writer is not None:
             self.pq_writer.close()
             self.pq_writer = None

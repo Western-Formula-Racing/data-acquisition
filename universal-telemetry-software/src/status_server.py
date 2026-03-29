@@ -73,9 +73,11 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             env["CLOUD_INFLUX_BUCKET"] = bucket
             
             # Run the cloud sync manually and capture output
+            # cwd must be the project root so python -m src.cloud_sync resolves correctly
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             result = subprocess.run(
                 ["python", "-m", "src.cloud_sync"],
-                capture_output=True, text=True, timeout=120, env=env
+                capture_output=True, text=True, timeout=120, cwd=project_root, env=env
             )
             if result.returncode != 0:
                 logger.error(f"Cloud sync failed: {result.stderr}")

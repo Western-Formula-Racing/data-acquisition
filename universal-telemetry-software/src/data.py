@@ -551,7 +551,12 @@ class TelemetryNode:
             while True:
                 await asyncio.sleep(1)
                 influx_raw = self.redis_client.get("influx:status") if self.redis_client else None
-                influx_status = json.loads(influx_raw) if influx_raw else None
+                influx_status = None
+                if influx_raw:
+                    try:
+                        influx_status = json.loads(influx_raw)
+                    except json.JSONDecodeError:
+                        logger.warning(f"influx:status contains invalid JSON: {influx_raw!r}")
                 payload = {
                     "type": "system_stats",
                     **stats,
