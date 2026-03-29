@@ -276,3 +276,102 @@ class TestTableNaming:
                 bridge = src.influx_bridge.InfluxBridge()
                 assert bridge.writer._measurement == "WFR27_base"
                 bridge.close()
+
+
+# ── Parquet buffering ──────────────────────────────────────────────────────────
+
+class TestParquetBuffering:
+    """Test pre-epoch CAN frame buffering and close() flush behaviour."""
+
+    # Pre-epoch timestamp: 2025-03-20 00:00:00 UTC (before 2026-03-22 trust threshold)
+    PRE_EPOCH_MS = 1742601600000 - 1
+    POST_EPOCH_MS = 1742601600000 + 1
+
+    @pytest.fixture
+    def bridge(self, dbc_env, tmp_path, monkeypatch):
+        """Bridge with an isolated parquet buffer directory."""
+        session_id = "test_session"
+        monkeypatch.setenv("BOOT_SESSION_ID", session_id)
+        with patch("slicks.writer.InfluxDBClient"):
+            from src.influx_bridge import InfluxBridge
+            b = InfluxBridge()
+            yield b
+            b.close()
+            # clean up any stray parquet file from the temp dir
+            for f in tmp_path.iterdir() if tmp_path.is_dir() else []:
+                pass  # bridge.close() already flushed and closed
+
+    def _pre_epoch_msg(self, can_id=514, data=None):
+        if data is None:
+            data = [0, 16, 0, 0, 100, 0, 0, 0]
+        return json.dumps([{"time": self.PRE_EPOCH_MS, "canId": can_id, "data": data}])
+
+    def _post_epoch_msg(self, can_id=514, data=None):
+        if data is None:
+            data = [0, 16, 0, 0, 100, 0, 0, 0]
+        return json.dumps([{"time": self.POST_EPOCH_MS, "canId": can_id, "data": data}])
+
+    def test_pre_epoch_frames_buffered_not_written(self, bridge):
+        """Pre-epoch frames accumulate in unsynced_buffer, not sent to Influx."""
+        bridge.process_message(self._pre_epoch_msg())
+
+        assert len(bridge.unsynced_buffer) == 1
+        assert bridge.last_unsynced_ts_ns == self.PRE_EPOCH_MS * 1_000_000
+
+    def test_post_epoch_frames_not_buffered(self, bridge):
+        """Post-epoch frames bypass the buffer and go straight to Influx."""
+        bridge.process_message(self._post_epoch_msg())
+
+        # buffer should remain empty
+        assert len(bridge.unsynced_buffer) == 0
+        assert bridge.last_unsynced_ts_ns is None
+
+    def test_close_flushes_unsynced_buffer(self, bridge, monkeypatch):
+        """close() must flush unsynced_buffer to Parquet before closing writer."""
+        # Fill buffer with pre-epoch frames (up to but not exceeding BATCH_SIZE)
+        for _ in range(10):
+            bridge.process_message(self._pre_epoch_msg())
+
+        assert len(bridge.unsynced_buffer) == 10
+
+        # Patch _flush_unsynced_to_parquet so we can verify it was called
+        flushed = []
+        original = bridge._flush_unsynced_to_parquet
+        def tracking_flush():
+            flushed.append(True)
+            return original()
+        monkeypatch.setattr(bridge, "_flush_unsynced_to_parquet", tracking_flush)
+
+        bridge.close()
+
+        assert flushed, "close() must call _flush_unsynced_to_parquet()"
+        # After close, buffer should be drained
+        assert len(bridge.unsynced_buffer) == 0
+
+    def test_buffer_replayed_on_post_epoch_arrival(self, bridge):
+        """When first post-epoch frame arrives, buffered pre-epoch frames are replayed."""
+        # Buffer some pre-epoch frames
+        for _ in range(3):
+            bridge.process_message(self._pre_epoch_msg())
+        assert len(bridge.unsynced_buffer) == 3
+
+        # Patch decode_and_queue to track what gets written during replay
+        calls = []
+        original = bridge.writer.decode_and_queue
+        def tracking_decode(cid, data, ts):
+            calls.append((cid, ts))
+            return original(cid, data, ts)
+        bridge.writer.decode_and_queue = tracking_decode
+
+        # Send a post-epoch message — this triggers flush + replay
+        bridge.process_message(self._post_epoch_msg())
+
+        # After replay the buffer must be empty
+        assert len(bridge.unsynced_buffer) == 0
+        # The 3 pre-epoch frames should have been replayed, plus the 1 post-epoch frame
+        assert len(calls) == 4
+
+    def test_invalid_json_in_process_message_does_not_crash(self, bridge):
+        """JSONDecodeError in process_message is caught, does not propagate."""
+        result = bridge.process_message("not valid json {{{")
+        assert result == 0

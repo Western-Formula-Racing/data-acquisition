@@ -555,7 +555,7 @@ class TelemetryNode:
                 if influx_raw:
                     try:
                         influx_status = json.loads(influx_raw)
-                    except json.JSONDecodeError:
+                    except (json.JSONDecodeError, UnicodeDecodeError):
                         logger.warning(f"influx:status contains invalid JSON: {influx_raw!r}")
                 payload = {
                     "type": "system_stats",
