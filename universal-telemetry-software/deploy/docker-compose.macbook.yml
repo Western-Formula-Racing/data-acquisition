@@ -8,6 +8,7 @@ services:
   telemetry:
     profiles: ["base"]
     image: ghcr.io/western-formula-racing/daq-radio/universal-telemetry:latest
+    build: ..   # builds locally; remove to use pre-built GHCR image
     container_name: daq-telemetry
     restart: unless-stopped
     ports:
