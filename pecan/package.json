@@ -13,7 +13,10 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:ci": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:tier1": "vitest run src/utils/canProcessor.test.ts src/lib/DataStore.test.ts src/utils/replayParser.test.ts",
+    "test:tier2": "vitest run src/services/WebSocketService.test.ts src/services/TxWebSocketService.test.ts src/services/SerialService.test.ts",
+    "test:tier3": "vitest run src/config/categories.test.ts src/lib/useDataStore.test.ts src/lib/usePageLock.test.ts src/lib/useRemoteConfig.test.ts"
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.16",
@@ -37,6 +40,9 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+      "@testing-library/react": "^16.3.0",
+      "@testing-library/user-event": "^14.6.1",
+      "jsdom": "^26.1.0",
     "@eslint/js": "^9.36.0",
     "@types/node": "^24.7.1",
     "@types/react": "^19.1.17",
