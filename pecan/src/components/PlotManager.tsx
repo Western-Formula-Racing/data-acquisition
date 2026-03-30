@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Plotly from "plotly.js-dist-min";
 import { dataStore } from "../lib/DataStore";
 import { createGrafanaDashboard } from "../services/GrafanaService";
+import { useTimeline } from "../context/TimelineContext";
 
 // Standard Nivo colors (or similar palette) to ensure consistency between plot and list
 const PLOT_COLORS = [
@@ -54,6 +55,7 @@ function PlotManager({
 }: PlotManagerProps) {
   const plotRef = useRef<HTMLDivElement>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const { checkpoints } = useTimeline();
 
   // Initialize the plot
   useEffect(() => {
@@ -74,12 +76,7 @@ function PlotManager({
       paper_bgcolor: "#1a1a1a",
       plot_bgcolor: "#2a2a2a",
       font: { color: "#ffffff" },
-      showlegend: true,
-      legend: {
-        x: 1,
-        xanchor: "right",
-        y: 1,
-      },
+      showlegend: false,
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -107,9 +104,60 @@ function PlotManager({
 
     const updatePlot = () => {
       const windowEndMs = isLive ? Date.now() : cursorTimeMs;
+      const windowStartMs = windowEndMs - timeWindowMs;
       const resolution = calculateDownsampleResolution(timeWindowMs);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const traces: any[] = [];
+
+      const visibleCheckpointLines = checkpoints
+        .filter(
+          (checkpoint) =>
+            checkpoint.timeMs >= windowStartMs && checkpoint.timeMs <= windowEndMs
+        )
+        .map((checkpoint) => {
+          const x = (checkpoint.timeMs - windowEndMs) / 1000;
+          return {
+            type: "line",
+            xref: "x",
+            yref: "paper",
+            x0: x,
+            x1: x,
+            y0: 0,
+            y1: 1,
+            line: {
+              color: "rgba(251, 191, 36, 0.65)",
+              width: 1,
+              dash: "dot",
+            },
+          };
+        });
+
+      const checkpointAnnotations = checkpoints
+        .filter(
+          (checkpoint) =>
+            checkpoint.timeMs >= windowStartMs && checkpoint.timeMs <= windowEndMs
+        )
+        .map((checkpoint, idx) => {
+          const x = (checkpoint.timeMs - windowEndMs) / 1000;
+          return {
+            x,
+            y: idx % 2 === 0 ? 1.0 : 0.92,
+            xref: "x",
+            yref: "paper",
+            text: checkpoint.label,
+            showarrow: false,
+            xanchor: "left",
+            yanchor: "bottom",
+            bgcolor: "rgba(251, 191, 36, 0.22)",
+            bordercolor: "rgba(251, 191, 36, 0.55)",
+            borderpad: 2,
+            font: {
+              size: 10,
+              color: "#fde68a",
+            },
+            align: "left",
+          };
+        });
 
       signals.forEach((signal, index) => {
         const history = dataStore.getHistoryAt(signal.msgID, timeWindowMs, windowEndMs);
@@ -188,12 +236,9 @@ function PlotManager({
           paper_bgcolor: "#1a1a1a",
           plot_bgcolor: "#2a2a2a",
           font: { color: "#ffffff" },
-          showlegend: true,
-          legend: {
-            x: 1,
-            xanchor: "right",
-            y: 1,
-          },
+          showlegend: false,
+          shapes: visibleCheckpointLines,
+          annotations: checkpointAnnotations,
         };
         
         Plotly.react(plotRef.current, traces, updatedLayout);
@@ -208,7 +253,7 @@ function PlotManager({
 
     const updateInterval = setInterval(updatePlot, 100);
     return () => clearInterval(updateInterval);
-  }, [signals, timeWindowMs, isInitialized, plotId, cursorTimeMs, isLive]);
+  }, [signals, timeWindowMs, isInitialized, plotId, cursorTimeMs, isLive, checkpoints]);
 
   const [grafanaStatus, setGrafanaStatus] = useState<
     "idle" | "loading" | "success" | "error"

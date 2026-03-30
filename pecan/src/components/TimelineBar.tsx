@@ -25,6 +25,7 @@ function formatDuration(ms: number): string {
 
 function TimelineBar() {
   const {
+    source,
     mode,
     selectedTimeMs,
     collectionStartMs,
@@ -96,6 +97,13 @@ function TimelineBar() {
         </p>
       </div>
       <div className="flex items-center gap-2">
+        <span
+          className={`timeline-chip ${
+            source === "replay" ? "timeline-chip-paused" : "timeline-chip-live"
+          }`}
+        >
+          {source === "replay" ? "REPLAY" : "LIVE SOURCE"}
+        </span>
         <span
           className={`timeline-chip ${
             mode === "live"

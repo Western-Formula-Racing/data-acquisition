@@ -76,6 +76,11 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 onClose={onClose}
               />
               <SidebarOption
+                option="REPLAY VIEWER"
+                path="/replay-viewer"
+                onClose={onClose}
+              />
+              <SidebarOption
                 option="ACCUMULATOR"
                 path="/accumulator"
                 onClose={onClose}

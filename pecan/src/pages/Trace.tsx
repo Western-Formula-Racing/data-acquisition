@@ -9,6 +9,7 @@ import { Link, useSearchParams } from "react-router";
 import { Play, Pause, Trash2, HelpCircle } from "lucide-react";
 import { useTraceBuffer } from "../lib/useDataStore";
 import type { TelemetrySample } from "../lib/DataStore";
+import type { ReplaySession } from "../types/replay";
 import TourGuide, { type TourStep } from "../components/TourGuide";
 import RaceCarGame from "../components/RaceCarGame";
 import TimelineBar from "../components/TimelineBar";
@@ -46,6 +47,19 @@ function formatDelta(ms: number): string {
   return `${(ms / 1000).toFixed(2)} s`;
 }
 
+function parseCanIdToNumber(msgID: string): number {
+  const trimmed = msgID.trim().toLowerCase();
+  if (trimmed.startsWith("0x")) {
+    return Number.parseInt(trimmed.slice(2), 16);
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
+}
+
+function rawDataToHex(rawData: string): string {
+  return rawData.replace(/\s+/g, "").toLowerCase();
+}
+
 /** Build enriched frames by computing per-ID delta. */
 function buildEnriched(frames: TelemetrySample[]): EnrichedFrame[] {
   const lastSeen = new Map<string, number>(); // msgID -> last timestamp
@@ -58,24 +72,82 @@ function buildEnriched(frames: TelemetrySample[]): EnrichedFrame[] {
 }
 
 function exportCsv(frames: EnrichedFrame[]): void {
-  const header = "Index,Timestamp,Delta_ms,CAN_ID,Direction,DLC,Data,Message\n";
-  const rows = frames.map((f) =>
-    [
-      f.index,
-      formatTimestamp(f.timestamp),
-      f.deltaMs < 0 ? "" : f.deltaMs,
-      f.msgID,
+  const baseTimestamp = frames[0]?.timestamp ?? Date.now();
+  const header =
+    "t_rel_ms,t_epoch_ms,can_id,is_extended,direction,dlc,data_hex,source,message_name,index,timestamp,delta_ms,can_id_display,data_display\n";
+  const rows = frames.map((f) => {
+    const canIdNumeric = parseCanIdToNumber(f.msgID);
+    const dataHex = rawDataToHex(f.rawData);
+    const dlc = f.rawData.split(" ").filter(Boolean).length;
+
+    return [
+      Math.max(0, f.timestamp - baseTimestamp),
+      f.timestamp,
+      canIdNumeric,
+      canIdNumeric > 0x7ff ? 1 : 0,
       f.direction ?? "rx",
-      f.rawData.split(" ").length,
-      f.rawData,
-      `"${f.messageName}"`,
-    ].join(",")
-  );
+      dlc,
+      dataHex,
+      "trace",
+      `"${f.messageName.replace(/"/g, '""')}"`,
+    [
+        f.index,
+        formatTimestamp(f.timestamp),
+        f.deltaMs < 0 ? "" : f.deltaMs,
+        f.msgID,
+        f.rawData,
+      ].join(","),
+    ].join(",");
+  });
   const blob = new Blob([header + rows.join("\n")], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `can_trace_${Date.now()}.csv`;
+  a.download = `pecan_replay_${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportPecanSession(
+  frames: EnrichedFrame[],
+  checkpoints: Array<{ id: string; label: string; timeMs: number }>,
+  windowMs: number
+): void {
+  const baseTimestamp = frames[0]?.timestamp ?? Date.now();
+  const session: ReplaySession = {
+    format: "pecan-session",
+    version: 1,
+    frames: frames.map((frame) => {
+      const canIdNumeric = parseCanIdToNumber(frame.msgID);
+      const dataHex = rawDataToHex(frame.rawData);
+      const dlc = frame.rawData.split(" ").filter(Boolean).length;
+
+      return {
+        tRelMs: Math.max(0, frame.timestamp - baseTimestamp),
+        tEpochMs: frame.timestamp,
+        canId: canIdNumeric,
+        isExtended: canIdNumeric > 0x7ff,
+        direction: frame.direction ?? "rx",
+        dlc,
+        dataHex,
+        source: "trace",
+      };
+    }),
+    timeline: {
+      windowMs,
+      checkpoints: checkpoints.map((checkpoint) => ({
+        id: checkpoint.id,
+        label: checkpoint.label,
+        tRelMs: Math.max(0, checkpoint.timeMs - baseTimestamp),
+      })),
+    },
+  };
+
+  const blob = new Blob([JSON.stringify(session, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `pecan_session_${Date.now()}.pecan`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -338,7 +410,15 @@ function Trace() {
   const [viewMode, setViewMode] = useState<ViewMode>("scroll");
   const [filter, setFilter] = useState(() => searchParams.get("filter") || "");
   const [autoScroll, setAutoScroll] = useState(true);
-  const { mode, selectedTimeMs, seek, goLive, collectionEndMs } = useTimeline();
+  const {
+    mode,
+    selectedTimeMs,
+    seek,
+    goLive,
+    collectionEndMs,
+    checkpoints,
+    windowMs,
+  } = useTimeline();
   const paused = mode === "paused";
 
   // Tour state
@@ -515,6 +595,13 @@ function Trace() {
           className="trace-btn trace-btn-subtle"
         >
           EXPORT CSV
+        </button>
+        <button
+          onClick={() => exportPecanSession(enriched, checkpoints, windowMs)}
+          disabled={enriched.length === 0}
+          className="trace-btn trace-btn-primary"
+        >
+          EXPORT .PECAN
         </button>
       </div>
 

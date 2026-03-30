@@ -485,7 +485,7 @@ jobs:
         build-args: |
           VITE_WS_PRESETS=[{"label":"Radio Link","url":"ws://192.168.1.20:9080"}]
         cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-to: type=gha,mode=max,ignore-error=true
 
   deploy-pecan-pages:
     needs: [unit-tests, integration, vcan]

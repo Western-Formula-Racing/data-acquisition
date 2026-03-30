@@ -8,8 +8,10 @@ import {
   type ReactNode,
 } from "react";
 import { dataStore } from "../lib/DataStore";
+import type { ReplayFrame } from "../types/replay";
 
 export type TimelineMode = "live" | "paused";
+export type TimelineSource = "live" | "replay";
 
 export interface TimelineCheckpoint {
   id: string;
@@ -18,22 +20,34 @@ export interface TimelineCheckpoint {
 }
 
 interface TimelineContextValue {
+  source: TimelineSource;
   mode: TimelineMode;
   selectedTimeMs: number;
   windowMs: number;
   collectionStartMs: number | null;
   collectionEndMs: number | null;
   checkpoints: TimelineCheckpoint[];
+  replaySession: {
+    fileName: string;
+    frameCount: number;
+    loadedAtMs: number;
+    startTimeMs: number;
+    endTimeMs: number;
+    frames: ReplayFrame[];
+  } | null;
   setWindowMs: (windowMs: number) => void;
   seek: (timeMs: number) => void;
   goLive: () => void;
+  loadReplayFrames: (frames: ReplayFrame[], fileName: string) => void;
+  clearReplaySession: () => void;
   addCheckpoint: (label?: string) => void;
   deleteCheckpoint: (id: string) => void;
   clearCheckpoints: () => void;
   jumpToCheckpoint: (id: string) => void;
 }
 
-const CHECKPOINTS_STORAGE_KEY = "pecan:timeline:checkpoints";
+const LIVE_CHECKPOINTS_STORAGE_KEY = "pecan:timeline:checkpoints";
+const REPLAY_CHECKPOINTS_STORAGE_KEY = "pecan:timeline:replay:checkpoints";
 const DEFAULT_WINDOW_MS = 30000;
 
 const TimelineContext = createContext<TimelineContextValue | null>(null);
@@ -43,9 +57,15 @@ function clampTime(value: number, min: number | null, max: number | null): numbe
   return Math.max(min, Math.min(max, value));
 }
 
-function loadCheckpoints(): TimelineCheckpoint[] {
+function checkpointsStorageKeyForSource(source: TimelineSource): string {
+  return source === "replay"
+    ? REPLAY_CHECKPOINTS_STORAGE_KEY
+    : LIVE_CHECKPOINTS_STORAGE_KEY;
+}
+
+function loadCheckpoints(storageKey: string): TimelineCheckpoint[] {
   try {
-    const raw = localStorage.getItem(CHECKPOINTS_STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -62,14 +82,22 @@ function loadCheckpoints(): TimelineCheckpoint[] {
 }
 
 export function TimelineProvider({ children }: { children: ReactNode }) {
+  const [source, setSource] = useState<TimelineSource>("live");
   const [mode, setMode] = useState<TimelineMode>("live");
   const [selectedTimeMs, setSelectedTimeMs] = useState<number>(() => Date.now());
   const [windowMs, setWindowMsState] = useState<number>(DEFAULT_WINDOW_MS);
-  const [checkpoints, setCheckpoints] = useState<TimelineCheckpoint[]>(() => loadCheckpoints());
+  const [checkpoints, setCheckpoints] = useState<TimelineCheckpoint[]>(() =>
+    loadCheckpoints(LIVE_CHECKPOINTS_STORAGE_KEY)
+  );
   const [collectionStartMs, setCollectionStartMs] = useState<number | null>(null);
   const [collectionEndMs, setCollectionEndMs] = useState<number | null>(null);
+  const [replaySession, setReplaySession] = useState<TimelineContextValue["replaySession"]>(null);
 
   useEffect(() => {
+    if (source !== "live") {
+      return;
+    }
+
     const updateBounds = () => {
       const stats = dataStore.getStats();
       setCollectionStartMs(stats.oldestSample);
@@ -82,11 +110,17 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
     updateBounds();
     const unsubscribe = dataStore.subscribe(() => updateBounds());
     return unsubscribe;
-  }, [mode]);
+  }, [mode, source]);
 
   useEffect(() => {
-    localStorage.setItem(CHECKPOINTS_STORAGE_KEY, JSON.stringify(checkpoints));
-  }, [checkpoints]);
+    const storageKey = checkpointsStorageKeyForSource(source);
+    setCheckpoints(loadCheckpoints(storageKey));
+  }, [source]);
+
+  useEffect(() => {
+    const storageKey = checkpointsStorageKeyForSource(source);
+    localStorage.setItem(storageKey, JSON.stringify(checkpoints));
+  }, [checkpoints, source]);
 
   const setWindowMs = useCallback((value: number) => {
     const clamped = Math.max(1000, Math.min(60 * 60 * 1000, value));
@@ -103,11 +137,56 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
   );
 
   const goLive = useCallback(() => {
+    setReplaySession(null);
+    setSource("live");
     setMode("live");
-    if (collectionEndMs !== null) {
-      setSelectedTimeMs(collectionEndMs);
+    const stats = dataStore.getStats();
+    setCollectionStartMs(stats.oldestSample);
+    setCollectionEndMs(stats.newestSample);
+    if (stats.newestSample !== null) {
+      setSelectedTimeMs(stats.newestSample);
     }
-  }, [collectionEndMs]);
+  }, []);
+
+  const clearReplaySession = useCallback(() => {
+    setReplaySession(null);
+    setSource("live");
+    setMode("live");
+    const stats = dataStore.getStats();
+    setCollectionStartMs(stats.oldestSample);
+    setCollectionEndMs(stats.newestSample);
+    if (stats.newestSample !== null) {
+      setSelectedTimeMs(stats.newestSample);
+    }
+  }, []);
+
+  const loadReplayFrames = useCallback((frames: ReplayFrame[], fileName: string) => {
+    if (!Array.isArray(frames) || frames.length === 0) {
+      return;
+    }
+
+    const sorted = [...frames].sort((a, b) => a.tRelMs - b.tRelMs);
+    const minRelMs = sorted[0].tRelMs;
+    const maxRelMs = sorted[sorted.length - 1].tRelMs;
+    const baseEpochMs = sorted.find((frame) => typeof frame.tEpochMs === "number")?.tEpochMs ?? Date.now();
+    const startTimeMs = baseEpochMs + minRelMs;
+    const endTimeMs = baseEpochMs + maxRelMs;
+
+    setReplaySession({
+      fileName,
+      frameCount: sorted.length,
+      loadedAtMs: Date.now(),
+      startTimeMs,
+      endTimeMs,
+      frames: sorted,
+    });
+
+    setSource("replay");
+    setMode("paused");
+    setCollectionStartMs(startTimeMs);
+    setCollectionEndMs(endTimeMs);
+    setSelectedTimeMs(startTimeMs);
+  }, []);
 
   const addCheckpoint = useCallback(
     (label?: string) => {
@@ -145,30 +224,38 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<TimelineContextValue>(
     () => ({
+      source,
       mode,
       selectedTimeMs,
       windowMs,
       collectionStartMs,
       collectionEndMs,
       checkpoints,
+      replaySession,
       setWindowMs,
       seek,
       goLive,
+      loadReplayFrames,
+      clearReplaySession,
       addCheckpoint,
       deleteCheckpoint,
       clearCheckpoints,
       jumpToCheckpoint,
     }),
     [
+      source,
       mode,
       selectedTimeMs,
       windowMs,
       collectionStartMs,
       collectionEndMs,
       checkpoints,
+      replaySession,
       setWindowMs,
       seek,
       goLive,
+      loadReplayFrames,
+      clearReplaySession,
       addCheckpoint,
       deleteCheckpoint,
       clearCheckpoints,
