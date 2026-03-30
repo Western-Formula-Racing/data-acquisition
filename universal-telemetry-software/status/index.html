@@ -24,7 +24,7 @@
         }
 
         /* Use monospace for all data */
-        .metric-value, .timestamp, #connectionStatus, .sparkline, .sync-banner, .performance-stats {
+        .metric-value, .timestamp, .sparkline, .sync-banner, .performance-stats {
             font-family: 'JetBrains Mono', monospace;
         }
 
@@ -128,16 +128,61 @@
             box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
         }
 
-        .connection-status {
-            font-size: 1rem;
-            text-align: left;
+        .pipeline-flow {
+            display: flex;
+            align-items: center;
             padding: 12px 15px;
             margin-bottom: 10px;
             background: #0a0a0a;
             border: 1px solid #222;
-            color: #e5e7eb;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .pipe-node {
             display: flex;
             align-items: center;
+            gap: 7px;
+            flex-shrink: 0;
+        }
+
+        .pipe-dot {
+            width: 8px;
+            height: 8px;
+            background: #2a2a2a;
+            flex-shrink: 0;
+        }
+
+        .pipe-dot.active {
+            background: #4ade80;
+            box-shadow: 0 0 6px rgba(74, 222, 128, 0.4);
+        }
+
+        .pipe-dot.error {
+            background: #ef4444;
+            box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+        }
+
+        .pipe-label {
+            font-size: 0.7rem;
+            color: #8e8eab;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .pipe-sep {
+            flex: 1;
+            min-width: 24px;
+            text-align: center;
+            font-size: 0.7rem;
+            color: #2a2a2a;
+            padding: 0 4px;
+            letter-spacing: 2px;
+            user-select: none;
+        }
+
+        .pipe-sep.active {
+            color: #4ade80;
         }
 
         .chart-container {
@@ -259,9 +304,26 @@
             <p class="subtitle">REAL-TIME CONNECTION MONITOR</p>
         </header>
 
-        <div class="connection-status" id="connectionStatus">
-            <span class="status-indicator status-disconnected"></span>
-            Connecting...
+        <div class="pipeline-flow">
+            <div class="pipe-node">
+                <div class="pipe-dot" id="pipeDot_car"></div>
+                <span class="pipe-label">CAR</span>
+            </div>
+            <div class="pipe-sep" id="pipeSep_car">──▶</div>
+            <div class="pipe-node">
+                <div class="pipe-dot" id="pipeDot_telem"></div>
+                <span class="pipe-label">TELEMETRY</span>
+            </div>
+            <div class="pipe-sep" id="pipeSep_telem">──▶</div>
+            <div class="pipe-node">
+                <div class="pipe-dot" id="pipeDot_redis"></div>
+                <span class="pipe-label">REDIS</span>
+            </div>
+            <div class="pipe-sep" id="pipeSep_redis">──▶</div>
+            <div class="pipe-node">
+                <div class="pipe-dot active" id="pipeDot_browser"></div>
+                <span class="pipe-label">BROWSER</span>
+            </div>
         </div>
 
         <!-- ECU / Clock sync banner -->
@@ -345,6 +407,22 @@
                     <span class="metric-value" id="linkLoss">--</span>
                 </div>
             </div>
+
+            <div class="card">
+                <div class="card-title">[INFLUXDB]</div>
+                <div class="metric">
+                    <span class="metric-label">Write Status</span>
+                    <span class="metric-value" id="influxStatus">--</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Points Written</span>
+                    <span class="metric-value" id="influxPoints">--</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Write Errors</span>
+                    <span class="metric-value" id="influxErrors">--</span>
+                </div>
+            </div>
         </div>
 
         <div class="chart-container">
@@ -368,10 +446,13 @@
     <script>
         const REDIS_WS_URL = 'ws://' + window.location.hostname + ':9080';
         const STATS_TIMEOUT = 5000;
+        const CAR_TIMEOUT = 5000;
 
         let ws = null;
+        let wsConnected = false;
         let startTime = Date.now();
         let lastMessageTime = null;
+        let lastCarDataTime = null;
         let totalReceived = 0;
         let totalMissing = 0;
         let totalRecovered = 0;
@@ -395,7 +476,9 @@
 
                 ws.onopen = () => {
                     console.log('Connected to base station');
-                    updateConnectionStatus('connected');
+                    wsConnected = true;
+                    hideError();
+                    updatePipeline();
                     document.getElementById('wsStatus').textContent = 'Connected';
                 };
 
@@ -425,7 +508,8 @@
 
                 ws.onclose = () => {
                     console.log('Disconnected from base station');
-                    updateConnectionStatus('disconnected');
+                    wsConnected = false;
+                    updatePipeline();
                     document.getElementById('wsStatus').textContent = 'Disconnected';
                     setTimeout(connect, 2000);
                 };
@@ -439,7 +523,7 @@
         const SOURCE_LABELS = {
             'ecu_rtc':      { text: '✅ Synced — ECU RTC',        cls: 'synced',  detail: 'Timestamps from ECU DS3231 battery-backed RTC' },
             'system_clock': { text: '✅ Synced — RPi system clock', cls: 'synced',  detail: 'RPi clock was past 2026-03-22 at startup (NTP or manual set)' },
-            'none':         { text: '⏳ Waiting for ECU time sync', cls: 'waiting', detail: 'Data is held until a valid clock source is established (ECU RTC, NTP, or manual set below)' },
+            'none':         { text: '⏳ Waiting for ECU time sync', cls: 'waiting', detail: 'Data still flows — timestamps may be inaccurate until a clock source is established. Set clock below or wait for ECU RTC.' },
         };
 
         function updateSyncBanner(synced, source) {
@@ -489,6 +573,10 @@
         function updateStats(stats) {
             const { received, missing, recovered, messages } = stats;
 
+            if ((received || 0) > 0 || (messages || 0) > 0) {
+                lastCarDataTime = Date.now();
+            }
+
             if (stats.ecu_synced !== undefined) {
                 updateSyncBanner(stats.ecu_synced, stats.ecu_sync_source || 'none');
             }
@@ -516,24 +604,78 @@
                 rateHistory.shift();
             }
 
+            updateInflux(stats.influx);
             drawChart();
         }
 
-        function updateConnectionStatus(status) {
-            const statusEl = document.getElementById('connectionStatus');
-            const connStatusEl = document.getElementById('connStatus');
-
-            if (status === 'connected') {
-                statusEl.innerHTML = '<span class="status-indicator status-connected"></span>Connected to Car';
-                connStatusEl.textContent = 'Active';
-                hideError();
-            } else if (status === 'warning') {
-                statusEl.innerHTML = '<span class="status-indicator status-warning"></span>No Data Received';
-                connStatusEl.textContent = 'Idle';
-            } else {
-                statusEl.innerHTML = '<span class="status-indicator status-disconnected"></span>Disconnected';
-                connStatusEl.textContent = 'Offline';
+        function updateInflux(influx) {
+            const statusEl = document.getElementById('influxStatus');
+            const pointsEl = document.getElementById('influxPoints');
+            const errorsEl = document.getElementById('influxErrors');
+            if (!influx) {
+                statusEl.textContent = 'Not running';
+                statusEl.style.color = '#6b7280';
+                pointsEl.textContent = '--';
+                errorsEl.textContent = '--';
+                return;
             }
+            const age = Date.now() / 1000 - (influx.ts || 0);
+            if (influx.ok) {
+                if (age > 30) {
+                    statusEl.textContent = 'Stale';
+                    statusEl.style.color = '#fbbf24';
+                } else {
+                    statusEl.textContent = 'Writing';
+                    statusEl.style.color = '#4ade80';
+                }
+                pointsEl.textContent = (influx.points || 0).toLocaleString();
+                errorsEl.textContent = influx.errors || 0;
+                errorsEl.style.color = influx.errors > 0 ? '#fbbf24' : '#fff';
+            } else {
+                statusEl.textContent = 'Error';
+                statusEl.style.color = '#ef4444';
+                pointsEl.textContent = '--';
+                errorsEl.textContent = influx.error || 'unknown';
+                errorsEl.style.color = '#ef4444';
+            }
+        }
+
+        function updatePipeline() {
+            const now = Date.now();
+            const carActive  = !!(lastCarDataTime  && (now - lastCarDataTime  < CAR_TIMEOUT));
+            const redisActive = !!(lastMessageTime && (now - lastMessageTime  < STATS_TIMEOUT));
+
+            setNode('car',     carActive   ? 'active' : (wsConnected ? 'error' : ''));
+            setNode('telem',   wsConnected ? 'active' : 'error');
+            setNode('redis',   redisActive ? 'active' : (wsConnected ? 'error' : ''));
+
+            setSep('car',   carActive   ? 'active' : '');
+            setSep('telem', redisActive ? 'active' : '');
+            setSep('redis', redisActive ? 'active' : '');
+
+            const connStatusEl = document.getElementById('connStatus');
+            if (!wsConnected) {
+                connStatusEl.textContent = 'Offline';
+                connStatusEl.style.color = '#ef4444';
+            } else if (carActive) {
+                connStatusEl.textContent = 'Active';
+                connStatusEl.style.color = '#4ade80';
+            } else {
+                connStatusEl.textContent = 'Idle';
+                connStatusEl.style.color = '#fbbf24';
+            }
+        }
+
+        function setNode(id, state) {
+            const dot = document.getElementById('pipeDot_' + id);
+            if (!dot) return;
+            dot.className = 'pipe-dot' + (state ? ' ' + state : '');
+        }
+
+        function setSep(id, state) {
+            const sep = document.getElementById('pipeSep_' + id);
+            if (!sep) return;
+            sep.className = 'pipe-sep' + (state ? ' ' + state : '');
         }
 
         function drawChart() {
@@ -580,12 +722,11 @@
                     document.getElementById('lastMsg').textContent = Math.floor(elapsed / 60) + 'm ago';
                 }
 
-                if (elapsed > STATS_TIMEOUT / 1000) {
-                    updateConnectionStatus('warning');
-                }
             } else {
                 document.getElementById('lastMsg').textContent = 'Never';
             }
+
+            updatePipeline();
 
             document.getElementById('timestamp').textContent =
                 'Last updated: ' + new Date().toLocaleTimeString();

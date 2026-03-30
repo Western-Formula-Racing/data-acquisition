@@ -146,6 +146,23 @@ from(bucket: "{LOCAL_INFLUX_BUCKET}")
         local.close()
         return False
 
+    # Load sidecars for corrections
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sync_states_dir = os.path.join(base_dir, "sync_states")
+    
+    sidecars = []
+    if os.path.exists(sync_states_dir):
+        for f in os.listdir(sync_states_dir):
+            if f.startswith("correction_") and f.endswith(".json"):
+                try:
+                    with open(os.path.join(sync_states_dir, f)) as jf:
+                        sidecars.append(json.load(jf))
+                except Exception as e:
+                    logger.warning(f"Could not read sidecar {f}: {e}")
+
+    # Sort so we can bound them
+    sidecars.sort(key=lambda x: x.get("base_timeline_start", 0))
+
     # Convert to line protocol for re-ingest
     lines: list[str] = []
     for table in tables:
@@ -171,7 +188,29 @@ from(bucket: "{LOCAL_INFLUX_BUCKET}")
             else:
                 field_str = f'{field_key}="{field_val}"'
 
-            ts_ns = int(ts.timestamp() * 1e9) if ts else ""
+            if ts:
+                ts_sec = ts.timestamp()
+                correction = 0.0
+                
+                # Find applicable sidecar (within a 12 hour window of its start)
+                for i, sc in enumerate(sidecars):
+                    start = sc.get("base_timeline_start", 0) - 3600 # 1 hour grace period to cover points written before the jump was detected
+                    end_cap = start + 43200 # 12 hours absolute max
+                    
+                    next_start = float('inf')
+                    if i + 1 < len(sidecars):
+                        next_start = sidecars[i+1].get("base_timeline_start", 0) - 3600
+                        
+                    end = min(end_cap, next_start)
+                    
+                    if start <= ts_sec < end:
+                        correction = sc.get("correction_seconds", 0.0)
+                        break
+                        
+                ts_ns = int((ts_sec + correction) * 1e9)
+            else:
+                ts_ns = ""
+                
             line = f"{measurement},{tags_str} {field_str} {ts_ns}"
             lines.append(line)
 

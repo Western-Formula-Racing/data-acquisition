@@ -6,6 +6,7 @@ redis[hiredis]
 influxdb-client>=1.38.0
 cantools>=39.4.0
 slicks>=0.2.0
+pyarrow>=15.0.0
 
 # Test dependencies
 pytest>=7.4.0
