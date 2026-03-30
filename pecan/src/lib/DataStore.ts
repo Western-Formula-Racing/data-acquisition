@@ -193,6 +193,45 @@ class DataStore {
   }
 
   /**
+   * Get the latest sample for a specific msgID at or before a target timestamp.
+   * @param msgID - CAN message ID
+   * @param timeMs - Cursor time in milliseconds
+   * @returns Latest sample <= timeMs or undefined
+   */
+  public getLatestAt(msgID: string, timeMs: number): TelemetrySample | undefined {
+    const messageBuffer = this.buffer.get(msgID);
+    if (!messageBuffer || messageBuffer.samples.length === 0) {
+      return undefined;
+    }
+
+    const newest = messageBuffer.samples[messageBuffer.samples.length - 1];
+    if (newest.timestamp <= timeMs) {
+      return newest;
+    }
+
+    let left = 0;
+    let right = messageBuffer.samples.length - 1;
+    let answer = -1;
+
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2);
+      const ts = messageBuffer.samples[mid].timestamp;
+      if (ts <= timeMs) {
+        answer = mid;
+        left = mid + 1;
+      } else {
+        right = mid - 1;
+      }
+    }
+
+    if (answer === -1) {
+      return undefined;
+    }
+
+    return messageBuffer.samples[answer];
+  }
+
+  /**
    * Get all samples for a msgID within a time window
    * @param msgID - CAN message ID
    * @param windowMs - Time window in milliseconds (default: all available)
@@ -214,6 +253,25 @@ class DataStore {
     const cutoffTime = newestTime - windowMs;
     return messageBuffer.samples.filter(
       (sample) => sample.timestamp >= cutoffTime
+    );
+  }
+
+  /**
+   * Get samples for a msgID inside an explicit time range ending at endTimeMs.
+   * @param msgID - CAN message ID
+   * @param windowMs - Time window in milliseconds
+   * @param endTimeMs - Right edge of the time window in milliseconds
+   * @returns Array of samples inside [endTimeMs - windowMs, endTimeMs]
+   */
+  public getHistoryAt(msgID: string, windowMs: number, endTimeMs: number): TelemetrySample[] {
+    const messageBuffer = this.buffer.get(msgID);
+    if (!messageBuffer || messageBuffer.samples.length === 0) {
+      return [];
+    }
+
+    const cutoffTime = endTimeMs - windowMs;
+    return messageBuffer.samples.filter(
+      (sample) => sample.timestamp >= cutoffTime && sample.timestamp <= endTimeMs
     );
   }
 
@@ -260,6 +318,24 @@ class DataStore {
   }
 
   /**
+   * Get latest sample per msgID at or before a target timestamp.
+   * @param timeMs - Cursor time in milliseconds
+   * @returns Map of msgID to timeline-anchored sample
+   */
+  public getAllLatestAt(timeMs: number): Map<string, TelemetrySample> {
+    const result = new Map<string, TelemetrySample>();
+
+    for (const msgID of this.buffer.keys()) {
+      const sample = this.getLatestAt(msgID, timeMs);
+      if (sample) {
+        result.set(msgID, sample);
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Get the average frequency (Hz) for a specific msgID over a time window
    * @param msgID - CAN message ID
    * @param windowMs - Time window in milliseconds
@@ -279,6 +355,27 @@ class DataStore {
     // but for typical buffer sizes (a few thousand), filter/length is fast enough.
     const samplesInWindow = messageBuffer.samples.filter(
       (sample) => sample.timestamp >= cutoffTime
+    ).length;
+
+    return samplesInWindow / (windowMs / 1000);
+  }
+
+  /**
+   * Get average frequency (Hz) anchored to a specific end time.
+   * @param msgID - CAN message ID
+   * @param windowMs - Time window in milliseconds
+   * @param endTimeMs - Right edge of the frequency window
+   * @returns Frequency in Hz
+   */
+  public getFrequencyAt(msgID: string, windowMs: number, endTimeMs: number): number {
+    const messageBuffer = this.buffer.get(msgID);
+    if (!messageBuffer || messageBuffer.samples.length === 0) {
+      return 0;
+    }
+
+    const cutoffTime = endTimeMs - windowMs;
+    const samplesInWindow = messageBuffer.samples.filter(
+      (sample) => sample.timestamp >= cutoffTime && sample.timestamp <= endTimeMs
     ).length;
 
     return samplesInWindow / (windowMs / 1000);

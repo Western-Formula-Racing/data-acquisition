@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import PlotManager, { type PlotSignal } from './PlotManager';
 import { GripHorizontal } from 'lucide-react';
+import { useTimeline } from '../context/TimelineContext';
 
 interface DraggablePlotProps {
     isOpen: boolean;
@@ -10,6 +11,7 @@ interface DraggablePlotProps {
 
 export default function DraggablePlot({ isOpen, onClose, signalInfo }: DraggablePlotProps) {
     const [position, setPosition] = useState({ x: 0, y: 0 });
+    const { selectedTimeMs, mode } = useTimeline();
     const isDragging = useRef(false);
     const dragStart = useRef({ x: 0, y: 0 });
     const windowRef = useRef<HTMLDivElement>(null);
@@ -66,6 +68,8 @@ export default function DraggablePlot({ isOpen, onClose, signalInfo }: Draggable
                     plotId="Cell Plot"
                     signals={[signalInfo]}
                     timeWindowMs={30000}
+                    cursorTimeMs={selectedTimeMs}
+                    isLive={mode === 'live'}
                     onRemoveSignal={onClose}
                     onClosePlot={onClose}
                 />

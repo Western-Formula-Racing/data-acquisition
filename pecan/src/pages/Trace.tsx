@@ -11,6 +11,8 @@ import { useTraceBuffer } from "../lib/useDataStore";
 import type { TelemetrySample } from "../lib/DataStore";
 import TourGuide, { type TourStep } from "../components/TourGuide";
 import RaceCarGame from "../components/RaceCarGame";
+import TimelineBar from "../components/TimelineBar";
+import { useTimeline } from "../context/TimelineContext";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -53,28 +55,6 @@ function buildEnriched(frames: TelemetrySample[]): EnrichedFrame[] {
     lastSeen.set(f.msgID, f.timestamp);
     return { ...f, index: i + 1, deltaMs };
   });
-}
-
-/** Build fixed-position map: one entry per unique CAN ID (latest frame). */
-function buildFixed(frames: TelemetrySample[]): {
-  sample: TelemetrySample;
-  count: number;
-  deltaMs: number;
-}[] {
-  const map = new Map<
-    string,
-    { sample: TelemetrySample; count: number; prevTs: number; deltaMs: number }
-  >();
-  for (const f of frames) {
-    const entry = map.get(f.msgID);
-    if (!entry) {
-      map.set(f.msgID, { sample: f, count: 1, prevTs: f.timestamp, deltaMs: -1 });
-    } else {
-      const deltaMs = f.timestamp - entry.prevTs;
-      map.set(f.msgID, { sample: f, count: entry.count + 1, prevTs: f.timestamp, deltaMs });
-    }
-  }
-  return Array.from(map.values()).sort((a, b) => a.sample.msgID.localeCompare(b.sample.msgID));
 }
 
 function exportCsv(frames: EnrichedFrame[]): void {
@@ -253,52 +233,47 @@ function VirtualList({ rows, autoScroll, onScrollUp, maxRows }: VirtualListProps
 // ─── Fixed position table ────────────────────────────────────────────────
 
 interface FixedTableProps {
-  rows: { sample: TelemetrySample; count: number; deltaMs: number }[];
+  rows: EnrichedFrame[];
 }
 
 function FixedTable({ rows }: FixedTableProps) {
   return (
     <div className="flex-1 overflow-y-auto">
-      {rows.map(({ sample, count, deltaMs }) => (
+      {rows.map((f, idx) => (
         <div
-          key={sample.msgID}
-          className="flex items-center font-mono text-xs bg-[#0f0e17] hover:bg-[#1a1929] border-b border-white/[0.04]"
-          style={{ height: ROW_HEIGHT + 4 }}
+          key={`${f.index}-${f.msgID}-${f.timestamp}`}
+          className={`flex items-center font-mono text-xs ${rowClass(f.direction, idx)} border-b border-white/[0.04]`}
+          style={{ height: ROW_HEIGHT }}
         >
-          {/* CAN ID */}
-          <span className="w-32 shrink-0 px-2 text-cyan-400 font-semibold">
-            {sample.msgID}
+          <span className="w-14 shrink-0 px-2 text-slate-500 text-right">
+            {f.index}
           </span>
-          {/* Message name */}
-          <span className="flex-1 px-2 text-purple-300 truncate">
-            {sample.messageName}
-          </span>
-          {/* Latest timestamp */}
           <span className="w-32 shrink-0 px-2 text-slate-400">
-            {formatTimestamp(sample.timestamp)}
+            {formatTimestamp(f.timestamp)}
           </span>
-          {/* Delta */}
           <span className="w-24 shrink-0 px-2 text-slate-500 text-right">
-            {deltaMs < 0 ? "—" : formatDelta(deltaMs)}
+            {f.deltaMs < 0 ? "—" : formatDelta(f.deltaMs)}
           </span>
-          {/* Dir */}
+          <span className="w-32 shrink-0 px-2 text-cyan-400 font-semibold">
+            {f.msgID}
+          </span>
           <span
-            className={`w-10 shrink-0 px-1 text-center uppercase text-[10px] font-bold tracking-widest ${sample.direction === "tx" ? "text-amber-400" : "text-emerald-400"
+            className={`w-10 shrink-0 px-1 text-center uppercase text-[10px] font-bold tracking-widest ${f.direction === "tx" ? "text-amber-400" : "text-emerald-400"
               }`}
           >
-            {sample.direction ?? "rx"}
+            {f.direction ?? "rx"}
           </span>
-          {/* Count */}
-          <span className="w-20 shrink-0 px-2 text-right text-slate-500">
-            {count.toLocaleString()}
+          <span className="w-10 shrink-0 px-2 text-center text-slate-500">
+            {f.rawData.split(" ").length}
           </span>
-          {/* Latest data */}
           <span className="w-56 shrink-0 px-2 text-slate-300 tracking-wider uppercase">
-            {sample.rawData}
+            {f.rawData}
           </span>
-          {/* Dashboard link */}
+          <span className="flex-1 px-2 text-purple-300 truncate">
+            {f.messageName}
+          </span>
           <Link
-            to={`/dashboard?msgID=${sample.msgID}&expand=true`}
+            to={`/dashboard?msgID=${f.msgID}&expand=true`}
             className="shrink-0 mr-2 px-2 py-0.5 rounded text-[10px] font-mono font-semibold border border-cyan-500/40 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/25 transition-colors whitespace-nowrap"
             title="View in Dashboard"
           >
@@ -360,10 +335,11 @@ const TRACE_TOUR_STEPS: TourStep[] = [
 function Trace() {
   const { frames, clearTrace } = useTraceBuffer(50);
   const [searchParams] = useSearchParams();
-  const [paused, setPaused] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("scroll");
   const [filter, setFilter] = useState(() => searchParams.get("filter") || "");
   const [autoScroll, setAutoScroll] = useState(true);
+  const { mode, selectedTimeMs, seek, goLive, collectionEndMs } = useTimeline();
+  const paused = mode === "paused";
 
   // Tour state
   const [tourOpen, setTourOpen] = useState(false);
@@ -378,10 +354,19 @@ function Trace() {
 
   // Freeze on pause
   const handlePause = useCallback(() => {
-    if (!paused) {
+    if (paused) {
+      goLive();
+      return;
+    }
+
+    frozenRef.current = [...frames];
+    seek(collectionEndMs ?? Date.now());
+  }, [paused, goLive, frames, seek, collectionEndMs]);
+
+  useEffect(() => {
+    if (paused && frozenRef.current.length === 0) {
       frozenRef.current = [...frames];
     }
-    setPaused((p) => !p);
   }, [paused, frames]);
 
   // Re-enable auto-scroll when unpausing
@@ -407,20 +392,24 @@ function Trace() {
 
   // Filter logic: match CAN ID or message name (comma-separated terms)
   const filteredFrames = useMemo(() => {
+    const timelineFrames = paused
+      ? activeFrames.filter((frame) => frame.timestamp <= selectedTimeMs)
+      : activeFrames;
+
     const terms = filter
       .split(",")
       .map((t) => t.trim().toLowerCase())
       .filter(Boolean);
-    if (terms.length === 0) return activeFrames;
-    return activeFrames.filter((f) => {
+    if (terms.length === 0) return timelineFrames;
+    return timelineFrames.filter((f) => {
       const id = f.msgID.toLowerCase();
       const name = f.messageName.toLowerCase();
       return terms.some((t) => id.includes(t) || name.includes(t));
     });
-  }, [activeFrames, filter]);
+  }, [activeFrames, filter, paused, selectedTimeMs]);
 
   const enriched = useMemo(() => buildEnriched(filteredFrames), [filteredFrames]);
-  const fixed = useMemo(() => buildFixed(filteredFrames), [filteredFrames]);
+  const fixed = useMemo(() => enriched, [enriched]);
 
   const totalFrames = frames.length;
 
@@ -529,6 +518,10 @@ function Trace() {
         </button>
       </div>
 
+      <div className="px-4 pt-3">
+        <TimelineBar />
+      </div>
+
       {/* ── Column header ── */}
       {viewMode === "scroll" ? (
         <div
@@ -550,24 +543,33 @@ function Trace() {
           id="trace-table-header"
           className="flex items-center font-mono text-[10px] uppercase tracking-widest text-slate-600 bg-[#0a0912] border-b border-white/[0.06] flex-shrink-0 px-0 py-1"
         >
+          <span className="w-14 shrink-0 px-2 text-right">#</span>
+          <span className="w-32 shrink-0 px-2">Timestamp</span>
+          <span className="w-24 shrink-0 px-2 text-right">Delta</span>
           <span className="w-32 shrink-0 px-2">CAN ID</span>
-          <span className="flex-1 px-2">Message</span>
-          <span className="w-32 shrink-0 px-2">Last Seen</span>
-          <span className="w-24 shrink-0 px-2 text-right">Cycle</span>
           <span className="w-10 shrink-0 px-1 text-center">Dir</span>
-          <span className="w-20 shrink-0 px-2 text-right">Count</span>
-          <span className="w-56 shrink-0 px-2">Latest Data</span>
+          <span className="w-10 shrink-0 px-2 text-center">DLC</span>
+          <span className="w-56 shrink-0 px-2">Data</span>
+          <span className="flex-1 px-2">Message</span>
           <span className="w-16 shrink-0 px-2"></span>
         </div>
       )}
 
       {/* ── Content ── */}
-      {enriched.length === 0 ? (
+      {totalFrames === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-slate-600">
           <span className="font-mono text-5xl mb-4 opacity-30">⬛</span>
           <p className="font-mono text-sm">No frames captured yet.</p>
           <p className="font-mono text-xs mt-1 text-slate-700">
             Connect to a live WebSocket to start seeing traffic.
+          </p>
+        </div>
+      ) : enriched.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-600">
+          <span className="font-mono text-5xl mb-4 opacity-30">⌛</span>
+          <p className="font-mono text-sm">No frames at selected timeline point.</p>
+          <p className="font-mono text-xs mt-1 text-slate-700">
+            Scrub forward, clear filters, or return to live.
           </p>
         </div>
       ) : viewMode === "scroll" ? (
@@ -602,7 +604,7 @@ function Trace() {
         )}
         <span className="ml-auto">
           {viewMode === "fixed"
-            ? `${fixed.length} unique IDs`
+            ? `${fixed.length.toLocaleString()} rows`
             : `${enriched.length.toLocaleString()} rows`}
         </span>
       </div>

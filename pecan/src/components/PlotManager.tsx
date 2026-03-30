@@ -37,6 +37,8 @@ interface PlotManagerProps {
   plotId: string;
   signals: PlotSignal[];
   timeWindowMs: number;
+  cursorTimeMs: number;
+  isLive: boolean;
   onRemoveSignal: (msgID: string, signalName: string) => void;
   onClosePlot: () => void;
 }
@@ -45,6 +47,8 @@ function PlotManager({
   plotId,
   signals,
   timeWindowMs,
+  cursorTimeMs,
+  isLive,
   onRemoveSignal,
   onClosePlot,
 }: PlotManagerProps) {
@@ -101,14 +105,14 @@ function PlotManager({
         return;
     }
 
-    const updateInterval = setInterval(() => {
-      const now = Date.now();
+    const updatePlot = () => {
+      const windowEndMs = isLive ? Date.now() : cursorTimeMs;
       const resolution = calculateDownsampleResolution(timeWindowMs);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const traces: any[] = [];
 
       signals.forEach((signal, index) => {
-        const history = dataStore.getHistory(signal.msgID, timeWindowMs);
+        const history = dataStore.getHistoryAt(signal.msgID, timeWindowMs, windowEndMs);
         const xData: number[] = [];
         const yData: number[] = [];
 
@@ -132,7 +136,7 @@ function PlotManager({
               // Finalize previous bin
               if (currentCount > 0) {
                 const avg = currentSum / currentCount;
-                const x = (currentBinStart - now) / 1000;
+                const x = (currentBinStart - windowEndMs) / 1000;
                 xData.push(x);
                 yData.push(avg);
               }
@@ -147,7 +151,7 @@ function PlotManager({
           // Finalize last bin
           if (currentCount > 0) {
             const avg = currentSum / currentCount;
-            const x = (currentBinStart - now) / 1000;
+            const x = (currentBinStart - windowEndMs) / 1000;
             xData.push(x);
             yData.push(avg);
           }
@@ -194,10 +198,17 @@ function PlotManager({
         
         Plotly.react(plotRef.current, traces, updatedLayout);
       }
-    }, 100); // Update every 100ms
+    };
 
+    updatePlot();
+
+    if (!isLive) {
+      return;
+    }
+
+    const updateInterval = setInterval(updatePlot, 100);
     return () => clearInterval(updateInterval);
-  }, [signals, timeWindowMs, isInitialized, plotId]);
+  }, [signals, timeWindowMs, isInitialized, plotId, cursorTimeMs, isLive]);
 
   const [grafanaStatus, setGrafanaStatus] = useState<
     "idle" | "loading" | "success" | "error"
