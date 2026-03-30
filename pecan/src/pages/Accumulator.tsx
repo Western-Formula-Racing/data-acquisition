@@ -75,9 +75,9 @@ export default function Accumulator() {
         <div className="p-4 space-y-4 max-w-7xl mx-auto">
           {/* Header */}
           <div className="flex items-center gap-4">
-            <h1 className="text-white text-2xl font-bold flex items-center gap-2">
-              <span className="text-3xl">🔋</span>
-              Accumulator Monitor
+            <h1 className="app-menu-title flex items-center gap-2">
+              <span className="text-2xl leading-none">🔋</span>
+              ACCUMULATOR
             </h1>
             <BatteryStatus />
             <button

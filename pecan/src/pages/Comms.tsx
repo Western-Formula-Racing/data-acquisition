@@ -43,7 +43,7 @@ const UserJoinModal = ({ onJoin }: { onJoin: (name: string, room: string) => voi
                         <Radio className="w-8 h-8 text-emerald-400" />
                     </div>
                     <div>
-                        <h2 className="text-2xl font-bold uppercase text-white">Join Comms</h2>
+                        <h2 className="app-modal-title uppercase">Join Comms</h2>
                         <p className="text-sidebarfg text-sm">Enter your name to connect</p>
                     </div>
                 </div>
@@ -152,7 +152,7 @@ export default function Comms() {
                         <Radio className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-2xl md:text-3xl font-bold uppercase tracking-wide text-white">Comms</h1>
+                        <h1 className="app-menu-title uppercase">Comms</h1>
                         <div className="flex items-center gap-2 text-xs text-sidebarfg font-footer mt-1">
                             <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
                             {isConnected ? `${username} in ${roomName}` : 'Connecting...'}

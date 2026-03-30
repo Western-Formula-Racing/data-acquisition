@@ -420,7 +420,7 @@ function Trace() {
         {/* Title */}
         <span
           id="trace-toolbar-title"
-          className="text-lg font-bold text-white tracking-wide mr-2"
+          className="trace-page-title mr-2"
         >
           CAN TRACE
         </span>
@@ -442,9 +442,9 @@ function Trace() {
         <button
           id="trace-pause-main"
           onClick={handlePause}
-          className={`flex items-center gap-2 px-3 py-1 rounded text-xs font-mono font-semibold border transition-colors ${paused
-            ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30"
-            : "bg-yellow-500/20 border-yellow-500/50 text-yellow-300 hover:bg-yellow-500/30"
+          className={`trace-btn ${paused
+            ? "trace-btn-success"
+            : "trace-btn-warning"
             }`}
         >
           {paused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
@@ -454,7 +454,7 @@ function Trace() {
         {/* Clear */}
         <button
           onClick={handleClear}
-          className="flex items-center gap-2 px-3 py-1 rounded text-xs font-mono font-semibold border border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 transition-colors"
+          className="trace-btn trace-btn-danger"
         >
           <Trash2 size={14} />
           CLEAR
@@ -463,22 +463,22 @@ function Trace() {
         {/* View mode toggle */}
         <div
           id="trace-view-toggle"
-          className="flex rounded overflow-hidden border border-white/10"
+          className="flex gap-1"
         >
           <button
             onClick={() => setViewMode("scroll")}
-            className={`px-3 py-1 text-xs font-mono transition-colors ${viewMode === "scroll"
-              ? "bg-purple-600/40 text-purple-200"
-              : "bg-white/5 text-slate-400 hover:bg-white/10"
+            className={`trace-btn ${viewMode === "scroll"
+              ? "trace-btn-active"
+              : "trace-btn-subtle"
               }`}
           >
             SCROLL
           </button>
           <button
             onClick={() => setViewMode("fixed")}
-            className={`px-3 py-1 text-xs font-mono transition-colors ${viewMode === "fixed"
-              ? "bg-purple-600/40 text-purple-200"
-              : "bg-white/5 text-slate-400 hover:bg-white/10"
+            className={`trace-btn ${viewMode === "fixed"
+              ? "trace-btn-active"
+              : "trace-btn-subtle"
               }`}
           >
             FIXED
@@ -512,7 +512,7 @@ function Trace() {
         <button
           onClick={() => exportCsv(enriched)}
           disabled={enriched.length === 0}
-          className="px-3 py-1 rounded text-xs font-mono font-semibold border border-white/20 bg-white/5 text-slate-300 hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="trace-btn trace-btn-subtle"
         >
           EXPORT CSV
         </button>

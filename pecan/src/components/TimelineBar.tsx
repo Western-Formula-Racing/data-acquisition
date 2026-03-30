@@ -44,6 +44,7 @@ function TimelineBar() {
       return false;
     }
   });
+  const [hoveredCheckpointId, setHoveredCheckpointId] = useState<string | null>(null);
 
   const hasData = collectionStartMs !== null && collectionEndMs !== null;
   const durationMs = hasData ? Math.max(0, collectionEndMs - collectionStartMs) : 0;
@@ -62,6 +63,22 @@ function TimelineBar() {
     });
   }, [checkpoints, collectionStartMs, durationMs, hasData]);
 
+  const cursorCheckpointId = useMemo(() => {
+    if (!hasData || checkpoints.length === 0) return null;
+    const nearest = checkpoints.reduce<{ id: string; diff: number } | null>((acc, cp) => {
+      const diff = Math.abs(cp.timeMs - sliderValue);
+      if (!acc || diff < acc.diff) {
+        return { id: cp.id, diff };
+      }
+      return acc;
+    }, null);
+
+    // Highlight only when cursor is effectively on a checkpoint (or very close).
+    return nearest && nearest.diff <= 500 ? nearest.id : null;
+  }, [checkpoints, hasData, sliderValue]);
+
+  const activeCheckpointId = hoveredCheckpointId ?? cursorCheckpointId;
+
   useEffect(() => {
     localStorage.setItem(TIMELINE_COLLAPSED_KEY, String(collapsed));
   }, [collapsed]);
@@ -69,8 +86,8 @@ function TimelineBar() {
   const header = (
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div>
-        <h3 className="text-white font-semibold">Timeline Since Data Collection</h3>
-        <p className="text-xs text-slate-300">
+        <h3 className="app-submenu-title">TIMELINE</h3>
+        <p className="text-xs text-slate-300 font-mono tracking-normal">
           {hasData
             ? `Span: ${formatDuration(durationMs)} (${formatClock(sliderMin)} to ${formatClock(
                 sliderMax
@@ -80,118 +97,133 @@ function TimelineBar() {
       </div>
       <div className="flex items-center gap-2">
         <span
-          className={`text-xs px-2 py-1 rounded ${
+          className={`timeline-chip ${
             mode === "live"
-              ? "bg-green-500/20 text-green-300"
-              : "bg-amber-500/20 text-amber-300"
+              ? "timeline-chip-live"
+              : "timeline-chip-paused"
           }`}
         >
           {mode === "live" ? "LIVE" : "PAUSED"}
         </span>
         <button
           type="button"
-          className="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
+          className="trace-btn trace-btn-subtle !text-[10px] !px-2 !py-1"
           onClick={() => setCollapsed((prev) => !prev)}
         >
-          {collapsed ? "Expand" : "Collapse"}
+          Collapse ▲
         </button>
       </div>
     </div>
   );
 
+  if (collapsed) {
+    return (
+      <div className="sticky top-0 z-20 mb-2 flex justify-end">
+        <button
+          type="button"
+          className="trace-btn trace-btn-subtle !text-[10px] !px-2 !py-1"
+          onClick={() => setCollapsed(false)}
+        >
+          TIMELINE ▼
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-data-module-bg rounded-md p-3 mb-3 border border-white/10 sticky top-0 z-20">
+    <div className="bg-data-module-bg/92 rounded-md p-2.5 mb-2 border border-white/10 sticky top-0 z-20 backdrop-blur-[1px]">
       {header}
 
-      {collapsed ? (
-        <div className="mt-2 text-xs text-slate-300">
-          Cursor: {hasData ? formatClock(sliderValue) : "--:--:--"}
-        </div>
-      ) : (
-        <>
-          <div className="flex items-center gap-2 mt-2 mb-2">
-            <button
-              type="button"
-              className="text-xs px-2 py-1 rounded bg-blue-600/80 hover:bg-blue-500 text-white"
-              onClick={goLive}
-              disabled={!hasData}
-            >
-              Return to Live
-            </button>
-            <button
-              type="button"
-              className="text-xs px-2 py-1 rounded bg-emerald-700/80 hover:bg-emerald-600 text-white"
-              onClick={() => addCheckpoint()}
-              disabled={!hasData}
-            >
-              Add Checkpoint
-            </button>
-            <button
-              type="button"
-              className="text-xs px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
-              onClick={clearCheckpoints}
-              disabled={checkpoints.length === 0}
-            >
-              Clear Checkpoints
-            </button>
-          </div>
+      <div className="flex items-center gap-1.5 mt-1.5 mb-1.5 flex-wrap">
+        <button
+          type="button"
+          className="trace-btn trace-btn-primary !text-[10px] !px-2 !py-1"
+          onClick={goLive}
+          disabled={!hasData}
+        >
+          Return to Live
+        </button>
+        <button
+          type="button"
+          className="trace-btn trace-btn-success !text-[10px] !px-2 !py-1"
+          onClick={() => addCheckpoint()}
+          disabled={!hasData}
+        >
+          Add Checkpoint
+        </button>
+        <button
+          type="button"
+          className="trace-btn trace-btn-subtle !text-[10px] !px-2 !py-1"
+          onClick={clearCheckpoints}
+          disabled={checkpoints.length === 0}
+        >
+          Clear Checkpoints
+        </button>
+      </div>
 
-          <div className="relative pt-4">
-            <input
-              type="range"
-              min={sliderMin}
-              max={Math.max(sliderMax, sliderMin + 1)}
-              value={sliderValue}
-              onChange={(e) => seek(Number(e.target.value))}
-              disabled={!hasData}
-              className="w-full accent-blue-500"
+      <div className="relative pt-3 pb-0.5">
+        <div className="absolute inset-x-0 top-[13px] h-[1px] bg-white/12 rounded-full pointer-events-none" />
+        <input
+          type="range"
+          min={sliderMin}
+          max={Math.max(sliderMax, sliderMin + 1)}
+          value={sliderValue}
+          onChange={(e) => seek(Number(e.target.value))}
+          disabled={!hasData}
+          className="timeline-range timeline-range-trace w-full"
+        />
+        {hasData &&
+          checkpointPercents.map((checkpoint) => (
+            <button
+              key={checkpoint.id}
+              type="button"
+              className={`timeline-checkpoint timeline-checkpoint-trace absolute top-[8px] -translate-x-1/2 opacity-90 ${
+                activeCheckpointId === checkpoint.id ? "timeline-checkpoint-active" : ""
+              }`}
+              style={{ left: `${checkpoint.pct}%` }}
+              onClick={() => jumpToCheckpoint(checkpoint.id)}
+              onMouseEnter={() => setHoveredCheckpointId(checkpoint.id)}
+              onMouseLeave={() => setHoveredCheckpointId(null)}
+              title={`${checkpoint.label} (${formatClock(checkpoint.timeMs)})`}
             />
-            {hasData &&
-              checkpointPercents.map((checkpoint) => (
-                <button
-                  key={checkpoint.id}
-                  type="button"
-                  className="absolute top-0 -translate-x-1/2 text-[10px] px-1 py-0.5 rounded bg-amber-500/80 text-black hover:bg-amber-400"
-                  style={{ left: `${checkpoint.pct}%` }}
-                  onClick={() => jumpToCheckpoint(checkpoint.id)}
-                  title={`${checkpoint.label} (${formatClock(checkpoint.timeMs)})`}
-                >
-                  |
-                </button>
-              ))}
-          </div>
+          ))}
+      </div>
 
-          <div className="mt-2 text-xs text-slate-300">
-            Cursor: {hasData ? formatClock(sliderValue) : "--:--:--"}
-          </div>
+      <div className="mt-1.5 text-[10px] text-slate-300 font-mono tracking-normal">
+        Cursor: {hasData ? formatClock(sliderValue) : "--:--:--"}
+      </div>
 
-          {checkpoints.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {checkpoints.map((checkpoint) => (
-                <div
-                  key={checkpoint.id}
-                  className="text-xs bg-data-textbox-bg text-slate-200 rounded px-2 py-1 flex items-center gap-1"
-                >
-                  <button
-                    type="button"
-                    onClick={() => jumpToCheckpoint(checkpoint.id)}
-                    className="hover:text-white"
-                  >
-                    {checkpoint.label} @ {formatClock(checkpoint.timeMs)}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => deleteCheckpoint(checkpoint.id)}
-                    className="text-red-300 hover:text-red-200"
-                    title="Delete checkpoint"
-                  >
-                    x
-                  </button>
-                </div>
-              ))}
+      {checkpoints.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {checkpoints.map((checkpoint) => (
+            <div
+              key={checkpoint.id}
+              className={`text-[10px] rounded px-1.5 py-1 flex items-center gap-1 border ${
+                activeCheckpointId === checkpoint.id
+                  ? "timeline-checkpoint-chip-active"
+                  : "bg-white/5 text-slate-300 border-white/10"
+              }`}
+              onMouseEnter={() => setHoveredCheckpointId(checkpoint.id)}
+              onMouseLeave={() => setHoveredCheckpointId(null)}
+            >
+              <button
+                type="button"
+                onClick={() => jumpToCheckpoint(checkpoint.id)}
+                className={`font-medium ${activeCheckpointId === checkpoint.id ? "text-white" : "hover:text-white"}`}
+              >
+                {checkpoint.label} @ {formatClock(checkpoint.timeMs)}
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteCheckpoint(checkpoint.id)}
+                className="timeline-delete-checkpoint"
+                title="Delete checkpoint"
+              >
+                x
+              </button>
             </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
     </div>
   );

@@ -30,6 +30,12 @@ interface MessageBuffer {
 // Maximum number of frames kept in the flat trace ring buffer
 const TRACE_BUFFER_MAX = 10000;
 
+// Retention window settings
+const DEFAULT_RETENTION_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+const MIN_RETENTION_WINDOW_MS = 60 * 1000; // 1 minute
+const MAX_RETENTION_WINDOW_MS = 60 * 60 * 1000; // 60 minutes
+const RETENTION_STORAGE_KEY = "pecan:retention-window-ms";
+
 // Frequency window in milliseconds for dashboard displays (2 seconds)
 export const FREQUENCY_WINDOW_MS = 2000;
 
@@ -46,7 +52,7 @@ class DataStore {
   // Flat chronological ring buffer for CAN Trace view
   private traceBuffer: TelemetrySample[];
 
-  // Retention window in milliseconds (default: 30 seconds)
+  // Retention window in milliseconds
   private retentionWindowMs: number;
 
   // Pub/sub listeners
@@ -58,7 +64,7 @@ class DataStore {
   // Singleton instance
   private static instance: DataStore | null = null;
 
-  private constructor(retentionWindowMs: number = 300000) { // 5 minutes
+  private constructor(retentionWindowMs: number = DEFAULT_RETENTION_WINDOW_MS) {
     this.buffer = new Map();
     this.traceBuffer = [];
     this.retentionWindowMs = retentionWindowMs;
@@ -542,7 +548,19 @@ class DataStore {
 }
 
 // Export singleton instance
-export const dataStore = DataStore.getInstance();
+function getInitialRetentionWindowMs(): number {
+  try {
+    const raw = localStorage.getItem(RETENTION_STORAGE_KEY);
+    if (!raw) return DEFAULT_RETENTION_WINDOW_MS;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return DEFAULT_RETENTION_WINDOW_MS;
+    return Math.max(MIN_RETENTION_WINDOW_MS, Math.min(MAX_RETENTION_WINDOW_MS, parsed));
+  } catch {
+    return DEFAULT_RETENTION_WINDOW_MS;
+  }
+}
+
+export const dataStore = DataStore.getInstance(getInitialRetentionWindowMs());
 
 // Export class for testing purposes
 export { DataStore };
