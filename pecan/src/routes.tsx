@@ -11,7 +11,6 @@ import Landing from "./pages/Landing";
 import ThrottleMapper from "./pages/ThrottleMapper";
 import SensorValidator from "./pages/SensorValidator";
 import Trace from "./pages/Trace";
-import ReplayViewer from "./pages/ReplayViewer";
 // import TxDashboard from "./pages/TxDashboard";
 import DataTransmitter from "./pages/Transmitter";
 
@@ -38,7 +37,7 @@ export const router = createBrowserRouter([
       { path: "throttle-mapper", element: <ThrottleMapper /> },
       { path: "sensor-validator", element: <SensorValidator /> },
       { path: "trace", element: <Trace /> },
-      { path: "replay-viewer", element: <ReplayViewer /> },
+      { path: "replay-viewer", element: <Dashboard /> },
        // { path: "tx", element: <TxDashboard /> },
       { path: "can-transmitter", element: <DataTransmitter /> },
     ],

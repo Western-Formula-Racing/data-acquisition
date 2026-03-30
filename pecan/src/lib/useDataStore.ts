@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { dataStore, type TelemetrySample } from './DataStore';
+import { dataStore, type TelemetrySample, type TelemetrySource } from './DataStore';
 
 /**
  * Hook to get the latest sample for a specific msgID
@@ -106,22 +106,22 @@ export function useSignal(msgID: string, signalName: string): {
  * 
  * @returns Map of msgID to latest telemetry sample
  */
-export function useAllLatestMessages(): Map<string, TelemetrySample> {
+export function useAllLatestMessages(source?: TelemetrySource): Map<string, TelemetrySample> {
   const [allLatest, setAllLatest] = useState<Map<string, TelemetrySample>>(() => 
-    dataStore.getAllLatest()
+    dataStore.getAllLatest(source)
   );
 
   useEffect(() => {
     // Initial value
-    setAllLatest(dataStore.getAllLatest());
+    setAllLatest(dataStore.getAllLatest(source));
 
     // Subscribe to all updates
     const unsubscribe = dataStore.subscribe(() => {
-      setAllLatest(dataStore.getAllLatest());
+      setAllLatest(dataStore.getAllLatest(source));
     });
 
     return unsubscribe;
-  }, []);
+  }, [source]);
 
   return allLatest;
 }
@@ -237,6 +237,7 @@ export function useDataStoreControls() {
     rawData: string;
     timestamp?: number;
     direction?: "rx" | "tx";
+    source?: "live" | "replay";
   }) => {
     dataStore.ingestMessage(message);
   }, []);
@@ -281,12 +282,12 @@ export function useMessageData(msgID: string, windowMs?: number): {
  * @param throttleMs - Min ms between state updates (default 50)
  * @returns Snapshot of the trace buffer + a clearTrace() helper
  */
-export function useTraceBuffer(throttleMs = 50): {
+export function useTraceBuffer(throttleMs = 50, source?: TelemetrySource): {
   frames: TelemetrySample[];
   clearTrace: () => void;
 } {
   const [frames, setFrames] = useState<TelemetrySample[]>(() =>
-    dataStore.getTrace()
+    dataStore.getTrace(source)
   );
 
   useEffect(() => {
@@ -294,7 +295,7 @@ export function useTraceBuffer(throttleMs = 50): {
 
     const flush = () => {
       pending = false;
-      setFrames(dataStore.getTrace());
+      setFrames(dataStore.getTrace(source));
     };
 
     const unsubscribe = dataStore.subscribeTrace(() => {
@@ -305,15 +306,15 @@ export function useTraceBuffer(throttleMs = 50): {
     });
 
     // Sync immediately on mount
-    setFrames(dataStore.getTrace());
+    setFrames(dataStore.getTrace(source));
 
     return unsubscribe;
-  }, [throttleMs]);
+  }, [throttleMs, source]);
 
   const clearTrace = useCallback(() => {
-    dataStore.clearTrace();
+    dataStore.clearTrace(source);
     setFrames([]);
-  }, []);
+  }, [source]);
 
   return useMemo(() => ({ frames, clearTrace }), [frames, clearTrace]);
 }

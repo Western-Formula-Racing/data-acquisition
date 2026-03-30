@@ -22,7 +22,12 @@ function ReplayViewer() {
       const parseResult = await parseReplayFile(file);
       setResult(parseResult);
       if (parseResult.errors.length === 0 && parseResult.frames.length > 0) {
-        loadReplayFrames(parseResult.frames, file.name);
+        await loadReplayFrames(
+          parseResult.frames,
+          file.name,
+          parseResult.sessionMeta?.timeline,
+          parseResult.sessionMeta?.plots
+        );
       }
     } finally {
       setIsParsing(false);

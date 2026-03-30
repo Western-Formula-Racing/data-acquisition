@@ -21,10 +21,23 @@ import { useRemoteConfig } from "../lib/useRemoteConfig";
 import { HelpCircle } from "lucide-react";
 import TimelineBar from "../components/TimelineBar";
 import { useTimeline } from "../context/TimelineContext";
+import type { ReplayPlotLayout } from "../types/replay";
 
 interface Plot {
   id: string;
   signals: PlotSignal[];
+}
+
+function nextPlotCounter(plots: Plot[]): number {
+  const maxId = plots.reduce((max, plot) => {
+    const parsed = Number(plot.id);
+    if (Number.isFinite(parsed)) {
+      return Math.max(max, parsed);
+    }
+    return max;
+  }, 0);
+
+  return maxId + 1;
 }
 
 const TOUR_STEPS: TourStep[] = [
@@ -99,6 +112,12 @@ function Dashboard() {
   // =====================================================================
   const [plots, setPlots] = useState<Plot[]>([]);
   const [nextPlotId, setNextPlotId] = useState(1);
+  const livePlotsSnapshotRef = useRef<Plot[] | null>(null);
+  // Stores the loadedAtMs of the replay session whose layout has been applied,
+  // or false when no replay layout is active. Using the timestamp rather than a
+  // plain boolean means re-importing a different .pecan file always triggers a
+  // fresh layout swap.
+  const replayLayoutAppliedRef = useRef<number | false>(false);
   const [plotControls, setPlotControls] = useState<{
     visible: boolean;
     signalInfo: {
@@ -154,14 +173,84 @@ function Dashboard() {
   // =====================================================================
 
   // Use the DataStore hooks to get all latest messages
-  const allLatestMessages = useAllLatestMessages();
+  const allLatestMessages = useAllLatestMessages("live");
   const dataStoreStats = useDataStoreStats();
   const {
+    source: timelineSource,
     windowMs: plotTimeWindow,
     setWindowMs: setPlotTimeWindow,
     selectedTimeMs,
     mode: timelineMode,
+    replaySession,
   } = useTimeline();
+
+  const replayPlotLayoutsForExport = useMemo<ReplayPlotLayout[]>(() => {
+    return plots.map((plot) => ({
+      id: plot.id,
+      title: `Plot ${plot.id}`,
+      series: plot.signals.map((signal) => ({
+        msgId: signal.msgID,
+        signalName: signal.signalName,
+      })),
+    }));
+  }, [plots]);
+
+  useEffect(() => {
+    if (timelineSource === "replay") {
+      // Skip if we've already applied the layout for this exact replay session.
+      if (replayLayoutAppliedRef.current === replaySession?.loadedAtMs) {
+        return;
+      }
+
+      // Snapshot live plots only on the first replay mount (not on re-imports).
+      if (replayLayoutAppliedRef.current === false) {
+        livePlotsSnapshotRef.current = plots;
+      }
+
+      const importedLayouts = replaySession?.plots?.layouts ?? [];
+
+      if (importedLayouts.length > 0) {
+        const importedPlots: Plot[] = importedLayouts
+          .map((layout) => ({
+            id: String(layout.id),
+            signals: layout.series.map((series) => {
+              const latestSample = dataStore.getLatest(series.msgId, "replay");
+              const unit = latestSample?.data?.[series.signalName]?.unit ?? "";
+              return {
+                msgID: series.msgId,
+                signalName: series.signalName,
+                messageName: latestSample?.messageName ?? `CAN_${series.msgId}`,
+                unit,
+              };
+            }),
+          }))
+          .filter((plot) => plot.signals.length > 0);
+
+        if (importedPlots.length > 0) {
+          setPlots(importedPlots);
+          setNextPlotId(nextPlotCounter(importedPlots));
+        }
+      }
+
+      // Mark this session's layout as applied.
+      replayLayoutAppliedRef.current = replaySession?.loadedAtMs ?? Date.now();
+      return;
+    }
+
+    // Returning to live — only restore if we had actually applied a replay layout.
+    if (replayLayoutAppliedRef.current === false) {
+      return;
+    }
+
+    const snapshot = livePlotsSnapshotRef.current;
+    if (snapshot) {
+      setPlots(snapshot);
+      setNextPlotId(nextPlotCounter(snapshot));
+    }
+
+    livePlotsSnapshotRef.current = null;
+    replayLayoutAppliedRef.current = false;
+  }, [timelineSource, replaySession?.loadedAtMs]);
 
   const [performanceStats, setPerformanceStats] = useState({
     memoryUsage: "N/A" as string | number,
@@ -223,11 +312,16 @@ function Dashboard() {
 
   // Convert Map to array for rendering, anchored to timeline when paused
   const canMessagesArray = useMemo(() => {
-    if (timelineMode === "paused") {
-      return Array.from(dataStore.getAllLatestAt(selectedTimeMs).entries());
+    if (timelineSource === "replay") {
+      return Array.from(dataStore.getAllLatestAt(selectedTimeMs, "replay").entries());
     }
+
+    if (timelineMode === "paused") {
+      return Array.from(dataStore.getAllLatestAt(selectedTimeMs, "live").entries());
+    }
+
     return Array.from(allLatestMessages.entries());
-  }, [timelineMode, selectedTimeMs, allLatestMessages]);
+  }, [timelineSource, timelineMode, selectedTimeMs, allLatestMessages]);
 
   // Sorting Logic
   // =====================================================================
@@ -483,7 +577,7 @@ function Dashboard() {
       {/* Data display section */}
       <div className={`relative flex flex-col md:h-full overflow-hidden pb-12 md:pb-0 ${plotPanelOpen ? 'h-[50vh]' : 'flex-1'} ${desktopPanelOpen ? 'md:col-span-2' : 'md:col-span-3'}`}>
         <div className="flex-1 p-4 pb-16 overflow-y-auto">
-          <TimelineBar />
+          <TimelineBar plotLayouts={replayPlotLayoutsForExport} />
 
           {/* Data filter / view selection menu */}
           <div className="bg-data-module-bg w-full h-[60px] md:h-[100px] grid grid-cols-4 gap-1 rounded-md mb-[15px]">

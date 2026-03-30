@@ -4,11 +4,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { dataStore } from "../lib/DataStore";
-import type { ReplayFrame } from "../types/replay";
+import type { ReplayFrame, ReplayPlotsMetadata, ReplayTimelineMetadata } from "../types/replay";
+import { createCanProcessor } from "../utils/canProcessor";
 
 export type TimelineMode = "live" | "paused";
 export type TimelineSource = "live" | "replay";
@@ -35,11 +37,17 @@ interface TimelineContextValue {
     startTimeMs: number;
     endTimeMs: number;
     frames: ReplayFrame[];
+    plots?: ReplayPlotsMetadata;
   } | null;
   setWindowMs: (windowMs: number) => void;
   seek: (timeMs: number) => void;
   goLive: () => void;
-  loadReplayFrames: (frames: ReplayFrame[], fileName: string) => void;
+  loadReplayFrames: (
+    frames: ReplayFrame[],
+    fileName: string,
+    timelineMeta?: ReplayTimelineMetadata,
+    plotsMeta?: ReplayPlotsMetadata
+  ) => Promise<void>;
   clearReplaySession: () => void;
   addCheckpoint: (label?: string) => void;
   deleteCheckpoint: (id: string) => void;
@@ -64,6 +72,38 @@ function checkpointsStorageKeyForSource(source: TimelineSource): string {
     : LIVE_CHECKPOINTS_STORAGE_KEY;
 }
 
+function formatReplayCanId(canId: number, isExtended: boolean): string {
+  const normalizedId = canId >>> 0;
+  const rawCanId = normalizedId > 0x7ff ? normalizedId & ~0x80000000 : normalizedId;
+  const width = isExtended || rawCanId > 0x7ff ? 8 : 3;
+  return `0x${rawCanId.toString(16).toUpperCase().padStart(width, "0")}`;
+}
+
+function dataHexToRawData(dataHex: string): string {
+  const normalized = dataHex.replace(/\s+/g, "").toUpperCase();
+  if (!normalized) return "";
+
+  const bytes = normalized.match(/.{1,2}/g);
+  return bytes ? bytes.join(" ") : "";
+}
+
+function dataHexToBytes(dataHex: string): number[] {
+  const normalized = dataHex.replace(/\s+/g, "").toUpperCase();
+  const bytePairs = normalized.match(/.{1,2}/g) ?? [];
+  return bytePairs
+    .map((pair) => Number.parseInt(pair, 16))
+    .filter((value) => Number.isFinite(value));
+}
+
+function parseLocalTimeToEpochMs(localTime?: string): number | null {
+  if (!localTime) {
+    return null;
+  }
+
+  const parsed = Date.parse(localTime);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function loadCheckpoints(storageKey: string): TimelineCheckpoint[] {
   try {
     const raw = localStorage.getItem(storageKey);
@@ -83,6 +123,7 @@ function loadCheckpoints(storageKey: string): TimelineCheckpoint[] {
 }
 
 export function TimelineProvider({ children }: { children: ReactNode }) {
+  const skipNextCheckpointHydrationRef = useRef(false);
   const [source, setSource] = useState<TimelineSource>("live");
   const [mode, setMode] = useState<TimelineMode>("live");
   const [selectedTimeMs, setSelectedTimeMs] = useState<number>(() => Date.now());
@@ -96,12 +137,24 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
   const [replaySession, setReplaySession] = useState<TimelineContextValue["replaySession"]>(null);
 
   useEffect(() => {
+    dataStore.setActiveSource(source);
+  }, [source]);
+
+  useEffect(() => {
     if (source !== "live") {
       return;
     }
 
     const updateBounds = () => {
-      const stats = dataStore.getStats();
+      // Guard against stale closure: if the dataStore has already been switched to
+      // replay (e.g. by loadReplayFrames before React re-renders), skip the bounds
+      // update entirely so we don't overwrite the replay collection window with the
+      // live-data timestamps.
+      if (dataStore.getActiveSource() !== "live") {
+        return;
+      }
+
+      const stats = dataStore.getStats("live");
       setLatestLiveDataMs(stats.newestSample);
 
       if (mode === "live") {
@@ -120,6 +173,11 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
   }, [mode, source]);
 
   useEffect(() => {
+    if (skipNextCheckpointHydrationRef.current) {
+      skipNextCheckpointHydrationRef.current = false;
+      return;
+    }
+
     const storageKey = checkpointsStorageKeyForSource(source);
     setCheckpoints(loadCheckpoints(storageKey));
   }, [source]);
@@ -145,9 +203,10 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
 
   const goLive = useCallback(() => {
     setReplaySession(null);
+    dataStore.setActiveSource("live");
     setSource("live");
     setMode("live");
-    const stats = dataStore.getStats();
+    const stats = dataStore.getStats("live");
     setLatestLiveDataMs(stats.newestSample);
     setCollectionStartMs(stats.oldestSample);
     setCollectionEndMs(stats.newestSample);
@@ -158,9 +217,11 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
 
   const clearReplaySession = useCallback(() => {
     setReplaySession(null);
+    dataStore.clear("replay");
+    dataStore.setActiveSource("live");
     setSource("live");
     setMode("live");
-    const stats = dataStore.getStats();
+    const stats = dataStore.getStats("live");
     setLatestLiveDataMs(stats.newestSample);
     setCollectionStartMs(stats.oldestSample);
     setCollectionEndMs(stats.newestSample);
@@ -169,34 +230,143 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const loadReplayFrames = useCallback((frames: ReplayFrame[], fileName: string) => {
+  const loadReplayFrames = useCallback(async (
+    frames: ReplayFrame[],
+    fileName: string,
+    timelineMeta?: ReplayTimelineMetadata,
+    plotsMeta?: ReplayPlotsMetadata
+  ) => {
     if (!Array.isArray(frames) || frames.length === 0) {
       return;
     }
 
     const sorted = [...frames].sort((a, b) => a.tRelMs - b.tRelMs);
-    const minRelMs = sorted[0].tRelMs;
-    const maxRelMs = sorted[sorted.length - 1].tRelMs;
-    const baseEpochMs = sorted.find((frame) => typeof frame.tEpochMs === "number")?.tEpochMs ?? Date.now();
-    const startTimeMs = baseEpochMs + minRelMs;
-    const endTimeMs = baseEpochMs + maxRelMs;
+    const firstFrame = sorted[0];
+    const firstRelMs = firstFrame?.tRelMs ?? 0;
+    const baseEpochMs =
+      sorted.find((frame) => typeof frame.tEpochMs === "number")?.tEpochMs ??
+      parseLocalTimeToEpochMs(sorted.find((frame) => typeof frame.tLocalTime === "string")?.tLocalTime) ??
+      (Date.now() - firstRelMs);
+
+    let previousNormalizedTimestamp: number | null = null;
+    const normalizedFrames = sorted.map((frame) => {
+      const localEpochMs = parseLocalTimeToEpochMs(frame.tLocalTime);
+      const relBasedTimestamp = baseEpochMs + frame.tRelMs;
+      const rawTimestamp =
+        typeof frame.tEpochMs === "number"
+          ? frame.tEpochMs
+          : (localEpochMs ?? relBasedTimestamp);
+
+      const monotonicTimestamp = previousNormalizedTimestamp === null
+        ? rawTimestamp
+        : Math.max(rawTimestamp, previousNormalizedTimestamp, relBasedTimestamp);
+      const normalizedTimestamp = monotonicTimestamp;
+      previousNormalizedTimestamp = normalizedTimestamp;
+
+      return {
+        ...frame,
+        tEpochMs: normalizedTimestamp,
+      };
+    });
+
+    const normalizedStartEpochMs = normalizedFrames[0].tEpochMs ?? Date.now();
+    const reBasedFrames = normalizedFrames.map((frame) => {
+      const timestamp = frame.tEpochMs ?? normalizedStartEpochMs;
+      return {
+        ...frame,
+        tEpochMs: timestamp,
+        tRelMs: Math.max(0, timestamp - normalizedStartEpochMs),
+      };
+    });
+
+    const retainedFrames = reBasedFrames;
+    const endTimeMs = retainedFrames[retainedFrames.length - 1].tEpochMs ?? normalizedStartEpochMs;
+
+    if (retainedFrames.length === 0) {
+      return;
+    }
+
+    const retainedStartTimeMs = retainedFrames[0].tEpochMs ?? normalizedStartEpochMs;
+    const replayWindowMs =
+      typeof timelineMeta?.windowMs === "number"
+        ? Math.max(1000, Math.min(60 * 60 * 1000, timelineMeta.windowMs))
+        : windowMs;
+
+    const importedCheckpoints: TimelineCheckpoint[] = (timelineMeta?.checkpoints ?? [])
+      .map((checkpoint, index) => {
+        const absoluteTimeMs = normalizedStartEpochMs + checkpoint.tRelMs;
+        return {
+          id: checkpoint.id?.trim() || `replay-${index}-${Math.round(absoluteTimeMs)}`,
+          label: checkpoint.label?.trim() || `Checkpoint ${index + 1}`,
+          timeMs: absoluteTimeMs,
+        };
+      })
+      .filter((checkpoint) => checkpoint.timeMs >= retainedStartTimeMs && checkpoint.timeMs <= endTimeMs)
+      .sort((a, b) => a.timeMs - b.timeMs);
+
+    const importedCursorMs =
+      typeof timelineMeta?.lastCursorMs === "number"
+        ? clampTime(normalizedStartEpochMs + timelineMeta.lastCursorMs, retainedStartTimeMs, endTimeMs)
+        : endTimeMs;
+
+    const processor = await createCanProcessor().catch((error) => {
+      console.warn("[Timeline] Failed to initialize CAN decoder for replay import:", error);
+      return null;
+    });
+
+    // Switch to replay source BEFORE ingesting frames so that any notifyAll()
+    // calls fired during ingestion are deflected by the updateBounds guard above.
+    // Without this, the stale live subscriber would overwrite collectionStart/End
+    // with live-data timestamps before React has a chance to re-render.
+    dataStore.setActiveSource("replay");
+    dataStore.clear("replay");
+    dataStore.ingestMessagesBatch(
+      retainedFrames.map((frame) => {
+        const timestamp = frame.tEpochMs ?? retainedStartTimeMs;
+        const msgID = formatReplayCanId(frame.canId, frame.isExtended);
+        const rawBytes = dataHexToBytes(frame.dataHex);
+        const decoded = processor?.decode(frame.canId, rawBytes, timestamp) ?? null;
+
+        return {
+          msgID,
+          messageName: decoded?.messageName ?? `CAN_${msgID}`,
+          data: decoded?.signals ?? {},
+          rawData: dataHexToRawData(frame.dataHex),
+          direction: frame.direction,
+          timestamp,
+          preserveTimestamp: true,
+          source: "replay" as const,
+        };
+      })
+    );
+
+    try {
+      localStorage.setItem(REPLAY_CHECKPOINTS_STORAGE_KEY, JSON.stringify(importedCheckpoints));
+    } catch {
+      // ignore localStorage write failures for checkpoint persistence
+    }
+
+    skipNextCheckpointHydrationRef.current = true;
 
     setReplaySession({
       fileName,
-      frameCount: sorted.length,
+      frameCount: retainedFrames.length,
       loadedAtMs: Date.now(),
-      startTimeMs,
+      startTimeMs: retainedStartTimeMs,
       endTimeMs,
-      frames: sorted,
+      frames: retainedFrames,
+      plots: plotsMeta,
     });
 
     setSource("replay");
     setMode("paused");
+    setWindowMsState(replayWindowMs);
+    setCheckpoints(importedCheckpoints);
     setLatestLiveDataMs(null);
-    setCollectionStartMs(startTimeMs);
+    setCollectionStartMs(retainedStartTimeMs);
     setCollectionEndMs(endTimeMs);
-    setSelectedTimeMs(startTimeMs);
-  }, []);
+    setSelectedTimeMs(importedCursorMs);
+  }, [windowMs]);
 
   const addCheckpoint = useCallback(
     (label?: string) => {

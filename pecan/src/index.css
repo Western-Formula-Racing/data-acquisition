@@ -139,6 +139,19 @@ p {
     .animate-flash-highlight {
         animation: flash-highlight 2s ease-out forwards;
     }
+
+    @keyframes blink {
+        0%, 49% {
+            opacity: 1;
+        }
+        50%, 100% {
+            opacity: 0.4;
+        }
+    }
+
+    .animate-blink {
+        animation: blink 1s ease-in-out infinite;
+    }
 }
 
 .avoid-break {

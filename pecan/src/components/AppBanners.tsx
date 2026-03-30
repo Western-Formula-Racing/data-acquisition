@@ -2,7 +2,7 @@ import { clearDbcCache } from "../utils/canProcessor";
 import { useState, useEffect } from "react";
 import { Banner, BannerButton } from "./Banner";
 
-export { DefaultBanner, CacheBanner };
+export { DefaultBanner, CacheBanner, RecoveredSessionBanner };
 
 interface InputProps {
   open: boolean;
@@ -96,6 +96,37 @@ function CacheBanner({ open, onClose }: Readonly<InputProps>) {
         </BannerButton>
         <BannerButton onClick={onClose}>
           Dismiss
+        </BannerButton>
+      </div>
+    </Banner>
+  );
+}
+
+interface RecoveredSessionBannerProps extends InputProps {
+  onClearRecovered: () => void;
+}
+
+function RecoveredSessionBanner({ open, onClose, onClearRecovered }: Readonly<RecoveredSessionBannerProps>) {
+  if (!open) return null;
+
+  const handleClear = () => {
+    onClearRecovered();
+    onClose();
+  };
+
+  return (
+    <Banner open={open} className="z-40">
+      <div className="flex items-center gap-2">
+        <span className="text-white text-[14pt] font-semibold text-center whitespace-nowrap overflow-hidden text-ellipsis">
+          Recovered previous telemetry session.
+        </span>
+      </div>
+      <div className="flex flex-row items-center gap-4 shrink-0">
+        <BannerButton onClick={handleClear}>
+          Clear Recovered Data
+        </BannerButton>
+        <BannerButton onClick={onClose}>
+          Keep
         </BannerButton>
       </div>
     </Banner>

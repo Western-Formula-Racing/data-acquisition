@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTimeline } from "../context/TimelineContext";
 import { dataStore, type TelemetrySample } from "../lib/DataStore";
-import type { ReplayFrame, ReplaySession } from "../types/replay";
+import type { ReplayFrame, ReplayPlotLayout, ReplaySession } from "../types/replay";
+import { parseReplayFile } from "../utils/replayParser";
+
+interface TimelineBarProps {
+  plotLayouts?: ReplayPlotLayout[];
+}
 
 const TIMELINE_COLLAPSED_KEY = "pecan:timeline:collapsed";
 
@@ -92,7 +97,7 @@ function sampleToReplayFrame(sample: TelemetrySample, exportStartMs: number): Re
   };
 }
 
-function TimelineBar() {
+function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
   const {
     source,
     mode,
@@ -103,6 +108,8 @@ function TimelineBar() {
     checkpoints,
     seek,
     goLive,
+    loadReplayFrames,
+    clearReplaySession,
     addCheckpoint,
     deleteCheckpoint,
     clearCheckpoints,
@@ -121,6 +128,8 @@ function TimelineBar() {
   const [clipModeEnabled, setClipModeEnabled] = useState(false);
   const [exportStartMs, setExportStartMs] = useState<number | null>(null);
   const [exportEndMs, setExportEndMs] = useState<number | null>(null);
+  const [isImportingReplay, setIsImportingReplay] = useState(false);
+  const replayFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const hasData = collectionStartMs !== null && collectionEndMs !== null;
   const durationMs = hasData ? Math.max(0, collectionEndMs - collectionStartMs) : 0;
@@ -228,6 +237,11 @@ function TimelineBar() {
   }, [source, mode, latestLiveDataMs, collectionEndMs]);
 
   const hasLiveTail = liveTailMs > 0;
+  const isAtCurrentLiveTime =
+    source === "live" &&
+    mode === "live" &&
+    latestLiveDataMs !== null &&
+    Math.abs(sliderValue - latestLiveDataMs) <= 50;
 
   const handleExportStartChange = (value: number) => {
     if (!hasData || !clipModeEnabled || exportEndMs === null) return;
@@ -297,6 +311,7 @@ function TimelineBar() {
             tRelMs: Math.max(0, checkpoint.timeMs - rangeStart),
           })),
       },
+      plots: plotLayouts.length > 0 ? { layouts: plotLayouts } : undefined,
     };
 
     const blob = new Blob([JSON.stringify(session, null, 2)], {
@@ -308,6 +323,41 @@ function TimelineBar() {
     a.download = `pecan_timeline_${formatLocalFilenameTimestamp(Date.now())}.pecan`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleImportReplay = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setIsImportingReplay(true);
+
+    try {
+      const parseResult = await parseReplayFile(file);
+      if (parseResult.errors.length > 0 || parseResult.frames.length === 0) {
+        const firstError = parseResult.errors[0]?.message ?? "No valid frames found in file.";
+        window.alert(`Replay import failed: ${firstError}`);
+        return;
+      }
+
+      await loadReplayFrames(
+        parseResult.frames,
+        file.name,
+        parseResult.sessionMeta?.timeline,
+        parseResult.sessionMeta?.plots
+      );
+
+      if (parseResult.warnings.length > 0) {
+        window.alert(`Replay imported with ${parseResult.warnings.length} warning(s).`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown import error";
+      window.alert(`Replay import failed: ${message}`);
+    } finally {
+      setIsImportingReplay(false);
+      event.target.value = "";
+    }
   };
 
   useEffect(() => {
@@ -364,7 +414,7 @@ function TimelineBar() {
       <div className="sticky top-0 z-20 mb-2 flex justify-end">
         <button
           type="button"
-          className="trace-btn trace-btn-subtle !text-[10px] !px-2 !py-1"
+          className={`trace-btn trace-btn-subtle !text-[10px] !px-2 !py-1 ${mode === "paused" ? "animate-blink" : ""}`}
           onClick={() => setCollapsed(false)}
         >
           TIMELINE ▼
@@ -378,14 +428,25 @@ function TimelineBar() {
       {header}
 
       <div className="flex items-center gap-1.5 mt-1.5 mb-1.5 flex-wrap">
-        <button
-          type="button"
-          className="trace-btn trace-btn-primary !text-[10px] !px-2 !py-1"
-          onClick={goLive}
-          disabled={!hasData}
-        >
-          Return to Live
-        </button>
+        {source === "live" && (
+          <button
+            type="button"
+            className="trace-btn trace-btn-primary !text-[10px] !px-2 !py-1"
+            onClick={goLive}
+            disabled={!hasData || isAtCurrentLiveTime}
+          >
+            Return to Live
+          </button>
+        )}
+        {source === "replay" && replaySession && (
+          <button
+            type="button"
+            className="trace-btn trace-btn-danger !text-[10px] !px-2 !py-1"
+            onClick={clearReplaySession}
+          >
+            Unmount Replay
+          </button>
+        )}
         <button
           type="button"
           className="trace-btn trace-btn-success !text-[10px] !px-2 !py-1"
@@ -432,6 +493,22 @@ function TimelineBar() {
         >
           Export .pecan
         </button>
+        <button
+          type="button"
+          className="trace-btn trace-btn-primary !text-[10px] !px-2 !py-1"
+          onClick={() => replayFileInputRef.current?.click()}
+          disabled={isImportingReplay}
+        >
+          {isImportingReplay ? "Importing..." : "Import .pecan"}
+        </button>
+        <input
+          ref={replayFileInputRef}
+          type="file"
+          accept=".pecan,.json,.csv,text/csv,application/json"
+          className="hidden"
+          onChange={handleImportReplay}
+          disabled={isImportingReplay}
+        />
       </div>
 
       <div className="relative pt-3 pb-0.5">

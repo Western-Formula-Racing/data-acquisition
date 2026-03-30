@@ -170,7 +170,7 @@ describe('DataStore', () => {
     unsub();
   });
 
-  it('should cap flat trace buffer to max size', () => {
+  it('should retain trace frames within retention window', () => {
     const base = Date.now();
     for (let i = 0; i < 10010; i += 1) {
       dataStore.ingestMessage({
@@ -183,8 +183,13 @@ describe('DataStore', () => {
     }
 
     const trace = dataStore.getTrace();
-    expect(trace).toHaveLength(10000);
-    expect(trace[0].rawData).toBe('10');
+    expect(trace).toHaveLength(10010);
+    expect(trace[0].rawData).toBe('0');
+
+    dataStore.setRetentionWindow(1000);
+    const prunedTrace = dataStore.getTrace();
+    expect(prunedTrace.length).toBeLessThanOrEqual(1001);
+    expect(Number(prunedTrace[0].rawData)).toBeGreaterThanOrEqual(9009);
   });
 
   it('should expose stats and clearMessage behavior', () => {

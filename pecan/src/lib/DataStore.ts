@@ -27,14 +27,48 @@ interface MessageBuffer {
   lastUpdated: number;
 }
 
-// Maximum number of frames kept in the flat trace ring buffer
-const TRACE_BUFFER_MAX = 10000;
+export type TelemetrySource = "live" | "replay";
+
+interface SourceBufferSet {
+  byMsgId: Map<string, MessageBuffer>;
+  trace: TelemetrySample[];
+}
+
+// Safety cap for trace history in case retention is set too high for incoming rate.
+const TRACE_BUFFER_HARD_MAX = 500000;
+const CAN_STD_MAX = 0x7FF;
 
 // Retention window settings
 const DEFAULT_RETENTION_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 const MIN_RETENTION_WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_RETENTION_WINDOW_MS = 60 * 60 * 1000; // 60 minutes
 const RETENTION_STORAGE_KEY = "pecan:retention-window-ms";
+const DATASTORE_SNAPSHOT_KEY = "pecan:datastore:snapshot:v2";
+const DATASTORE_SNAPSHOT_VERSION = 2;
+const DATASTORE_SNAPSHOT_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const DATASTORE_SNAPSHOT_SAVE_DEBOUNCE_MS = 1000;
+const DATASTORE_SNAPSHOT_TARGET_TRACE_SAMPLES = 500000;
+const DATASTORE_SNAPSHOT_MIN_TRACE_SAMPLES = 1000;
+const LOCALSTORAGE_ASSUMED_BUDGET_BYTES = 5 * 1024 * 1024; // 5 MB typical per-origin budget
+const LOCALSTORAGE_SAFETY_RESERVE_BYTES = 128 * 1024; // Leave headroom for app settings writes
+
+// High-priority keys should always win over CAN recovery snapshot storage.
+const LOCALSTORAGE_PRIORITY_KEYS = [
+  "dbc-file-content",
+  "pecan_monitor_presets",
+  "custom-ws-url",
+  "pecan:retention-window-ms",
+  "pecan:timeline:checkpoints",
+  "pecan:timeline:replay:checkpoints",
+  "comms_pinned_sensors",
+  "comms_username",
+  "perf-overlay-enabled",
+  "dash:viewMode",
+  "dash:desktopPanelOpen",
+  "dash:tutorialSeen",
+  "dbc-cache-active",
+  "txdash:viewMode",
+];
 
 // Frequency window in milliseconds for dashboard displays (2 seconds)
 export const FREQUENCY_WINDOW_MS = 2000;
@@ -42,15 +76,29 @@ export const FREQUENCY_WINDOW_MS = 2000;
 // Listener callback type
 type Listener = (msgID?: string) => void;
 
+interface PersistedDataStoreSnapshot {
+  version: number;
+  savedAtMs: number;
+  retentionWindowMs: number;
+  liveFrames: PersistedCanFrame[];
+}
+
+interface PersistedCanFrame {
+  t: number;
+  id: number;
+  d: string;
+  dir?: "rx" | "tx";
+}
+
 /**
  * DataStore Class - Singleton Pattern
  */
 class DataStore {
-  // Internal storage: msgID -> array of samples (chronological order)
-  private buffer: Map<string, MessageBuffer>;
+  // Internal storage split by source
+  private sourceBuffers: Record<TelemetrySource, SourceBufferSet>;
 
-  // Flat chronological ring buffer for CAN Trace view
-  private traceBuffer: TelemetrySample[];
+  // Which source existing read APIs are anchored to
+  private activeSource: TelemetrySource;
 
   // Retention window in milliseconds
   private retentionWindowMs: number;
@@ -64,12 +112,346 @@ class DataStore {
   // Singleton instance
   private static instance: DataStore | null = null;
 
+  private snapshotSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private recoveredFromSnapshot = false;
+  private isRestoringSnapshot = false;
+
   private constructor(retentionWindowMs: number = DEFAULT_RETENTION_WINDOW_MS) {
-    this.buffer = new Map();
-    this.traceBuffer = [];
+    this.sourceBuffers = {
+      live: { byMsgId: new Map(), trace: [] },
+      replay: { byMsgId: new Map(), trace: [] },
+    };
+    this.activeSource = "live";
     this.retentionWindowMs = retentionWindowMs;
     this.listeners = new Set();
     this.traceListeners = new Set();
+    this.loadSnapshotFromStorage();
+  }
+
+  private getSourceBuffers(source: TelemetrySource = this.activeSource): SourceBufferSet {
+    return this.sourceBuffers[source];
+  }
+
+  public setActiveSource(source: TelemetrySource): void {
+    if (this.activeSource === source) {
+      return;
+    }
+
+    this.activeSource = source;
+    this.scheduleSnapshotSave();
+    this.notifyAll();
+    this.notifyTrace();
+  }
+
+  public getActiveSource(): TelemetrySource {
+    return this.activeSource;
+  }
+
+  public consumeRecoveredSnapshotNotice(): boolean {
+    const recovered = this.recoveredFromSnapshot;
+    this.recoveredFromSnapshot = false;
+    return recovered;
+  }
+
+  public clearPersistedSnapshot(): void {
+    try {
+      localStorage.removeItem(DATASTORE_SNAPSHOT_KEY);
+    } catch {
+      // ignore localStorage failures
+    }
+  }
+
+  private loadSnapshotFromStorage(): void {
+    try {
+      const raw = localStorage.getItem(DATASTORE_SNAPSHOT_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as PersistedDataStoreSnapshot;
+      if (!Number.isFinite(parsed.savedAtMs) || Date.now() - parsed.savedAtMs > DATASTORE_SNAPSHOT_TTL_MS) {
+        localStorage.removeItem(DATASTORE_SNAPSHOT_KEY);
+        return;
+      }
+
+      if (typeof parsed.retentionWindowMs === "number") {
+        this.retentionWindowMs = Math.max(
+          MIN_RETENTION_WINDOW_MS,
+          Math.min(MAX_RETENTION_WINDOW_MS, parsed.retentionWindowMs)
+        );
+      }
+
+      if (parsed.version !== DATASTORE_SNAPSHOT_VERSION) {
+        localStorage.removeItem(DATASTORE_SNAPSHOT_KEY);
+        return;
+      }
+
+      const liveFrames = Array.isArray(parsed.liveFrames) ? parsed.liveFrames : [];
+      this.sourceBuffers.live = { byMsgId: new Map(), trace: [] };
+      this.sourceBuffers.replay = { byMsgId: new Map(), trace: [] };
+      this.activeSource = "live";
+      this.recoveredFromSnapshot = liveFrames.length > 0;
+
+      if (liveFrames.length > 0) {
+        void this.restoreLiveTraceFromFrames(liveFrames);
+      }
+    } catch {
+      // ignore corrupted snapshot data
+    }
+  }
+
+  private formatCanIdFallback(canId: number): string {
+    const unsignedId = canId >>> 0;
+    if (unsignedId > CAN_STD_MAX) {
+      return `0x${unsignedId.toString(16).toUpperCase().padStart(8, "0")}`;
+    }
+    return `0x${unsignedId.toString(16).toUpperCase().padStart(3, "0")}`;
+  }
+
+  private compactHexToBytes(compactHex: string): number[] {
+    if (!compactHex || compactHex.length % 2 !== 0 || !/^[0-9A-Fa-f]+$/.test(compactHex)) {
+      return [];
+    }
+
+    const bytes: number[] = [];
+    for (let i = 0; i < compactHex.length; i += 2) {
+      const byte = Number.parseInt(compactHex.slice(i, i + 2), 16);
+      if (!Number.isFinite(byte)) {
+        return [];
+      }
+      bytes.push(byte);
+    }
+    return bytes;
+  }
+
+  private bytesToRawData(bytes: number[]): string {
+    return bytes.map((value) => value.toString(16).padStart(2, "0").toUpperCase()).join(" ");
+  }
+
+  private msgIdToCanId(msgID: string): number | null {
+    if (!msgID || !msgID.startsWith("0x")) {
+      return null;
+    }
+
+    const parsed = Number.parseInt(msgID.slice(2), 16);
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+
+    return parsed >>> 0;
+  }
+
+  private rawDataToCompactHex(rawData: string): string | null {
+    if (typeof rawData !== "string" || rawData.length === 0) {
+      return null;
+    }
+
+    const compact = rawData.replace(/\s+/g, "").toUpperCase();
+    if (compact.length === 0 || compact.length % 2 !== 0 || !/^[0-9A-F]+$/.test(compact)) {
+      return null;
+    }
+
+    return compact;
+  }
+
+  private async restoreLiveTraceFromFrames(frames: PersistedCanFrame[]): Promise<void> {
+    if (!Array.isArray(frames) || frames.length === 0) {
+      return;
+    }
+
+    this.isRestoringSnapshot = true;
+
+    try {
+      const canProcessorModule = await import("../utils/canProcessor").catch(() => null);
+      const createCanProcessor = canProcessorModule?.createCanProcessor;
+      const formatCanId = canProcessorModule?.formatCanId;
+      const processor = typeof createCanProcessor === "function"
+        ? await createCanProcessor().catch(() => null)
+        : null;
+
+      const chunkSize = 5000;
+      for (let i = 0; i < frames.length; i += chunkSize) {
+        const chunk = frames.slice(i, i + chunkSize);
+        const messages: Array<{
+          msgID: string;
+          messageName: string;
+          data: {
+            [signalName: string]: {
+              sensorReading: number;
+              unit: string;
+            };
+          };
+          rawData: string;
+          direction?: "rx" | "tx";
+          timestamp: number;
+          preserveTimestamp: boolean;
+          source: "live";
+        }> = [];
+
+        for (const frame of chunk) {
+          if (!Number.isFinite(frame?.t) || !Number.isFinite(frame?.id) || typeof frame?.d !== "string") {
+            continue;
+          }
+
+          const bytes = this.compactHexToBytes(frame.d);
+          if (bytes.length === 0 && frame.d.length > 0) {
+            continue;
+          }
+
+          const timestamp = frame.t;
+          const canId = frame.id >>> 0;
+          const msgID = typeof formatCanId === "function"
+            ? formatCanId(canId)
+            : this.formatCanIdFallback(canId);
+          const decoded = processor?.decode(canId, bytes, timestamp) ?? null;
+
+          messages.push({
+            msgID,
+            messageName: decoded?.messageName ?? `CAN_${msgID}`,
+            data: decoded?.signals ?? {},
+            rawData: this.bytesToRawData(bytes),
+            direction: frame.dir,
+            timestamp,
+            preserveTimestamp: true,
+            source: "live",
+          });
+        }
+
+        if (messages.length > 0) {
+          this.ingestMessagesBatch(messages);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    } finally {
+      this.isRestoringSnapshot = false;
+      this.scheduleSnapshotSave();
+      this.notifyAll();
+      this.notifyTrace();
+    }
+  }
+
+  private scheduleSnapshotSave(): void {
+    if (this.isRestoringSnapshot) {
+      return;
+    }
+
+    if (this.snapshotSaveTimer) {
+      return;
+    }
+
+    this.snapshotSaveTimer = setTimeout(() => {
+      this.snapshotSaveTimer = null;
+      this.persistSnapshotToStorage();
+    }, DATASTORE_SNAPSHOT_SAVE_DEBOUNCE_MS);
+  }
+
+  private estimateStringStorageBytes(value: string): number {
+    // localStorage stores UTF-16 strings in most browsers: 2 bytes per char.
+    return value.length * 2;
+  }
+
+  private estimatePriorityStorageBytes(): number {
+    let total = 0;
+
+    for (const key of LOCALSTORAGE_PRIORITY_KEYS) {
+      try {
+        const value = localStorage.getItem(key);
+        if (value === null) {
+          continue;
+        }
+
+        total += this.estimateStringStorageBytes(key);
+        total += this.estimateStringStorageBytes(value);
+      } catch {
+        // ignore key read failures and keep best-effort estimate
+      }
+    }
+
+    return total;
+  }
+
+  private getSnapshotBudgetBytes(): number {
+    const reserved = this.estimatePriorityStorageBytes() + LOCALSTORAGE_SAFETY_RESERVE_BYTES;
+    const available = LOCALSTORAGE_ASSUMED_BUDGET_BYTES - reserved;
+    return Math.max(0, available);
+  }
+
+  private persistSnapshotToStorage(): void {
+    if (this.isRestoringSnapshot) {
+      return;
+    }
+
+    const fullLiveTrace = this.sourceBuffers.live.trace;
+    if (fullLiveTrace.length === 0) {
+      try {
+        localStorage.removeItem(DATASTORE_SNAPSHOT_KEY);
+      } catch {
+        // ignore localStorage failures
+      }
+      return;
+    }
+
+    const snapshotBudgetBytes = this.getSnapshotBudgetBytes();
+    if (snapshotBudgetBytes <= 0) {
+      try {
+        localStorage.removeItem(DATASTORE_SNAPSHOT_KEY);
+      } catch {
+        // ignore localStorage failures
+      }
+      return;
+    }
+
+    let sampleCount = Math.min(DATASTORE_SNAPSHOT_TARGET_TRACE_SAMPLES, fullLiveTrace.length);
+    while (sampleCount >= DATASTORE_SNAPSHOT_MIN_TRACE_SAMPLES) {
+      try {
+        const liveFrames: PersistedCanFrame[] = [];
+        for (const sample of fullLiveTrace.slice(-sampleCount)) {
+          const canId = this.msgIdToCanId(sample.msgID);
+          const dataHex = this.rawDataToCompactHex(sample.rawData);
+          if (canId === null || dataHex === null) {
+            continue;
+          }
+
+          liveFrames.push({
+            t: sample.timestamp,
+            id: canId,
+            d: dataHex,
+            dir: sample.direction,
+          });
+        }
+
+        if (liveFrames.length === 0) {
+          sampleCount = Math.floor(sampleCount / 2);
+          continue;
+        }
+
+        const snapshot: PersistedDataStoreSnapshot = {
+          version: DATASTORE_SNAPSHOT_VERSION,
+          savedAtMs: Date.now(),
+          retentionWindowMs: this.retentionWindowMs,
+          liveFrames,
+        };
+
+        const serialized = JSON.stringify(snapshot);
+        const serializedBytes = this.estimateStringStorageBytes(serialized) + this.estimateStringStorageBytes(DATASTORE_SNAPSHOT_KEY);
+        if (serializedBytes > snapshotBudgetBytes) {
+          sampleCount = Math.floor(sampleCount / 2);
+          continue;
+        }
+
+        localStorage.setItem(DATASTORE_SNAPSHOT_KEY, serialized);
+        return;
+      } catch {
+        sampleCount = Math.floor(sampleCount / 2);
+      }
+    }
+
+    try {
+      localStorage.removeItem(DATASTORE_SNAPSHOT_KEY);
+    } catch {
+      // ignore localStorage failures
+    }
   }
 
   /**
@@ -100,12 +482,14 @@ class DataStore {
     rawData: string;
     timestamp?: number;
     direction?: "rx" | "tx";
+    preserveTimestamp?: boolean;
+    source?: TelemetrySource;
   }): void {
     // Fix for old timestamps from recorded data
     // If timestamp is more than 1 hour old, use current time
     let timestamp = message.timestamp || Date.now();
     const oneHourAgo = Date.now() - (60 * 60 * 1000);
-    if (timestamp < oneHourAgo) {
+    if (!message.preserveTimestamp && timestamp < oneHourAgo) {
       timestamp = Date.now();
     }
 
@@ -133,28 +517,30 @@ class DataStore {
       direction: message.direction ?? "rx", // 👈 default to RX
     };
 
+    const source = message.source ?? "live";
+    const buffers = this.getSourceBuffers(source);
+
     // Get or create buffer for this msgID
-    if (!this.buffer.has(msgID)) {
-      this.buffer.set(msgID, {
+    if (!buffers.byMsgId.has(msgID)) {
+      buffers.byMsgId.set(msgID, {
         samples: [],
         lastUpdated: timestamp,
       });
     }
 
-    const messageBuffer = this.buffer.get(msgID)!;
+    const messageBuffer = buffers.byMsgId.get(msgID)!;
 
     // Add new sample
     messageBuffer.samples.push(sample);
     messageBuffer.lastUpdated = timestamp;
 
     // Prune old samples (rolling window)
-    this.pruneOldSamples(msgID);
+    this.pruneOldSamples(msgID, source);
 
-    // Append to flat trace ring buffer (capped)
-    this.traceBuffer.push(sample);
-    if (this.traceBuffer.length > TRACE_BUFFER_MAX) {
-      this.traceBuffer.splice(0, this.traceBuffer.length - TRACE_BUFFER_MAX);
-    }
+    // Append to flat trace history and prune by retention window.
+    buffers.trace.push(sample);
+    this.pruneTraceBuffer(timestamp, source);
+    this.scheduleSnapshotSave();
     this.notifyTrace();
 
     // Notify all subscribers
@@ -162,11 +548,98 @@ class DataStore {
   }
 
   /**
+   * Batch ingest to avoid notifying subscribers for every frame during replay loads.
+   */
+  public ingestMessagesBatch(messages: Array<{
+    msgID: string;
+    messageName: string;
+    data: {
+      [signalName: string]: {
+        sensorReading: number;
+        unit: string;
+      };
+    };
+    rawData: string;
+    timestamp?: number;
+    direction?: "rx" | "tx";
+    preserveTimestamp?: boolean;
+    source?: TelemetrySource;
+  }>): void {
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return;
+    }
+
+    let newestTimestampBySource: Partial<Record<TelemetrySource, number>> = {};
+
+    for (const message of messages) {
+      // Fix for old timestamps from recorded data unless explicitly preserved.
+      let timestamp = message.timestamp || Date.now();
+      const oneHourAgo = Date.now() - (60 * 60 * 1000);
+      if (!message.preserveTimestamp && timestamp < oneHourAgo) {
+        timestamp = Date.now();
+      }
+
+      const source = message.source ?? "live";
+      newestTimestampBySource[source] = Math.max(newestTimestampBySource[source] ?? timestamp, timestamp);
+
+      const buffers = this.getSourceBuffers(source);
+
+      const roundedData = { ...message.data };
+      Object.keys(roundedData).forEach((key) => {
+        const signal = roundedData[key];
+        if (signal && typeof signal.sensorReading === "number") {
+          roundedData[key] = {
+            ...signal,
+            sensorReading: Math.round(signal.sensorReading * 1000) / 1000,
+          };
+        }
+      });
+
+      const sample: TelemetrySample = {
+        timestamp,
+        msgID: message.msgID,
+        messageName: message.messageName,
+        data: roundedData,
+        rawData: message.rawData,
+        direction: message.direction ?? "rx",
+      };
+
+      if (!buffers.byMsgId.has(sample.msgID)) {
+        buffers.byMsgId.set(sample.msgID, {
+          samples: [],
+          lastUpdated: timestamp,
+        });
+      }
+
+      const messageBuffer = buffers.byMsgId.get(sample.msgID)!;
+      messageBuffer.samples.push(sample);
+      messageBuffer.lastUpdated = timestamp;
+      this.pruneOldSamples(sample.msgID, source);
+
+      buffers.trace.push(sample);
+    }
+
+    for (const source of Object.keys(newestTimestampBySource) as TelemetrySource[]) {
+      const newestTimestamp = newestTimestampBySource[source];
+      if (typeof newestTimestamp === "number") {
+        this.pruneTraceBuffer(newestTimestamp, source);
+      }
+    }
+    this.scheduleSnapshotSave();
+    this.notifyTrace();
+    this.notifyAll();
+  }
+
+  /**
    * Prune samples older than the retention window for a specific msgID
    * @param msgID - CAN message ID to prune
    */
-  private pruneOldSamples(msgID: string): void {
-    const messageBuffer = this.buffer.get(msgID);
+  private pruneOldSamples(msgID: string, source: TelemetrySource = this.activeSource): void {
+    if (source === "replay") {
+      return;
+    }
+
+    const messageBuffer = this.getSourceBuffers(source).byMsgId.get(msgID);
     if (!messageBuffer || messageBuffer.samples.length === 0) return;
 
     // Use the newest sample's time as the reference point, NOT Date.now()
@@ -188,8 +661,8 @@ class DataStore {
    * @param msgID - CAN message ID
    * @returns Most recent sample or undefined if not found
    */
-  public getLatest(msgID: string): TelemetrySample | undefined {
-    const messageBuffer = this.buffer.get(msgID);
+  public getLatest(msgID: string, source: TelemetrySource = this.activeSource): TelemetrySample | undefined {
+    const messageBuffer = this.getSourceBuffers(source).byMsgId.get(msgID);
     if (!messageBuffer || messageBuffer.samples.length === 0) {
       return undefined;
     }
@@ -204,8 +677,8 @@ class DataStore {
    * @param timeMs - Cursor time in milliseconds
    * @returns Latest sample <= timeMs or undefined
    */
-  public getLatestAt(msgID: string, timeMs: number): TelemetrySample | undefined {
-    const messageBuffer = this.buffer.get(msgID);
+  public getLatestAt(msgID: string, timeMs: number, source: TelemetrySource = this.activeSource): TelemetrySample | undefined {
+    const messageBuffer = this.getSourceBuffers(source).byMsgId.get(msgID);
     if (!messageBuffer || messageBuffer.samples.length === 0) {
       return undefined;
     }
@@ -243,8 +716,8 @@ class DataStore {
    * @param windowMs - Time window in milliseconds (default: all available)
    * @returns Array of samples within the time window
    */
-  public getHistory(msgID: string, windowMs?: number): TelemetrySample[] {
-    const messageBuffer = this.buffer.get(msgID);
+  public getHistory(msgID: string, windowMs?: number, source: TelemetrySource = this.activeSource): TelemetrySample[] {
+    const messageBuffer = this.getSourceBuffers(source).byMsgId.get(msgID);
     if (!messageBuffer) {
       return [];
     }
@@ -269,8 +742,8 @@ class DataStore {
    * @param endTimeMs - Right edge of the time window in milliseconds
    * @returns Array of samples inside [endTimeMs - windowMs, endTimeMs]
    */
-  public getHistoryAt(msgID: string, windowMs: number, endTimeMs: number): TelemetrySample[] {
-    const messageBuffer = this.buffer.get(msgID);
+  public getHistoryAt(msgID: string, windowMs: number, endTimeMs: number, source: TelemetrySource = this.activeSource): TelemetrySample[] {
+    const messageBuffer = this.getSourceBuffers(source).byMsgId.get(msgID);
     if (!messageBuffer || messageBuffer.samples.length === 0) {
       return [];
     }
@@ -291,7 +764,7 @@ class DataStore {
     sensorReading: number;
     unit: string;
   } | undefined {
-    const latest = this.getLatest(msgID);
+    const latest = this.getLatest(msgID, this.activeSource);
     if (!latest || !latest.data[signalName]) {
       return undefined;
     }
@@ -304,17 +777,18 @@ class DataStore {
    * @returns Array of message IDs
    */
   public getAllMessageIds(): string[] {
-    return Array.from(this.buffer.keys());
+    return Array.from(this.getSourceBuffers().byMsgId.keys());
   }
 
   /**
    * Get all latest samples (one per msgID)
    * @returns Map of msgID to latest sample
    */
-  public getAllLatest(): Map<string, TelemetrySample> {
+  public getAllLatest(source: TelemetrySource = this.activeSource): Map<string, TelemetrySample> {
     const result = new Map<string, TelemetrySample>();
+    const byMsgId = this.getSourceBuffers(source).byMsgId;
 
-    for (const [msgID, messageBuffer] of this.buffer.entries()) {
+    for (const [msgID, messageBuffer] of byMsgId.entries()) {
       if (messageBuffer.samples.length > 0) {
         result.set(msgID, messageBuffer.samples[messageBuffer.samples.length - 1]);
       }
@@ -328,11 +802,12 @@ class DataStore {
    * @param timeMs - Cursor time in milliseconds
    * @returns Map of msgID to timeline-anchored sample
    */
-  public getAllLatestAt(timeMs: number): Map<string, TelemetrySample> {
+  public getAllLatestAt(timeMs: number, source: TelemetrySource = this.activeSource): Map<string, TelemetrySample> {
     const result = new Map<string, TelemetrySample>();
+    const byMsgId = this.getSourceBuffers(source).byMsgId;
 
-    for (const msgID of this.buffer.keys()) {
-      const sample = this.getLatestAt(msgID, timeMs);
+    for (const msgID of byMsgId.keys()) {
+      const sample = this.getLatestAt(msgID, timeMs, source);
       if (sample) {
         result.set(msgID, sample);
       }
@@ -347,13 +822,18 @@ class DataStore {
    * @param windowMs - Time window in milliseconds
    * @returns Frequency in Hz
    */
-  public getFrequency(msgID: string, windowMs: number): number {
-    const messageBuffer = this.buffer.get(msgID);
+  public getFrequency(msgID: string, windowMs: number, source: TelemetrySource = this.activeSource): number {
+    const messageBuffer = this.getSourceBuffers(source).byMsgId.get(msgID);
     if (!messageBuffer || messageBuffer.samples.length === 0) {
       return 0;
     }
 
-    const now = Date.now();
+    // For replay data, use the newest sample as the reference time rather than
+    // Date.now(). Replay frames carry past-epoch timestamps, so anchoring to
+    // wall-clock time would place every sample outside the window (0 Hz / "STOPPED").
+    const now = source === "replay"
+      ? messageBuffer.samples[messageBuffer.samples.length - 1].timestamp
+      : Date.now();
     const cutoffTime = now - windowMs;
 
     // Count samples within the window
@@ -373,8 +853,8 @@ class DataStore {
    * @param endTimeMs - Right edge of the frequency window
    * @returns Frequency in Hz
    */
-  public getFrequencyAt(msgID: string, windowMs: number, endTimeMs: number): number {
-    const messageBuffer = this.buffer.get(msgID);
+  public getFrequencyAt(msgID: string, windowMs: number, endTimeMs: number, source: TelemetrySource = this.activeSource): number {
+    const messageBuffer = this.getSourceBuffers(source).byMsgId.get(msgID);
     if (!messageBuffer || messageBuffer.samples.length === 0) {
       return 0;
     }
@@ -418,9 +898,16 @@ class DataStore {
   /**
    * Clear all data from the store
    */
-  public clear(): void {
-    this.buffer.clear();
-    this.traceBuffer = [];
+  public clear(source?: TelemetrySource): void {
+    const sources: TelemetrySource[] = source ? [source] : ["live", "replay"];
+
+    for (const item of sources) {
+      const buffers = this.getSourceBuffers(item);
+      buffers.byMsgId.clear();
+      buffers.trace = [];
+    }
+
+    this.scheduleSnapshotSave();
     this.notifyAll();
     this.notifyTrace();
   }
@@ -431,16 +918,31 @@ class DataStore {
    * Get a snapshot of the flat chronological trace buffer.
    * Returns a shallow copy to prevent external mutation.
    */
-  public getTrace(): TelemetrySample[] {
-    return [...this.traceBuffer];
+  public getTrace(source: TelemetrySource = this.activeSource): TelemetrySample[] {
+    return [...this.getSourceBuffers(source).trace];
   }
 
   /**
    * Clear only the trace buffer (does not affect per-ID history).
    */
-  public clearTrace(): void {
-    this.traceBuffer = [];
+  public clearTrace(source: TelemetrySource = this.activeSource): void {
+    this.getSourceBuffers(source).trace = [];
+    this.scheduleSnapshotSave();
     this.notifyTrace();
+  }
+
+  private pruneTraceBuffer(referenceTimeMs: number, source: TelemetrySource = this.activeSource): void {
+    if (source === "replay") {
+      return;
+    }
+
+    const cutoffTime = referenceTimeMs - this.retentionWindowMs;
+    const buffers = this.getSourceBuffers(source);
+    buffers.trace = buffers.trace.filter((sample) => sample.timestamp >= cutoffTime);
+
+    if (buffers.trace.length > TRACE_BUFFER_HARD_MAX) {
+      buffers.trace.splice(0, buffers.trace.length - TRACE_BUFFER_HARD_MAX);
+    }
   }
 
   /**
@@ -468,8 +970,9 @@ class DataStore {
    * Clear data for a specific msgID
    * @param msgID - CAN message ID to clear
    */
-  public clearMessage(msgID: string): void {
-    this.buffer.delete(msgID);
+  public clearMessage(msgID: string, source: TelemetrySource = this.activeSource): void {
+    this.getSourceBuffers(source).byMsgId.delete(msgID);
+    this.scheduleSnapshotSave();
     this.notifyAll(msgID);
   }
 
@@ -485,12 +988,23 @@ class DataStore {
     this.retentionWindowMs = windowMs;
 
     // Prune all messages with new window
-    for (const msgID of this.buffer.keys()) {
-      this.pruneOldSamples(msgID);
+    for (const source of ["live", "replay"] as TelemetrySource[]) {
+      const byMsgId = this.getSourceBuffers(source).byMsgId;
+      for (const msgID of byMsgId.keys()) {
+        this.pruneOldSamples(msgID, source);
+      }
+
+      const trace = this.getSourceBuffers(source).trace;
+      const newestTraceSample = trace[trace.length - 1];
+      if (newestTraceSample) {
+        this.pruneTraceBuffer(newestTraceSample.timestamp, source);
+      }
     }
 
     // Notify subscribers since data might have been pruned
+    this.scheduleSnapshotSave();
     this.notifyAll();
+    this.notifyTrace();
   }
 
   /**
@@ -505,7 +1019,7 @@ class DataStore {
    * Get statistics about the data store
    * @returns Object with stats
    */
-  public getStats(): {
+  public getStats(source: TelemetrySource = this.activeSource): {
     totalMessages: number;
     totalSamples: number;
     oldestSample: number | null;
@@ -516,7 +1030,8 @@ class DataStore {
     let oldestSample: number | null = null;
     let newestSample: number | null = null;
 
-    for (const messageBuffer of this.buffer.values()) {
+    const byMsgId = this.getSourceBuffers(source).byMsgId;
+    for (const messageBuffer of byMsgId.values()) {
       totalSamples += messageBuffer.samples.length;
 
       if (messageBuffer.samples.length > 0) {
@@ -538,7 +1053,7 @@ class DataStore {
     const memoryEstimateMB = (totalSamples * avgSampleSize) / (1024 * 1024);
 
     return {
-      totalMessages: this.buffer.size,
+      totalMessages: byMsgId.size,
       totalSamples,
       oldestSample,
       newestSample,

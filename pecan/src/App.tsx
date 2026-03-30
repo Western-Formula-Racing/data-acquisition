@@ -8,11 +8,12 @@ import {
   loadDBCFromCache,
   usingCachedDBC,
 } from "./utils/canProcessor";
+import { dataStore } from "./lib/DataStore";
 import { Outlet } from "react-router";
 import { webSocketService } from "./services/WebSocketService";
 import { telemetryHandler } from "./services/TelemetryHandler";
 import { serialService } from "./services/SerialService";
-import { DefaultBanner, CacheBanner } from "./components/AppBanners";
+import { DefaultBanner, CacheBanner, RecoveredSessionBanner } from "./components/AppBanners";
 import FloatingTools from "./components/FloatingTools";
 import { useRemoteConfig } from "./lib/useRemoteConfig";
 import { updateCategories } from "./config/categories";
@@ -25,6 +26,8 @@ function App() {
   const [displayCacheBanner, setDisplayCacheBanner] = useState<boolean>(false);
   const [displayDefaultBanner, setDisplayDefaultBanner] =
     useState<boolean>(true);
+  const [displayRecoveredSessionBanner, setDisplayRecoveredSessionBanner] =
+    useState<boolean>(() => dataStore.consumeRecoveredSnapshotNotice());
 
   const bannerApi = {
     showDefault: () => setDisplayDefaultBanner(true),
@@ -53,6 +56,12 @@ function App() {
   const closeSettings = () => setIsSettingsOpen(false);
   const openAuth = () => setIsAuthOpen(true);
   const closeAuth = () => setIsAuthOpen(false);
+
+  const handleClearRecoveredSession = () => {
+    dataStore.clear();
+    dataStore.setActiveSource("live");
+    dataStore.clearPersistedSnapshot();
+  };
 
   useEffect(() => {
     (async () => {
@@ -102,6 +111,11 @@ function App() {
         <CacheBanner
           open={displayCacheBanner}
           onClose={() => setDisplayCacheBanner(false)}
+        />
+        <RecoveredSessionBanner
+          open={displayRecoveredSessionBanner}
+          onClose={() => setDisplayRecoveredSessionBanner(false)}
+          onClearRecovered={handleClearRecoveredSession}
         />
         <Outlet context={{ isSidebarOpen, openSettings, ...bannerApi }} />
         <SettingsModal isOpen={isSettingsOpen} onClose={closeSettings} bannerApi={bannerApi} />

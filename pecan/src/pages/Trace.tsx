@@ -416,12 +416,8 @@ const TRACE_TOUR_STEPS: TourStep[] = [
 ];
 
 function Trace() {
-  const { frames, clearTrace } = useTraceBuffer(50);
-  const [searchParams] = useSearchParams();
-  const [viewMode, setViewMode] = useState<ViewMode>("scroll");
-  const [filter, setFilter] = useState(() => searchParams.get("filter") || "");
-  const [autoScroll, setAutoScroll] = useState(true);
   const {
+    source,
     mode,
     selectedTimeMs,
     seek,
@@ -430,7 +426,13 @@ function Trace() {
     checkpoints,
     windowMs,
   } = useTimeline();
+  const { frames, clearTrace } = useTraceBuffer(50, source);
+  const [searchParams] = useSearchParams();
+  const [viewMode, setViewMode] = useState<ViewMode>("scroll");
+  const [filter, setFilter] = useState(() => searchParams.get("filter") || "");
+  const [autoScroll, setAutoScroll] = useState(true);
   const paused = mode === "paused";
+  const replayLocked = source === "replay";
 
   // Tour state
   const [tourOpen, setTourOpen] = useState(false);
@@ -445,6 +447,10 @@ function Trace() {
 
   // Freeze on pause
   const handlePause = useCallback(() => {
+    if (replayLocked) {
+      return;
+    }
+
     if (paused) {
       goLive();
       return;
@@ -452,7 +458,7 @@ function Trace() {
 
     frozenRef.current = [...frames];
     seek(collectionEndMs ?? Date.now());
-  }, [paused, goLive, frames, seek, collectionEndMs]);
+  }, [paused, replayLocked, goLive, frames, seek, collectionEndMs]);
 
   useEffect(() => {
     if (paused && frozenRef.current.length === 0) {
@@ -533,13 +539,15 @@ function Trace() {
         <button
           id="trace-pause-main"
           onClick={handlePause}
+          disabled={replayLocked}
           className={`trace-btn ${paused
-            ? "trace-btn-success"
+            ? "trace-btn-success animate-blink"
             : "trace-btn-warning"
             }`}
+          title={replayLocked ? "Replay mode is isolated from live feed" : undefined}
         >
           {paused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}
-          {paused ? "RESUME" : "PAUSE"}
+          {replayLocked ? "REPLAY LOCKED" : (paused ? "RESUME" : "PAUSE")}
         </button>
 
         {/* Clear */}
