@@ -739,7 +739,7 @@ const MonitorBuilder = () => {
         {/* Sidebar for Drag and Drop */}
         <div className="w-64 bg-data-module-bg flex flex-col border-r border-gray-700 h-full">
           <div className="p-4 pb-2 flex-shrink-0">
-            <h2 className="text-xl font-bold mb-4">Available Signals</h2>
+            <h2 className="app-section-title mb-4">Available Signals</h2>
 
             <div className="grid grid-cols-3 gap-1 mb-4 p-1 bg-data-textbox-bg rounded border border-gray-600">
               <button

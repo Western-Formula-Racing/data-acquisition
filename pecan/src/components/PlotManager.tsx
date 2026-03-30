@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Plotly from "plotly.js-dist-min";
 import { dataStore } from "../lib/DataStore";
 import { createGrafanaDashboard } from "../services/GrafanaService";
+import { useTimeline } from "../context/TimelineContext";
 
 // Standard Nivo colors (or similar palette) to ensure consistency between plot and list
 const PLOT_COLORS = [
@@ -37,6 +38,8 @@ interface PlotManagerProps {
   plotId: string;
   signals: PlotSignal[];
   timeWindowMs: number;
+  cursorTimeMs: number;
+  isLive: boolean;
   onRemoveSignal: (msgID: string, signalName: string) => void;
   onClosePlot: () => void;
 }
@@ -45,11 +48,14 @@ function PlotManager({
   plotId,
   signals,
   timeWindowMs,
+  cursorTimeMs,
+  isLive,
   onRemoveSignal,
   onClosePlot,
 }: PlotManagerProps) {
   const plotRef = useRef<HTMLDivElement>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const { checkpoints } = useTimeline();
 
   // Initialize the plot
   useEffect(() => {
@@ -70,12 +76,7 @@ function PlotManager({
       paper_bgcolor: "#1a1a1a",
       plot_bgcolor: "#2a2a2a",
       font: { color: "#ffffff" },
-      showlegend: true,
-      legend: {
-        x: 1,
-        xanchor: "right",
-        y: 1,
-      },
+      showlegend: false,
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -101,14 +102,65 @@ function PlotManager({
         return;
     }
 
-    const updateInterval = setInterval(() => {
-      const now = Date.now();
+    const updatePlot = () => {
+      const windowEndMs = isLive ? Date.now() : cursorTimeMs;
+      const windowStartMs = windowEndMs - timeWindowMs;
       const resolution = calculateDownsampleResolution(timeWindowMs);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const traces: any[] = [];
 
+      const visibleCheckpointLines = checkpoints
+        .filter(
+          (checkpoint) =>
+            checkpoint.timeMs >= windowStartMs && checkpoint.timeMs <= windowEndMs
+        )
+        .map((checkpoint) => {
+          const x = (checkpoint.timeMs - windowEndMs) / 1000;
+          return {
+            type: "line",
+            xref: "x",
+            yref: "paper",
+            x0: x,
+            x1: x,
+            y0: 0,
+            y1: 1,
+            line: {
+              color: "rgba(251, 191, 36, 0.65)",
+              width: 1,
+              dash: "dot",
+            },
+          };
+        });
+
+      const checkpointAnnotations = checkpoints
+        .filter(
+          (checkpoint) =>
+            checkpoint.timeMs >= windowStartMs && checkpoint.timeMs <= windowEndMs
+        )
+        .map((checkpoint, idx) => {
+          const x = (checkpoint.timeMs - windowEndMs) / 1000;
+          return {
+            x,
+            y: idx % 2 === 0 ? 1.0 : 0.92,
+            xref: "x",
+            yref: "paper",
+            text: checkpoint.label,
+            showarrow: false,
+            xanchor: "left",
+            yanchor: "bottom",
+            bgcolor: "rgba(251, 191, 36, 0.22)",
+            bordercolor: "rgba(251, 191, 36, 0.55)",
+            borderpad: 2,
+            font: {
+              size: 10,
+              color: "#fde68a",
+            },
+            align: "left",
+          };
+        });
+
       signals.forEach((signal, index) => {
-        const history = dataStore.getHistory(signal.msgID, timeWindowMs);
+        const history = dataStore.getHistoryAt(signal.msgID, timeWindowMs, windowEndMs);
         const xData: number[] = [];
         const yData: number[] = [];
 
@@ -132,7 +184,7 @@ function PlotManager({
               // Finalize previous bin
               if (currentCount > 0) {
                 const avg = currentSum / currentCount;
-                const x = (currentBinStart - now) / 1000;
+                const x = (currentBinStart - windowEndMs) / 1000;
                 xData.push(x);
                 yData.push(avg);
               }
@@ -147,7 +199,7 @@ function PlotManager({
           // Finalize last bin
           if (currentCount > 0) {
             const avg = currentSum / currentCount;
-            const x = (currentBinStart - now) / 1000;
+            const x = (currentBinStart - windowEndMs) / 1000;
             xData.push(x);
             yData.push(avg);
           }
@@ -184,20 +236,24 @@ function PlotManager({
           paper_bgcolor: "#1a1a1a",
           plot_bgcolor: "#2a2a2a",
           font: { color: "#ffffff" },
-          showlegend: true,
-          legend: {
-            x: 1,
-            xanchor: "right",
-            y: 1,
-          },
+          showlegend: false,
+          shapes: visibleCheckpointLines,
+          annotations: checkpointAnnotations,
         };
         
         Plotly.react(plotRef.current, traces, updatedLayout);
       }
-    }, 100); // Update every 100ms
+    };
 
+    updatePlot();
+
+    if (!isLive) {
+      return;
+    }
+
+    const updateInterval = setInterval(updatePlot, 100);
     return () => clearInterval(updateInterval);
-  }, [signals, timeWindowMs, isInitialized, plotId]);
+  }, [signals, timeWindowMs, isInitialized, plotId, cursorTimeMs, isLive, checkpoints]);
 
   const [grafanaStatus, setGrafanaStatus] = useState<
     "idle" | "loading" | "success" | "error"

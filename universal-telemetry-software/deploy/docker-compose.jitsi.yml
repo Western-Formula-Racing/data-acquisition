@@ -11,9 +11,9 @@ services:
       - "8443:443"
       - "8000:80"
     volumes:
-      - ./jitsi-config/web:/config:Z
-      - ./custom-jitsi-config.js:/config/config.js:ro
-      - ./jitsi-config/transcripts:/usr/share/jitsi-meet/transcripts:Z
+      - ../jitsi-config/web:/config:Z
+      - ../custom-jitsi-config.js:/config/config.js:ro
+      - ../jitsi-config/transcripts:/usr/share/jitsi-meet/transcripts:Z
     environment:
       - ENABLE_AUTH=0
       - ENABLE_GUESTS=1
@@ -44,8 +44,8 @@ services:
       - "5347"
       - "5280"
     volumes:
-      - ./jitsi-config/prosody/config:/config:Z
-      - ./jitsi-config/prosody/plugins:/prosody-plugins-custom:Z
+      - ../jitsi-config/prosody/config:/config:Z
+      - ../jitsi-config/prosody/plugins:/prosody-plugins-custom:Z
     environment:
       - ENABLE_AUTH=0
       - ENABLE_GUESTS=1
@@ -74,7 +74,7 @@ services:
     container_name: daq-jitsi-jicofo
     restart: unless-stopped
     volumes:
-      - ./jitsi-config/jicofo:/config:Z
+      - ../jitsi-config/jicofo:/config:Z
     environment:
       - ENABLE_AUTH=0
       - XMPP_DOMAIN=meet.jitsi
@@ -98,7 +98,7 @@ services:
       - "10000:10000/udp"
       - "8180:8080" # JVB health (changed from 8080 to avoid conflict)
     volumes:
-      - ./jitsi-config/jvb:/config:Z
+      - ../jitsi-config/jvb:/config:Z
     environment:
       - XMPP_AUTH_DOMAIN=auth.meet.jitsi
       - XMPP_INTERNAL_MUC_DOMAIN=internal-muc.meet.jitsi
@@ -114,7 +114,7 @@ services:
 
   # ===== CAR RPI ONLY - Deploy this on the car =====
   car-jitsi-client:
-    build: ./car-jitsi-client
+    build: ../car-jitsi-client
     container_name: daq-car-jitsi
     restart: unless-stopped
     privileged: true # Access all host devices (USB camera, audio) on any port

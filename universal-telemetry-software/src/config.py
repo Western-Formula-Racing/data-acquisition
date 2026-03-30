@@ -8,6 +8,8 @@ and modules never silently diverge from each other.
 import os
 
 # ── Network ───────────────────────────────────────────────────────────────────
+# Convention: car = .10, base = .20, chargecart = .30
+# Always set REMOTE_IP explicitly per-device in docker-compose.
 REMOTE_IP       = os.getenv("REMOTE_IP", "192.168.1.100")
 UDP_PORT        = int(os.getenv("UDP_PORT", 5005))
 TCP_PORT        = int(os.getenv("TCP_PORT", 5006))

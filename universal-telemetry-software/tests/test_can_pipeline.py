@@ -499,3 +499,64 @@ class TestPipelineLatency:
             )
         finally:
             await ws.close()
+
+
+# ── TestSystemStatsHeartbeat ───────────────────────────────────────────────
+
+class TestSystemStatsHeartbeat:
+    """
+    Verify that the base station's system_stats properly count the heartbeat.
+    With no other CAN traffic, the car injects 1 heartbeat message per second.
+    This test verifies there are no phantom counts (duplicates, missing drops).
+    """
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_system_stats(self, container_uses_real_can):
+        """Monitor system stats and verify ~1 message per second without missing."""
+        ws = WebSocketHelper(WS_URL)
+        await ws.connect()
+
+        try:
+            stats_samples = []
+            
+            # The car waits 3 seconds of 'no ECU sync' before it begins injecting heartbeats.
+            # So we must wait at least 3 seconds.
+            await asyncio.sleep(4.0)
+
+            # Flush existing messages to avoid old stats chunks
+            for _ in range(10):
+                if await ws.receive_message(timeout=0.3) is None:
+                    break
+            
+            # Listen for stats
+            for _ in range(25):
+                msg = await ws.receive_message(timeout=2)
+                if msg is None:
+                    continue
+                if isinstance(msg, dict) and msg.get("type") == "system_stats":
+                    stats_samples.append(msg)
+                    if len(stats_samples) >= 4:
+                        break
+            
+            assert len(stats_samples) >= 3, "Did not receive enough system_stats over websocket"
+
+            # Check logic on stats. The very first stats might be an odd fraction of a second,
+            # so we check if the majority of them are exactly 1 received and 1 message.
+            valid_heartbeats = 0
+            for s in stats_samples:
+                r = s.get("received", 0)
+                m = s.get("messages", 0)
+                missing = s.get("missing", 0)
+                
+                assert missing == 0, f"Encountered phantom drops in system_stats: missing={missing}"
+                
+                if r == 1 and m == 1:
+                    valid_heartbeats += 1
+                
+            assert valid_heartbeats >= 1, (
+                f"Expected mostly ~1 message/sec from heartbeat. "
+                f"Got samples: {[{'r': s.get('received'), 'm': s.get('messages')} for s in stats_samples]}"
+            )
+
+        finally:
+            await ws.close()

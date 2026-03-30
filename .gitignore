@@ -246,3 +246,4 @@ pecan/src/assets/WFR25.dbc
 CLAUDE.md
 GEMINI.md
 flight-recorder/.env.local
+/.cursor

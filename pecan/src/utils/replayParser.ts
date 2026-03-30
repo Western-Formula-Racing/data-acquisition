@@ -1,0 +1,353 @@
+import type {
+  ReplayDirection,
+  ReplayFrame,
+  ReplayParseResult,
+  ReplaySession,
+  ReplayValidationError,
+  ReplayValidationWarning,
+} from "../types/replay";
+
+const SOFT_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const HARD_FILE_SIZE_BYTES = 150 * 1024 * 1024;
+const HARD_FRAME_CAP = 1_000_000;
+
+function normalizeHex(input: string): string {
+  return input.replace(/\s+/g, "").toLowerCase();
+}
+
+function isHexEvenLength(input: string): boolean {
+  return input.length % 2 === 0 && /^[0-9a-f]*$/.test(input);
+}
+
+function parseDirection(value: string): ReplayDirection | null {
+  const v = value.trim().toLowerCase();
+  if (v === "rx" || v === "tx") return v;
+  return null;
+}
+
+function parseBooleanBit(value: string): boolean | null {
+  const v = value.trim();
+  if (v === "1") return true;
+  if (v === "0") return false;
+  return null;
+}
+
+function parseNumber(value: string): number | null {
+  if (!value.trim()) return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function validateFrame(frame: ReplayFrame, row: number): ReplayValidationError[] {
+  const errors: ReplayValidationError[] = [];
+
+  if (!Number.isFinite(frame.tRelMs) || frame.tRelMs < 0) {
+    errors.push({ row, field: "t_rel_ms", message: "t_rel_ms must be a non-negative number" });
+  }
+  if (!Number.isInteger(frame.canId) || frame.canId < 0) {
+    errors.push({ row, field: "can_id", message: "can_id must be a non-negative integer" });
+  }
+  if (!Number.isInteger(frame.dlc) || frame.dlc < 0 || frame.dlc > 8) {
+    errors.push({ row, field: "dlc", message: "dlc must be an integer in [0, 8]" });
+  }
+
+  const compactHex = normalizeHex(frame.dataHex);
+  if (!isHexEvenLength(compactHex)) {
+    errors.push({ row, field: "data_hex", message: "data_hex must contain an even number of hex characters" });
+  } else if (compactHex.length / 2 !== frame.dlc) {
+    errors.push({ row, field: "data_hex", message: "data_hex byte length must match dlc" });
+  }
+
+  return errors;
+}
+
+function parseCsvLine(line: string): string[] {
+  const cells: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (ch === "," && !inQuotes) {
+      cells.push(current);
+      current = "";
+      continue;
+    }
+
+    current += ch;
+  }
+
+  cells.push(current);
+  return cells;
+}
+
+function parseCsvHeader(header: string): Map<string, number> {
+  const cols = parseCsvLine(header).map((c) => c.trim().toLowerCase());
+  const map = new Map<string, number>();
+  cols.forEach((name, index) => {
+    map.set(name, index);
+  });
+  return map;
+}
+
+function getCsvValue(cells: string[], indexes: Map<string, number>, name: string): string {
+  const idx = indexes.get(name);
+  if (idx === undefined || idx >= cells.length) return "";
+  return cells[idx] ?? "";
+}
+
+function parseFrameFromCsvRow(cells: string[], indexes: Map<string, number>, rowNumber: number): ReplayFrame | ReplayValidationError[] {
+  const tRelRaw = getCsvValue(cells, indexes, "t_rel_ms");
+  const tEpochRaw = getCsvValue(cells, indexes, "t_epoch_ms");
+  const canIdRaw = getCsvValue(cells, indexes, "can_id");
+  const extRaw = getCsvValue(cells, indexes, "is_extended");
+  const dirRaw = getCsvValue(cells, indexes, "direction");
+  const dlcRaw = getCsvValue(cells, indexes, "dlc");
+  const dataRaw = getCsvValue(cells, indexes, "data_hex");
+
+  const tRel = parseNumber(tRelRaw);
+  const tEpoch = parseNumber(tEpochRaw);
+  const canId = parseNumber(canIdRaw);
+  const dlc = parseNumber(dlcRaw);
+  const isExtended = parseBooleanBit(extRaw);
+  const direction = parseDirection(dirRaw);
+
+  const errors: ReplayValidationError[] = [];
+  if (tRel === null && tEpoch === null) {
+    errors.push({ row: rowNumber, field: "t_rel_ms", message: "row must provide t_rel_ms or t_epoch_ms" });
+  }
+  if (canId === null) {
+    errors.push({ row: rowNumber, field: "can_id", message: "can_id is required and must be numeric" });
+  }
+  if (dlc === null) {
+    errors.push({ row: rowNumber, field: "dlc", message: "dlc is required and must be numeric" });
+  }
+  if (isExtended === null) {
+    errors.push({ row: rowNumber, field: "is_extended", message: "is_extended must be 0 or 1" });
+  }
+  if (direction === null) {
+    errors.push({ row: rowNumber, field: "direction", message: "direction must be rx or tx" });
+  }
+
+  if (errors.length > 0) {
+    return errors;
+  }
+
+  const frame: ReplayFrame = {
+    tRelMs: tRel ?? 0,
+    canId: Math.trunc(canId ?? 0),
+    isExtended: isExtended ?? false,
+    direction: direction ?? "rx",
+    dlc: Math.trunc(dlc ?? 0),
+    dataHex: normalizeHex(dataRaw),
+    tEpochMs: tEpoch ?? undefined,
+    channel: getCsvValue(cells, indexes, "channel") || undefined,
+    source: getCsvValue(cells, indexes, "source") || undefined,
+  };
+
+  return frame;
+}
+
+function deriveTRelFromEpoch(frames: ReplayFrame[]): void {
+  const firstEpoch = frames.find((f) => typeof f.tEpochMs === "number")?.tEpochMs;
+  if (firstEpoch === undefined) return;
+
+  for (const frame of frames) {
+    if (frame.tRelMs === 0 && typeof frame.tEpochMs === "number") {
+      frame.tRelMs = Math.max(0, frame.tEpochMs - firstEpoch);
+    }
+  }
+}
+
+export function validateFileSize(fileSizeBytes: number): {
+  warnings: ReplayValidationWarning[];
+  errors: ReplayValidationError[];
+} {
+  const warnings: ReplayValidationWarning[] = [];
+  const errors: ReplayValidationError[] = [];
+
+  if (fileSizeBytes > HARD_FILE_SIZE_BYTES) {
+    errors.push({ message: `File is too large (${Math.round(fileSizeBytes / (1024 * 1024))} MB). Hard limit is 150 MB.` });
+  } else if (fileSizeBytes > SOFT_FILE_SIZE_BYTES) {
+    warnings.push({
+      code: "file-size-soft-limit",
+      message: `Large file (${Math.round(fileSizeBytes / (1024 * 1024))} MB). Replay import may be slower.`,
+    });
+  }
+
+  return { warnings, errors };
+}
+
+export function parsePecanSessionJson(content: string): ReplayParseResult {
+  const warnings: ReplayValidationWarning[] = [];
+  const errors: ReplayValidationError[] = [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return {
+      frames: [],
+      warnings,
+      errors: [{ message: "Invalid JSON format." }],
+    };
+  }
+
+  const session = parsed as Partial<ReplaySession>;
+  if (session.format !== "pecan-session") {
+    errors.push({ field: "format", message: "format must be 'pecan-session'" });
+  }
+  if (session.version !== 1) {
+    errors.push({ field: "version", message: "version must be 1" });
+  }
+  if (!Array.isArray(session.frames)) {
+    errors.push({ field: "frames", message: "frames must be an array" });
+  }
+
+  if (errors.length > 0) {
+    return { frames: [], warnings, errors };
+  }
+
+  const frames: ReplayFrame[] = [];
+  const sourceFrames = session.frames as Partial<ReplayFrame>[];
+
+  sourceFrames.forEach((frameLike, idx) => {
+    const frame: ReplayFrame = {
+      tRelMs: Number(frameLike.tRelMs),
+      canId: Number(frameLike.canId),
+      isExtended: Boolean(frameLike.isExtended),
+      direction: frameLike.direction === "tx" ? "tx" : "rx",
+      dlc: Number(frameLike.dlc),
+      dataHex: normalizeHex(String(frameLike.dataHex ?? "")),
+      tEpochMs: frameLike.tEpochMs !== undefined ? Number(frameLike.tEpochMs) : undefined,
+      tLocalTime: frameLike.tLocalTime !== undefined ? String(frameLike.tLocalTime) : undefined,
+      channel: frameLike.channel,
+      source: frameLike.source,
+    };
+
+    const frameErrors = validateFrame(frame, idx + 1);
+    if (frameErrors.length > 0) {
+      errors.push(...frameErrors);
+      return;
+    }
+
+    frames.push(frame);
+  });
+
+  if (frames.length > HARD_FRAME_CAP) {
+    errors.push({
+      field: "frames",
+      message: `Frame count ${frames.length.toLocaleString()} exceeds hard cap of ${HARD_FRAME_CAP.toLocaleString()}.`,
+    });
+  }
+
+  return {
+    frames,
+    warnings,
+    errors,
+    sessionMeta: {
+      decode: session.decode,
+      timeline: session.timeline,
+      plots: session.plots,
+    },
+  };
+}
+
+export function parseReplayCsv(content: string): ReplayParseResult {
+  const warnings: ReplayValidationWarning[] = [];
+  const errors: ReplayValidationError[] = [];
+
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (lines.length < 2) {
+    return {
+      frames: [],
+      warnings,
+      errors: [{ message: "CSV must contain a header row and at least one data row." }],
+    };
+  }
+
+  const headerIndexes = parseCsvHeader(lines[0]);
+  const requiredColumns = ["can_id", "is_extended", "direction", "dlc", "data_hex"];
+  for (const col of requiredColumns) {
+    if (!headerIndexes.has(col)) {
+      errors.push({ field: col, message: `Missing required column: ${col}` });
+    }
+  }
+  if (!headerIndexes.has("t_rel_ms") && !headerIndexes.has("t_epoch_ms")) {
+    errors.push({ field: "t_rel_ms", message: "CSV must include t_rel_ms or t_epoch_ms" });
+  }
+
+  if (errors.length > 0) {
+    return { frames: [], warnings, errors };
+  }
+
+  const frames: ReplayFrame[] = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const cells = parseCsvLine(lines[i]);
+    const rowNumber = i + 1;
+    const parsedFrame = parseFrameFromCsvRow(cells, headerIndexes, rowNumber);
+
+    if (Array.isArray(parsedFrame)) {
+      errors.push(...parsedFrame);
+      continue;
+    }
+
+    const frameErrors = validateFrame(parsedFrame, rowNumber);
+    if (frameErrors.length > 0) {
+      errors.push(...frameErrors);
+      continue;
+    }
+
+    frames.push(parsedFrame);
+  }
+
+  if (frames.length > 0 && frames.every((f) => f.tRelMs === 0 && typeof f.tEpochMs === "number")) {
+    deriveTRelFromEpoch(frames);
+    warnings.push({
+      code: "derived-t-rel",
+      message: "Derived t_rel_ms from t_epoch_ms because explicit t_rel_ms was not provided.",
+    });
+  }
+
+  if (frames.length > HARD_FRAME_CAP) {
+    errors.push({
+      field: "frames",
+      message: `Frame count ${frames.length.toLocaleString()} exceeds hard cap of ${HARD_FRAME_CAP.toLocaleString()}.`,
+    });
+  }
+
+  return { frames, warnings, errors };
+}
+
+export async function parseReplayFile(file: File): Promise<ReplayParseResult> {
+  const sizeValidation = validateFileSize(file.size);
+  if (sizeValidation.errors.length > 0) {
+    return { frames: [], warnings: sizeValidation.warnings, errors: sizeValidation.errors };
+  }
+
+  const content = await file.text();
+  const lower = file.name.toLowerCase();
+
+  const parsed = lower.endsWith(".pecan") || lower.endsWith(".json")
+    ? parsePecanSessionJson(content)
+    : parseReplayCsv(content);
+
+  return {
+    ...parsed,
+    warnings: [...sizeValidation.warnings, ...parsed.warnings],
+  };
+}

@@ -352,7 +352,7 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                         <Activity className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold uppercase tracking-tight text-white">
+                        <h1 className="app-menu-title uppercase">
                             Throttle Mapper
                         </h1>
                         <p className="text-sm text-white">
@@ -610,7 +610,7 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                                     <div className="p-2 bg-blue-500/10 rounded-lg">
                                         <Zap className="w-5 h-5 text-blue-400" />
                                     </div>
-                                    <h3 className="text-lg font-bold text-white tracking-tight">CAN Dispatcher</h3>
+                                    <h3 className="app-section-title text-white">CAN Dispatcher</h3>
                                 </div>
                                 <div className="flex gap-2">
                                     <span className="px-3 py-1 rounded-full bg-slate-950 border border-slate-800 text-[10px] font-mono text-slate-400">

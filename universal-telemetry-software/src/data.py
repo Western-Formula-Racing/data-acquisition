@@ -61,6 +61,9 @@ class TelemetryNode:
         self._clock_offset: float | None = None   # epoch_sec - monotonic at last sync
         self._last_ecu_sync: float = 0.0          # monotonic time of last valid ECU 1999
         self._sync_source: str = "none"           # "ecu_rtc" | "system_clock" | "override"
+        self._base_to_car_offset: float | None = None # Offset between base station time and car's 1970 time
+        self._last_raw_car_time: float | None = None  # Raw timestamp of last message
+        self._car_internal_jump: float | None = None  # Cumulative jump from 1970 to 2026+ internal car time
 
     def publish(self, channel, data):
         redis_utils.safe_publish(self.redis_client, channel, data, logger)
@@ -130,54 +133,74 @@ class TelemetryNode:
 
         # CAN Reader Task
         async def can_reader():
-            try:
-                # Check for simulation mode
-                if os.getenv("SIMULATE", "false").lower() == "true":
-                    raise Exception("Simulation requested")
+            use_simulation = os.getenv("SIMULATE", "false").lower() == "true"
+            bus = None
 
-                # Note: Adjust interface as needed for RPi (e.g., mcp2515)
-                bus = can.interface.Bus(channel='can0', bustype='socketcan')
-                logger.info("CAN Reader started on can0")
-                loop = asyncio.get_running_loop()
+            if not use_simulation:
+                try:
+                    bus = can.interface.Bus(channel='can0', bustype='socketcan')
+                    logger.info("CAN Reader started on can0")
+                except Exception as e:
+                    logger.critical(f"FATAL: CAN Bus initialization failed ({e}). "
+                                    f"Ensure 'can0' is UP or set SIMULATE=true.")
+                    raise RuntimeError(f"CAN Bus initialization failed: {e}") from e
+
+            if use_simulation:
+                logger.warning("="*60)
+                logger.warning("  ███  SIMULATION MODE ACTIVE  ███")
+                logger.warning("  Generating fake CAN frames — NOT reading real hardware!")
+                logger.warning("="*60)
+                import random
+
+                # Standard IDs from example.dbc: 192 (VCU), 256 (MC), 512 (BMS), 768 (Wheels)
+                # Extended IDs from example.dbc (actual 29-bit arbitration IDs, no EFF bit):
+                #   403105268 = 0x1806E5F4  Charger_Command  (DBC ID 2550588916)
+                #   419385573 = 0x18FF50E5  Charger_Status   (DBC ID 2566869221)
+                sim_ids = [192, 256, 512, 768, 403105268, 419385573]
+
                 while True:
+                    await asyncio.sleep(0.01)  # ~100 Hz
+                    can_id = random.choice(sim_ids)
+                    data = bytes([random.randint(0, 255) for _ in range(8)])
+                    if self.can_event is not None:
+                        self.can_event.set()
+                    telemetry_msg = CANMessage(self._corrected_time(), can_id, data)
+                    await queue.put(telemetry_msg)
+                return  # unreachable, but makes intent clear
+
+            # ── Real CAN read loop ────────────────────────────────────────
+            loop = asyncio.get_running_loop()
+            consecutive_errors = 0
+            MAX_CONSECUTIVE_ERRORS = 50  # give up after sustained failures
+
+            while True:
+                try:
                     msg = await loop.run_in_executor(None, lambda: bus.recv(0.1))
+                    consecutive_errors = 0  # reset on any successful call
                     if msg:
+                        # Skip error/remote frames (generated when can0 is up but bus disconnected)
+                        if msg.is_error_frame or msg.is_remote_frame:
+                            logger.debug(f"Filtered CAN noise/error frame: ID={msg.arbitration_id}")
+                            continue
                         if self.can_event is not None:
                             self.can_event.set()
                         if msg.arbitration_id == ECU_TIMESTAMP_ID:
                             self._handle_ecu_timestamp(bytes(msg.data))
                         if not self._ecu_synced:
                             self._try_auto_sync()
-                        if not self._ecu_synced:
-                            continue  # hold all data until a time source is established
                         telemetry_msg = CANMessage(self._corrected_time(), msg.arbitration_id, msg.data)
                         await queue.put(telemetry_msg)
-            except Exception as e:
-                logger.warning(f"CAN Interface unavailable ({e}). Starting simulation mode.")
-                import random
-                
-                # Standard IDs from example.dbc: 192 (VCU), 256 (MC), 512 (BMS), 768 (Wheels)
-                # Extended IDs from example.dbc (actual 29-bit arbitration IDs, no EFF bit):
-                #   403105268 = 0x1806E5F4  Charger_Command  (DBC ID 2550588916)
-                #   419385573 = 0x18FF50E5  Charger_Status   (DBC ID 2566869221)
-                sim_ids = [192, 256, 512, 768, 403105268, 419385573]
-                
-                while True:
-                    # Generate a fake message every ~10ms (100Hz)
-                    await asyncio.sleep(0.01) 
-                    
-                    can_id = random.choice(sim_ids)
-                    data = bytes([random.randint(0, 255) for _ in range(8)])
-                    
-                    # Create valid-looking data for specific IDs to make graphs look nice
-                    if can_id == 192: # VCU
-                        # specific byte manipulation if needed, else random is fine for "alive" check
-                        pass
-                        
-                    if self.can_event is not None:
-                        self.can_event.set()
-                    telemetry_msg = CANMessage(self._corrected_time(), can_id, data)
-                    await queue.put(telemetry_msg)
+                except Exception as e:
+                    consecutive_errors += 1
+                    logger.error(f"CAN recv() error #{consecutive_errors}: {e}")
+                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                        logger.error(
+                            f"CAN recv() failed {MAX_CONSECUTIVE_ERRORS} times in a row. "
+                            "CAN interface is likely dead. Stopping CAN reader "
+                            "(restart container to retry). NOT entering simulation."
+                        )
+                        return
+                    await asyncio.sleep(1.0)  # backoff before retry
 
         # UDP Sender Task
         async def udp_sender():
@@ -348,7 +371,7 @@ class TelemetryNode:
         logger.info("Starting Base Station Mode...")
         expected_seq = None
         missing_seqs = set()
-        stats = {"received": 0, "missing": 0, "recovered": 0}
+        stats = {"received": 0, "missing": 0, "recovered": 0, "messages": 0}
         
         # UDP Receiver Task
         async def udp_receiver():
@@ -369,12 +392,17 @@ class TelemetryNode:
 
                 if len(data) < 10: continue
                 
-                stats["received"] += 1
                 seq, count = struct.unpack("!QH", data[:10])
                 
                 if expected_seq is None:
                     expected_seq = seq
                     logger.info(f"Initial sequence: {seq}")
+
+                # Sequence reset detection (e.g. car restarted)
+                if expected_seq is not None and seq < expected_seq - 1000:
+                    logger.info(f"Sequence reset detected. Expected {expected_seq}, got {seq}. Resetting expected_seq.")
+                    expected_seq = seq
+                    missing_seqs.clear()
                 
                 if seq > expected_seq:
                     # Gap detected
@@ -385,9 +413,20 @@ class TelemetryNode:
                         # Keep missing list manageable
                         if len(missing_seqs) > 1000:
                             missing_seqs.remove(min(missing_seqs))
-                
-                if seq in missing_seqs:
-                    missing_seqs.remove(seq)
+                elif seq < expected_seq:
+                    # Out of order or duplicate
+                    if seq in missing_seqs:
+                        missing_seqs.remove(seq)
+                        stats["recovered"] += 1
+                        stats["received"] += 1
+                        stats["messages"] += count
+                    else:
+                        # Duplicate packet: ignore
+                        continue
+                        
+                if seq >= expected_seq:
+                    stats["received"] += 1
+                    stats["messages"] += count
                 
                 expected_seq = max(expected_seq, seq + 1)
                 
@@ -399,8 +438,50 @@ class TelemetryNode:
                     msg = CANMessage.unpack(data[offset:offset+20])
                     if msg.can_id == ECU_TIMESTAMP_ID:
                         self._handle_ecu_timestamp(bytes(msg.data))
+                        
+                    msg_time = msg.timestamp
+                    base_pi_time = time.time()
+                    
+                    # 1. Detect Car ECU Time Jump
+                    if self._last_raw_car_time is not None:
+                        jump = msg_time - self._last_raw_car_time
+                        if jump > 315360000: # Jumped > 10 years (1970 to 2026)
+                            self._car_internal_jump = jump
+                            logger.info(f"Car jump detected! size: {jump}s")
+                            # Calculate the true correction between true time and what the continuous timeline says
+                            current_offset = self._base_to_car_offset or 0.0
+                            correction = msg_time - (self._last_raw_car_time + current_offset)
+                            
+                            session_id = os.environ.get("BOOT_SESSION_ID", "default")
+                            sync_states_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sync_states")
+                            os.makedirs(sync_states_dir, exist_ok=True)
+                            
+                            sidecar_path = os.path.join(sync_states_dir, f"correction_{session_id}.json")
+                            with open(sidecar_path, "w") as f:
+                                json.dump({
+                                    "boot_session_id": session_id,
+                                    "correction_seconds": correction,
+                                    "created_at": base_pi_time,
+                                    "base_timeline_start": (self._last_raw_car_time + current_offset)
+                                }, f)
+                                
+                    self._last_raw_car_time = msg_time
+
+                    # 2. Reverse the Car's internal jump so the Base Timeline stays perfectly continuous locally
+                    effective_msg_time = msg_time
+                    if self._car_internal_jump is not None:
+                        effective_msg_time -= self._car_internal_jump
+
+                    # 3. Apply Base Pi overrides (if the car started in 1970)
+                    if effective_msg_time < 1742601600 and base_pi_time > _SYSTEM_CLOCK_TRUST_EPOCH:
+                        if self._base_to_car_offset is None:
+                            self._base_to_car_offset = base_pi_time - effective_msg_time
+                        msg_time_ms = int((effective_msg_time + self._base_to_car_offset) * 1000)
+                    else:
+                        msg_time_ms = int(effective_msg_time * 1000)
+                        
                     msgs_to_publish.append({
-                        "time": int(msg.timestamp * 1000),
+                        "time": msg_time_ms,
                         "canId": msg.can_id,
                         "data": list(msg.data)
                     })
@@ -408,6 +489,10 @@ class TelemetryNode:
                 
                 if msgs_to_publish:
                     self.publish(REDIS_CAN_CHANNEL, json.dumps(msgs_to_publish))
+
+                # Yield to the event loop so stats_publisher, heartbeat, etc.
+                # get a chance to run even when packets arrive back-to-back.
+                await asyncio.sleep(0)
 
         # Missing Packet Reporter Task
         async def missing_reporter():
@@ -431,7 +516,28 @@ class TelemetryNode:
                         for item in resends:
                             seq = item['seq']
                             if seq in missing_seqs:
-                                msgs = [{"time": int(m['t']*1000), "canId": m['id'], "data": list(bytes.fromhex(m['d']))} for m in item['msgs']]
+                                msgs = []
+                                for m in item['msgs']:
+                                    msg_time = m['t']
+                                    base_pi_time = time.time()
+                                    
+                                    # For missing messages, just use the fallback jump logic 
+                                    effective_msg_time = msg_time
+                                    if self._car_internal_jump is not None:
+                                        effective_msg_time -= self._car_internal_jump
+                                        
+                                    if effective_msg_time < 1742601600 and base_pi_time > _SYSTEM_CLOCK_TRUST_EPOCH:
+                                        if self._base_to_car_offset is None:
+                                            self._base_to_car_offset = base_pi_time - effective_msg_time
+                                        msg_time_ms = int((effective_msg_time + self._base_to_car_offset) * 1000)
+                                    else:
+                                        msg_time_ms = int(effective_msg_time * 1000)
+                                        
+                                    msgs.append({
+                                        "time": msg_time_ms,
+                                        "canId": m['id'],
+                                        "data": list(bytes.fromhex(m['d']))
+                                    })
                                 self.publish(REDIS_CAN_CHANNEL, json.dumps(msgs))
                                 missing_seqs.remove(seq)
                         
@@ -444,15 +550,25 @@ class TelemetryNode:
         async def stats_publisher():
             while True:
                 await asyncio.sleep(1)
+                influx_raw = self.redis_client.get("influx:status") if self.redis_client else None
+                influx_status = None
+                if influx_raw:
+                    try:
+                        influx_status = json.loads(influx_raw)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        logger.warning(f"influx:status contains invalid JSON: {influx_raw!r}")
                 payload = {
+                    "type": "system_stats",
                     **stats,
                     "ecu_synced": self._ecu_synced,
                     "ecu_sync_source": self._sync_source,
+                    "influx": influx_status,
                 }
                 self.publish("system_stats", json.dumps(payload))
                 stats["received"] = 0
                 stats["missing"] = 0
                 stats["recovered"] = 0
+                stats["messages"] = 0
 
         # Uplink Relay Task — subscribe to Redis can_uplink and forward to car via UDP
         async def uplink_relay():

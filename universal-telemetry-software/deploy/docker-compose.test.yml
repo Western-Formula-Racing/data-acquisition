@@ -1,7 +1,7 @@
 services:
   # Car simulation (sends CAN data via UDP)
   car:
-    build: .
+    build: ..
     container_name: daq-car
     privileged: true
     restart: unless-stopped
@@ -43,7 +43,7 @@ services:
 
   # Base station (receives data, serves WebSocket and status page)
   base:
-    build: .
+    build: ..
     container_name: daq-base
     privileged: true
     restart: unless-stopped
@@ -85,7 +85,7 @@ services:
     networks:
       - daq-network
     volumes:
-      - ../pecan/src/assets/dbc.dbc:/app/example.dbc:ro
+      - ../../pecan/src/assets/dbc.dbc:/app/example.dbc:ro
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:8080 || exit 1" ]
       interval: 5s
@@ -111,7 +111,7 @@ services:
 
   pecan:
     build:
-      context: ../pecan
+      context: ../../pecan
       args:
         # VITE_WS_URL is set in the CI build step — not used when loading pre-built image
         VITE_WS_URL: ws://localhost:9080
@@ -145,7 +145,7 @@ services:
     ports:
       - "9000:8181" # InfluxDB3 API
     volumes:
-      - ./influxdb3-admin-token-test.json:/influxdb3-admin-token.json:ro
+      - ../influxdb3-admin-token-test.json:/influxdb3-admin-token.json:ro
     networks:
       - daq-network
     healthcheck:

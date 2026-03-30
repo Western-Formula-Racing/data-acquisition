@@ -19,6 +19,8 @@ import TourGuide from "../components/TourGuide";
 import type { TourStep } from "../components/TourGuide";
 import { useRemoteConfig } from "../lib/useRemoteConfig";
 import { HelpCircle } from "lucide-react";
+import TimelineBar from "../components/TimelineBar";
+import { useTimeline } from "../context/TimelineContext";
 
 interface Plot {
   id: string;
@@ -97,7 +99,6 @@ function Dashboard() {
   // =====================================================================
   const [plots, setPlots] = useState<Plot[]>([]);
   const [nextPlotId, setNextPlotId] = useState(1);
-  const [plotTimeWindow, setPlotTimeWindow] = useState(30000); // Default 30s in ms
   const [plotControls, setPlotControls] = useState<{
     visible: boolean;
     signalInfo: {
@@ -155,6 +156,12 @@ function Dashboard() {
   // Use the DataStore hooks to get all latest messages
   const allLatestMessages = useAllLatestMessages();
   const dataStoreStats = useDataStoreStats();
+  const {
+    windowMs: plotTimeWindow,
+    setWindowMs: setPlotTimeWindow,
+    selectedTimeMs,
+    mode: timelineMode,
+  } = useTimeline();
 
   const [performanceStats, setPerformanceStats] = useState({
     memoryUsage: "N/A" as string | number,
@@ -214,8 +221,13 @@ function Dashboard() {
     };
   }, []);
 
-  // Convert Map to array for rendering
-  const canMessagesArray = Array.from(allLatestMessages.entries());
+  // Convert Map to array for rendering, anchored to timeline when paused
+  const canMessagesArray = useMemo(() => {
+    if (timelineMode === "paused") {
+      return Array.from(dataStore.getAllLatestAt(selectedTimeMs).entries());
+    }
+    return Array.from(allLatestMessages.entries());
+  }, [timelineMode, selectedTimeMs, allLatestMessages]);
 
   // Sorting Logic
   // =====================================================================
@@ -471,6 +483,8 @@ function Dashboard() {
       {/* Data display section */}
       <div className={`relative flex flex-col md:h-full overflow-hidden pb-12 md:pb-0 ${plotPanelOpen ? 'h-[50vh]' : 'flex-1'} ${desktopPanelOpen ? 'md:col-span-2' : 'md:col-span-3'}`}>
         <div className="flex-1 p-4 pb-16 overflow-y-auto">
+          <TimelineBar />
+
           {/* Data filter / view selection menu */}
           <div className="bg-data-module-bg w-full h-[60px] md:h-[100px] grid grid-cols-4 gap-1 rounded-md mb-[15px]">
             {/* Data category filters */}
@@ -780,6 +794,8 @@ function Dashboard() {
                 plotId={plot.id}
                 signals={plot.signals}
                 timeWindowMs={plotTimeWindow}
+                cursorTimeMs={selectedTimeMs}
+                isLive={timelineMode === "live"}
                 onRemoveSignal={(msgID, signalName) =>
                   handleRemoveSignalFromPlot(plot.id, msgID, signalName)
                 }

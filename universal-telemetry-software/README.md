@@ -123,6 +123,22 @@ Once `can0` is confirmed working, proceed to deployment.
 - CAN HAT set up (see Hardware Setup above)
 - Network connection between car and base (LAN cable or Ubiquiti radios)
 
+> **Raspberry Pi 5 — QEMU Prerequisites**
+>
+> The RPi5 kernel uses 16KB memory pages. InfluxDB3's bundled jemalloc only supports 4KB pages,
+> so the native ARM64 binary crashes at startup. Work around this by running InfluxDB3 under QEMU
+> amd64 emulation via the `docker-compose.rpi5.yml` override.
+>
+> Install QEMU once on the Pi 5:
+> ```bash
+> sudo apt-get install -y qemu-user-static binfmt-support
+> ```
+>
+> Then use the rpi5 override whenever starting the stack:
+> ```bash
+> docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.rpi5.yml up -d
+> ```
+
 ### Installation
 
 Clone the repository:
@@ -131,7 +147,7 @@ git clone https://github.com/Western-Formula-Racing/daq-radio.git
 cd daq-radio/universal-telemetry-software
 ```
 
-Set `REMOTE_IP` in `docker-compose.yml` to the IP of the other RPi:
+Set `REMOTE_IP` in `deploy/docker-compose.yml` to the IP of the other RPi:
 ```yaml
 environment:
   - REMOTE_IP=192.168.1.20   # car sets this to base IP, base sets this to car IP
@@ -170,8 +186,8 @@ Instead of building locally, use pre-built images from GitHub Container Registry
 echo $CR_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
 
 # Pull and start
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f deploy/docker-compose.prod.yml pull
+docker compose -f deploy/docker-compose.prod.yml up -d
 ```
 
 Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
@@ -274,8 +290,15 @@ universal-telemetry-software/
 │   ├── link_diagnostics.py     # Radio link health
 │   └── poe.py                  # PoE monitor
 ├── tests/
-├── docker-compose.yml          # Development/local deployment
-├── docker-compose.prod.yml     # Production (GHCR images)
+├── deploy/
+│   ├── docker-compose.yml          # Development/local build
+│   ├── docker-compose.prod.yml     # Production (GHCR images)
+│   ├── docker-compose.staging.yml  # Staging (:test-latest images)
+│   ├── docker-compose.test.yml     # Integration test stack (CI)
+│   ├── docker-compose.can-test.yml # vCAN pipeline tests
+│   ├── docker-compose.jitsi.yml    # Optional Jitsi comms addon
+│   ├── docker-compose.rpi5.yml     # RPi5 QEMU override
+│   └── WHICH_ONE.md                # Compose file reference
 ├── Dockerfile
 └── requirements.txt
 ```

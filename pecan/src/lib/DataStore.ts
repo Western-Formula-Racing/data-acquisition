@@ -30,6 +30,12 @@ interface MessageBuffer {
 // Maximum number of frames kept in the flat trace ring buffer
 const TRACE_BUFFER_MAX = 10000;
 
+// Retention window settings
+const DEFAULT_RETENTION_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+const MIN_RETENTION_WINDOW_MS = 60 * 1000; // 1 minute
+const MAX_RETENTION_WINDOW_MS = 60 * 60 * 1000; // 60 minutes
+const RETENTION_STORAGE_KEY = "pecan:retention-window-ms";
+
 // Frequency window in milliseconds for dashboard displays (2 seconds)
 export const FREQUENCY_WINDOW_MS = 2000;
 
@@ -46,7 +52,7 @@ class DataStore {
   // Flat chronological ring buffer for CAN Trace view
   private traceBuffer: TelemetrySample[];
 
-  // Retention window in milliseconds (default: 30 seconds)
+  // Retention window in milliseconds
   private retentionWindowMs: number;
 
   // Pub/sub listeners
@@ -58,7 +64,7 @@ class DataStore {
   // Singleton instance
   private static instance: DataStore | null = null;
 
-  private constructor(retentionWindowMs: number = 300000) { // 5 minutes
+  private constructor(retentionWindowMs: number = DEFAULT_RETENTION_WINDOW_MS) {
     this.buffer = new Map();
     this.traceBuffer = [];
     this.retentionWindowMs = retentionWindowMs;
@@ -193,6 +199,45 @@ class DataStore {
   }
 
   /**
+   * Get the latest sample for a specific msgID at or before a target timestamp.
+   * @param msgID - CAN message ID
+   * @param timeMs - Cursor time in milliseconds
+   * @returns Latest sample <= timeMs or undefined
+   */
+  public getLatestAt(msgID: string, timeMs: number): TelemetrySample | undefined {
+    const messageBuffer = this.buffer.get(msgID);
+    if (!messageBuffer || messageBuffer.samples.length === 0) {
+      return undefined;
+    }
+
+    const newest = messageBuffer.samples[messageBuffer.samples.length - 1];
+    if (newest.timestamp <= timeMs) {
+      return newest;
+    }
+
+    let left = 0;
+    let right = messageBuffer.samples.length - 1;
+    let answer = -1;
+
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2);
+      const ts = messageBuffer.samples[mid].timestamp;
+      if (ts <= timeMs) {
+        answer = mid;
+        left = mid + 1;
+      } else {
+        right = mid - 1;
+      }
+    }
+
+    if (answer === -1) {
+      return undefined;
+    }
+
+    return messageBuffer.samples[answer];
+  }
+
+  /**
    * Get all samples for a msgID within a time window
    * @param msgID - CAN message ID
    * @param windowMs - Time window in milliseconds (default: all available)
@@ -214,6 +259,25 @@ class DataStore {
     const cutoffTime = newestTime - windowMs;
     return messageBuffer.samples.filter(
       (sample) => sample.timestamp >= cutoffTime
+    );
+  }
+
+  /**
+   * Get samples for a msgID inside an explicit time range ending at endTimeMs.
+   * @param msgID - CAN message ID
+   * @param windowMs - Time window in milliseconds
+   * @param endTimeMs - Right edge of the time window in milliseconds
+   * @returns Array of samples inside [endTimeMs - windowMs, endTimeMs]
+   */
+  public getHistoryAt(msgID: string, windowMs: number, endTimeMs: number): TelemetrySample[] {
+    const messageBuffer = this.buffer.get(msgID);
+    if (!messageBuffer || messageBuffer.samples.length === 0) {
+      return [];
+    }
+
+    const cutoffTime = endTimeMs - windowMs;
+    return messageBuffer.samples.filter(
+      (sample) => sample.timestamp >= cutoffTime && sample.timestamp <= endTimeMs
     );
   }
 
@@ -260,6 +324,24 @@ class DataStore {
   }
 
   /**
+   * Get latest sample per msgID at or before a target timestamp.
+   * @param timeMs - Cursor time in milliseconds
+   * @returns Map of msgID to timeline-anchored sample
+   */
+  public getAllLatestAt(timeMs: number): Map<string, TelemetrySample> {
+    const result = new Map<string, TelemetrySample>();
+
+    for (const msgID of this.buffer.keys()) {
+      const sample = this.getLatestAt(msgID, timeMs);
+      if (sample) {
+        result.set(msgID, sample);
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Get the average frequency (Hz) for a specific msgID over a time window
    * @param msgID - CAN message ID
    * @param windowMs - Time window in milliseconds
@@ -279,6 +361,27 @@ class DataStore {
     // but for typical buffer sizes (a few thousand), filter/length is fast enough.
     const samplesInWindow = messageBuffer.samples.filter(
       (sample) => sample.timestamp >= cutoffTime
+    ).length;
+
+    return samplesInWindow / (windowMs / 1000);
+  }
+
+  /**
+   * Get average frequency (Hz) anchored to a specific end time.
+   * @param msgID - CAN message ID
+   * @param windowMs - Time window in milliseconds
+   * @param endTimeMs - Right edge of the frequency window
+   * @returns Frequency in Hz
+   */
+  public getFrequencyAt(msgID: string, windowMs: number, endTimeMs: number): number {
+    const messageBuffer = this.buffer.get(msgID);
+    if (!messageBuffer || messageBuffer.samples.length === 0) {
+      return 0;
+    }
+
+    const cutoffTime = endTimeMs - windowMs;
+    const samplesInWindow = messageBuffer.samples.filter(
+      (sample) => sample.timestamp >= cutoffTime && sample.timestamp <= endTimeMs
     ).length;
 
     return samplesInWindow / (windowMs / 1000);
@@ -445,7 +548,19 @@ class DataStore {
 }
 
 // Export singleton instance
-export const dataStore = DataStore.getInstance();
+function getInitialRetentionWindowMs(): number {
+  try {
+    const raw = localStorage.getItem(RETENTION_STORAGE_KEY);
+    if (!raw) return DEFAULT_RETENTION_WINDOW_MS;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return DEFAULT_RETENTION_WINDOW_MS;
+    return Math.max(MIN_RETENTION_WINDOW_MS, Math.min(MAX_RETENTION_WINDOW_MS, parsed));
+  } catch {
+    return DEFAULT_RETENTION_WINDOW_MS;
+  }
+}
+
+export const dataStore = DataStore.getInstance(getInitialRetentionWindowMs());
 
 // Export class for testing purposes
 export { DataStore };

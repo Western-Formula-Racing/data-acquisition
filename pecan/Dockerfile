@@ -2,9 +2,11 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Build argument for WebSocket URL (used to configure connection at build time)
+# Build arguments for WebSocket configuration (baked in at build time)
 ARG VITE_WS_URL
 ENV VITE_WS_URL=$VITE_WS_URL
+ARG VITE_WS_PRESETS
+ENV VITE_WS_PRESETS=$VITE_WS_PRESETS
 
 # Copy package files
 COPY package*.json ./

@@ -6,7 +6,10 @@
 \usepackage[table]{xcolor}
 \usepackage{array}
 \usepackage{tabularx}
+\usepackage{textcomp}
 \usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{pifont}
 \usepackage{helvet}
 \usepackage[scaled=0.85]{sourcecodepro}
 \usepackage[T1]{fontenc}
@@ -31,6 +34,8 @@
 % ─── Column helpers ──────────────────────────────────────────────────────────
 % A5 text width ≈ 126mm
 
+% ─── Metadata ────────────────────────────────────────────────────────────────
+\newcommand{\buildversion}{Local Build}
 \begin{document}
 \raggedright
 \small
@@ -39,7 +44,15 @@
 % ─────────────────────────────────────────────────────────────────────────────
 % TITLE
 % ─────────────────────────────────────────────────────────────────────────────
-\noindent\colorbox{headbg}{\textcolor{white}{\textbf{\strut\ UTS QUICK REFERENCE CARD -- DAQ RADIO}}}
+\noindent
+\colorbox{headbg}{
+  \parbox{\dimexpr\linewidth-2\fboxsep}{
+    \textcolor{white}{\textbf{\strut
+    UNIVERSAL TELEMETRY SOFTWARE QUICK REFERENCE CARD\\
+    WFR DATA ACQUISITION
+    }}
+  }
+}
 \vspace{1mm}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -57,7 +70,7 @@
   Hotspot IP   & \cmd{192.168.10.1} & \cmd{192.168.20.1} \\
   \cmd{REMOTE\_IP} & \cmd{192.168.1.20} (base RPi) & \cmd{192.168.1.10} (car RPi) \\
   CAN HAT      & Required (\cmd{can0}) & Not needed \\
-  Serves       & TX WebSocket :9078 & PECAN dashboard :3000 \\
+  Serves       & TX WebSocket :9078, WSS :9443 & PECAN :3000, WSS :9443 \\
   Role trigger & \cmd{can0} present & \cmd{can0} absent \\
   LED          & Blue on \cmd{gpio26} & No blue LED \\
   \hline
@@ -67,6 +80,9 @@
 % ─────────────────────────────────────────────────────────────────────────────
 \section*{0 -- RPi INITIAL SETUP}
 % ─────────────────────────────────────────────────────────────────────────────
+
+\noindent\textbf{OS:} Flash \textbf{Raspberry Pi OS 64-bit Desktop} (not Lite, not Server) before starting.
+\vspace{1mm}
 
 \checkbox{System Packages}
 
@@ -103,16 +119,36 @@
 \noindent
 \begin{tabular}{p{126mm}}
   \textbf{Car RPi:} \cmd{192.168.1.10} \quad \textbf{Base RPi:} \cmd{192.168.1.20} \\[1mm]
-  Find the active netplan file: \cmd{ls /etc/netplan/} \\
-  \cmd{sudo nano /etc/netplan/01-netcfg.yaml} \quad (filename may differ) \\[1mm]
-  \cmd{network:} \\
-  \cmd{\ \ version: 2} \\
-  \cmd{\ \ ethernets:} \\
-  \cmd{\ \ \ \ eth0:} \quad \textit{(check interface name with \cmd{ip link})} \\
-  \cmd{\ \ \ \ \ \ dhcp4: no} \\
-  \cmd{\ \ \ \ \ \ addresses: [192.168.1.10/24]} \quad (car) or \cmd{[192.168.1.20/24]} (base) \\[1mm]
+  No gateway is set -- the radio link is a direct point-to-point connection. \\[1mm]
+  \textbf{Option A -- Script (recommended):} \\
+  \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software} \\
+  \cmd{sudo ./setup-static-ip.sh} \quad (prompts: 1 = car, 2 = base) \\[1mm]
+  \textbf{Option B -- Netplan (manual):} \\
+  Create \cmd{/etc/netplan/10-eth0-static.yaml}: \\
+  \cmd{\ \ network:} \\
+  \cmd{\ \ \ \ version: 2} \\
+  \cmd{\ \ \ \ ethernets:} \\
+  \cmd{\ \ \ \ \ \ eth0:} \\
+  \cmd{\ \ \ \ \ \ \ \ addresses: [192.168.1.20/24]} \quad \textit{(or .10 on car)} \\
+  \cmd{sudo chmod 600 /etc/netplan/10-eth0-static.yaml} \\
   \cmd{sudo netplan apply} \\[1mm]
-  \textbf{PASS:} \cmd{ip addr show eth0} shows the assigned IP \\
+  \textit{Note: \cmd{netplan apply} briefly resets the network -- Tailscale may drop for a few seconds.} \\[1mm]
+  \textbf{Option C -- NetworkManager GUI:} IPv4 Settings $\rightarrow$ Method: Manual $\rightarrow$ Add address. \\
+  \textit{The Gateway field cannot be left blank in the GUI -- enter \cmd{0.0.0.0} as a dummy value.} \\[1mm]
+  \textbf{PASS:} \cmd{ip addr show eth0} shows \cmd{192.168.1.10} or \cmd{192.168.1.20} \\
+  \textbf{FAIL:} no IP after reboot -- another netplan file may be overriding; check \cmd{/etc/netplan/} \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{Bench LAN Ping Test -- Both RPis (do this before installing on car)}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Connect a LAN cable directly between the two RPis. Then from each RPi, ping the other: \\[1mm]
+  \textbf{From car RPi:} \cmd{ping -c 4 192.168.1.20} \\
+  \textbf{From base RPi:} \cmd{ping -c 4 192.168.1.10} \\[1mm]
+  \textbf{PASS:} 4/4 replies, latency $<$ 1\,ms \\
+  \textbf{FAIL:} 100\% loss \quad \textit{Fix:} re-check static IP assignment, reconnect cable \\
 \end{tabular}
 
 \vspace{1mm}
@@ -122,7 +158,7 @@
 \begin{tabular}{p{126mm}}
   \cmd{gh auth login} \quad (follow prompts -- HTTPS, then Authenticate via browser) \\[1mm]
   \cmd{gh repo clone Western-Formula-Racing/daq-radio \textasciitilde/daq-radio} \\[1mm]
-  \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software} \\[1mm]
+  \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software/deploy} \\[1mm]
   \textbf{PASS:} \cmd{ls} shows \cmd{docker-compose.prod.yml} \\
   \textbf{FAIL:} auth error \quad \textit{Fix:} re-run \cmd{gh auth login} \\
 \end{tabular}
@@ -163,6 +199,45 @@
   \textbf{FAIL:} \cmd{unauthorized} \quad \textit{Fix:} ensure your GitHub account is a member of the \\
   \cmd{Western-Formula-Racing} org, then re-run \cmd{gh auth login} \\[1mm]
   \textit{Note:} this login persists in \cmd{\textasciitilde/.docker/config.json} -- only needed once per RPi. \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{Install NoMachine -- Both RPis}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Download the \textbf{ARM64 .deb} from \cmd{nomachine.com/download} and install: \\[1mm]
+  \cmd{sudo dpkg -i nomachine\_*\_arm64.deb} \\[1mm]
+  NoMachine starts automatically on boot. Connect from any machine on the same network: \\
+  \cmd{nomachine://192.168.1.10} (car) \quad \cmd{nomachine://192.168.1.20} (base) \\[1mm]
+  \textbf{PASS:} desktop appears in NoMachine client \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{Install Tailscale -- Both RPis}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  \cmd{curl -fsSL https://tailscale.com/install.sh | sh} \\[1mm]
+  \cmd{sudo tailscale up} \\[1mm]
+  Authenticate via the printed URL. After joining, RPis are reachable by Tailscale hostname \\
+  from any network -- useful for remote debugging between test days. \\[1mm]
+  \textbf{PASS:} \cmd{tailscale status} shows both RPis as connected peers \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{SocketCAN Setup -- Car RPi only}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Run the one-click setup script (safe to run before the HAT is physically attached -- \\
+  all config is written to disk and takes effect on next reboot with the HAT installed): \\[1mm]
+  \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software} \\
+  \cmd{sudo ./setup-socketcan.sh} \\
+  \cmd{sudo reboot} \\[1mm]
+  After reboot with HAT plugged in, \cmd{can0} comes up automatically at 500\,kbps. \\[1mm]
+  \textbf{PASS:} \cmd{ip link show can0} shows \cmd{<NOARP,UP,LOWER\_UP>} \\
+  \textbf{FAIL:} HAT not detected -- check HAT seating + SPI enabled in \cmd{/boot/firmware/config.txt} \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -223,10 +298,7 @@
   \cmd{dmesg $\vert$ grep -i mcp} \\[1mm]
   \textbf{PASS:} modules loaded, no kernel errors \\
   \textbf{FAIL:} empty output or errors \\
-  \textit{Fix:} See README \S Hardware Setup. Add \cmd{can can\_raw mcp251xfd} to \cmd{/etc/modules}.
-  Edit \cmd{/boot/firmware/config.txt}:
-  \cmd{dtoverlay=mcp251xfd,oscillator=20000000,interrupt=25}.
-  Reboot. \\
+  \textit{Fix:} Run \cmd{sudo ./setup-socketcan.sh} and reboot (see \S 0 SocketCAN Setup). \\
 \end{tabular}
 
 \vspace{1mm}
@@ -248,11 +320,13 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{grep REMOTE\_IP docker-compose.prod.yml} \\[1mm]
-  \textbf{CAR RPi} (\cmd{192.168.1.10}): set \cmd{REMOTE\_IP=192.168.1.20} (base IP) \\
-  \textbf{BASE RPi} (\cmd{192.168.1.20}): set \cmd{REMOTE\_IP=192.168.1.10} (car IP) \\[1mm]
-  Default in \cmd{docker-compose.prod.yml} is \cmd{192.168.1.20} -- correct for car, change on base. \\[1mm]
-  Edit: \cmd{nano docker-compose.prod.yml} \quad Apply: \cmd{docker compose -f docker-compose.prod.yml down \&\& docker compose -f docker-compose.prod.yml up -d} \\
+  \cmd{REMOTE\_IP} is read from \cmd{deploy/.env} (gitignored -- survives \cmd{git reset}). \\[1mm]
+  \textbf{CAR RPi} (\cmd{192.168.1.10}): \cmd{echo "REMOTE\_IP=192.168.1.20" > deploy/.env} \\
+  \textbf{BASE RPi} (\cmd{192.168.1.20}): \cmd{echo "REMOTE\_IP=192.168.1.10" > deploy/.env} \\[1mm]
+  \warnbox{One-time setup per RPi. Do NOT edit \cmd{docker-compose.prod.yml} for this.} \\[1mm]
+  \textit{Future ChargeCart RPi planned at} \cmd{192.168.1.30} -- set \cmd{REMOTE\_IP=192.168.1.20} (base). \\[1mm]
+  Verify: \cmd{cat deploy/.env} \quad Apply: \cmd{docker compose -f docker-compose.prod.yml --profile car down \&\& ... --profile car up -d} \\
+  (use \cmd{--profile base} on the base RPi) \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -263,11 +337,15 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software} \\
-  \cmd{docker compose -f docker-compose.prod.yml pull} \\
-  \cmd{docker compose -f docker-compose.prod.yml up -d} \\[1mm]
+  \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software/deploy} \\[1mm]
+  \textbf{Car RPi:} \\
+  \cmd{docker compose -f docker-compose.prod.yml --profile car pull} \\
+  \cmd{docker compose -f docker-compose.prod.yml --profile car up -d} \\[1mm]
+  \textbf{Base RPi:} \\
+  \cmd{docker compose -f docker-compose.prod.yml --profile base pull} \\
+  \cmd{docker compose -f docker-compose.prod.yml --profile base up -d} \\[1mm]
   \textit{Note:} Set \cmd{REMOTE\_IP} (see \S 3) before this step. \\
-  \textit{Build locally instead:} \cmd{docker compose up -d} (dev only, slow on RPi) \\
+  \textit{Plain \cmd{up} (no profile) starts nothing -- profile is required.} \\
 \end{tabular}
 
 \vspace{1mm}
@@ -275,8 +353,9 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{docker compose -f docker-compose.prod.yml ps} \\[1mm]
-  \textbf{PASS:} telemetry, redis, pecan all running \\
+  \cmd{docker compose -f docker-compose.prod.yml --profile car ps} \quad (or \cmd{--profile base}) \\[1mm]
+  \textbf{Car PASS:} telemetry, redis, caddy running \\
+  \textbf{Base PASS:} telemetry, redis, caddy, influxdb3, grafana, go2rtc, pecan running \\
   \textbf{FAIL:} any container Exited or missing \\
   \textit{Fix:} \cmd{docker compose -f docker-compose.prod.yml logs telemetry} \\
 \end{tabular}
@@ -336,16 +415,25 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "CAN Reader"} \\[1mm]
-  \textbf{PASS:} \cmd{CAN Reader started on can0} \\
-  \textbf{FAIL:} silent \quad \textit{Fix:} \cmd{... logs telemetry $\vert$ grep -i can} \\
+  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep -E "CAN Reader$\vert$SIMULATION MODE"} \\[1mm]
+  \textbf{PASS (real CAN):} \cmd{CAN Reader started on can0} \\
+  \textbf{PASS (explicit sim):} \cmd{SIMULATION MODE ACTIVE} banner (\cmd{SIMULATE=true}) \\
+  \textbf{FAIL:} \cmd{CAN Bus constructor failed} then \cmd{SIMULATION MODE ACTIVE} -- \cmd{can0} could not open. \\
+  \textbf{FAIL:} \cmd{CAN recv() error \#N} -- \cmd{can0} opened but is faulting. Reader retries; stops after 50. \\[1mm]
+  \textit{Note:} runtime \cmd{recv()} errors do \textbf{not} fall through to simulation. Only the \cmd{Bus()} \\[1pt]
+  \textit{constructor failure triggers sim. Use} \cmd{SIMULATE=true} \textit{to force simulation explicitly.} \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section*{7 -- PECAN DASHBOARD}
 % ─────────────────────────────────────────────────────────────────────────────
 
-\textbf{RX Page (Base RPi):} \cmd{http://192.168.1.20:3000}
+\textbf{PECAN runs on base only.} Anyone on the base hotspot can open the dashboard. \\
+The WebSocket also runs on car -- useful if crew connect directly to the car hotspot
+and point their own Pecan instance at the car's WSS endpoint.
+
+\vspace{1mm}
+\textbf{Base dashboard:} \cmd{http://192.168.1.20:3000} \quad (or \cmd{http://192.168.20.1:3000} via hotspot)
 
 \noindent
 \begin{tabular}{p{126mm}}
@@ -354,13 +442,29 @@
 \end{tabular}
 
 \vspace{1mm}
-\textbf{TX Page (Car RPi):} \cmd{http://192.168.1.10:3000/transmitter}
+\textbf{TX Page:} \cmd{http://192.168.1.20:3000/transmitter}
 
 \noindent
 \begin{tabular}{p{126mm}}
   \textbf{PASS:} WebSocket Connected, CAN preview decodes signals \\
   \textbf{FAIL:} Disconnected or TX\_DISABLED \\
   \textit{Fix TX\_DISABLED:} set \cmd{ENABLE\_TX\_WS=true} (see \S 8) \\
+\end{tabular}
+
+\vspace{1mm}
+\checkbox{One-time: Trust Caddy Cert (for WSS from HTTPS PWA)}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Pecan served over HTTPS cannot open a plain \cmd{ws://} connection -- it needs \cmd{wss://}. \\
+  Caddy auto-generates a self-signed cert on first boot; the browser must trust it once. \\[1mm]
+  \textbf{Car:} navigate to \cmd{https://192.168.10.1:9443} in browser $\rightarrow$ accept cert warning \\
+  \textbf{Base:} navigate to \cmd{https://192.168.20.1:9443} in browser $\rightarrow$ accept cert warning \\[1mm]
+  After this, configure Pecan's WebSocket URL to: \\
+  \cmd{wss://192.168.10.1:9443} (car) \quad \cmd{wss://192.168.20.1:9443} (base) \\[1mm]
+  \textbf{PASS:} Pecan dashboard shows live data over WSS \\
+  \textit{Note:} cert is stored in the \cmd{caddy\_data} Docker volume -- survives container restarts. \\
+  Repeat the browser accept step only on new devices. \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -372,7 +476,7 @@
 \noindent
 \begin{tabular}{p{126mm}}
   Edit \cmd{docker-compose.prod.yml}: set \cmd{ENABLE\_TX\_WS=true} \\
-  Apply: \cmd{docker compose -f docker-compose.prod.yml down \&\& docker compose -f docker-compose.prod.yml up -d} \\[1mm]
+  Apply: \cmd{docker compose -f docker-compose.prod.yml --profile car down \&\& ... --profile car up -d} \\[1mm]
   Verify: \cmd{... logs telemetry $\vert$ grep "TX WebSocket"} \\
   Expected: \cmd{TX WebSocket bridge started on port 9078 ... ENABLE\_TX\_WS=true ...} \\
 \end{tabular}
@@ -388,7 +492,21 @@
   \cmd{curl http://localhost:9000/health} \\[1mm]
   \textbf{PASS:} \cmd{\{"status":"ok"\}} \quad \textbf{FAIL:} connection refused -- wait 30s, retry \\
   Grafana: \cmd{http://192.168.1.20:8087} \quad user: \cmd{admin} \quad pass: \cmd{admin} \\
-  \textit{Token file:} \cmd{influxdb3-admin-token.json} is pre-committed -- no manual setup needed. \\
+  \textit{Token file:} \cmd{influxdb3-admin-token.json} is pre-committed -- no manual setup needed. \\[1mm]
+  \warnbox{RPi 5 (DEFAULT) -- QEMU Setup Required} \\
+  \noindent
+  \begin{tabular}{p{126mm}}
+    InfluxDB 3 defaults to \cmd{linux/amd64} to support RPi 5's 16KB page size. \\
+    You \textbf{must} install QEMU on the Pi 5 before starting: \\
+    \cmd{sudo apt install -y qemu-user-static binfmt-support} \\
+  \end{tabular} \\[1mm]
+  \warnbox{RPi 4B ONLY -- Native ARM64 Override} \\
+  \noindent
+  \begin{tabular}{p{126mm}}
+    To run native ARM64 on an RPi 4B, use the provided override file: \\
+    \cmd{docker compose -f docker-compose.prod.yml -f docker-compose.rpi4.yml \textbackslash} \\
+    \ \ \ \cmd{--profile base up -d} \\
+  \end{tabular} \\
 \end{tabular}
 
 \vspace{1mm}
@@ -498,8 +616,8 @@
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{docker compose -f docker-compose.prod.yml exec telemetry python -m src.cloud\_sync --check-only} \\[1mm]
-  \textbf{PASS:} \cmd{✓ Cloud reachable} \\
-  \textbf{FAIL:} \cmd{✗ Cloud unreachable} \quad \textit{Fix:} check base RPi internet connection \\
+  \textbf{PASS:} \cmd{\text{\checkmark}\ Cloud reachable} \\
+  \textbf{FAIL:} \cmd{\ding{55}\ Cloud unreachable} \quad \textit{Fix:} check base RPi internet connection \\
 \end{tabular}
 
 \vspace{1mm}
@@ -508,9 +626,9 @@
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "CloudSync"} \\[1mm]
-  \textbf{PASS:} \cmd{✓ Synced N points to cloud} every 60s \\
+  \textbf{PASS:} \cmd{\text{\checkmark}\ Synced N points to cloud} every 60s \\
   \textbf{FAIL:} \cmd{CLOUD\_INFLUX\_TOKEN not set} \quad \textit{Fix:} see token step above \\
-  \textbf{FAIL:} \cmd{Cloud unreachable} \quad sync will retry next interval automatically \\[1mm]
+  \textbf{FAIL:} \cmd{\ding{55}\ Cloud unreachable} \quad sync will retry next interval automatically \\[1mm]
   Manual one-off sync: \cmd{python -m src.cloud\_sync --last-hours 24} \\
   Dry run (no write): \cmd{python -m src.cloud\_sync --dry-run} \\
   State file (tracks cursor): \cmd{/tmp/influx\_cloud\_sync\_state.json} \\
@@ -556,6 +674,7 @@
   Cloud sync no-op & CLOUD\_INFLUX\_TOKEN set? & See \S 10, token is empty by default \\
   Redis connection error & \cmd{docker compose ps redis} & \cmd{docker compose restart redis} \\
   PECAN disconnected & WS\_PORT=9080? & Check docker-compose.prod.yml env \\
+  PWA WSS fails & Caddy cert trusted? & Visit \cmd{https://<rpi>:9443}, accept warning (\S 7) \\
   GHCR pull fails & Org member + docker login? & Re-run \S 0 GHCR step \\
   \bottomrule
 \end{tabularx}
@@ -577,9 +696,10 @@
   8080 & HTTP & Status monitoring page \\
   8087 & HTTP & Grafana dashboards \\
   9000 & HTTP & InfluxDB3 API \\
-  9080 & WebSocket & PECAN telemetry feed \\
+  9080 & WebSocket & PECAN telemetry feed (plain WS) \\
   9078 & WebSocket & PECAN TX CAN write (car only) \\
-  3000 & HTTP & PECAN dashboard UI \\
+  9443 & WSS/HTTPS & Caddy TLS proxy $\rightarrow$ :9080 (both RPis) \\
+  3000 & HTTP & PECAN dashboard UI (base only) \\
   \bottomrule
 \end{tabularx}
 \vspace{2mm}
@@ -595,12 +715,12 @@
   \textbf{Variable} & \textbf{Default} & \textbf{Description} \\
   \midrule
   ROLE & auto & Force car or base (auto-detected from can0) \\
-  REMOTE\_IP & 192.168.1.20 & IP of the other RPi (change on base to .10) \\
+  REMOTE\_IP & 192.168.1.20 & IP of the other RPi. Set manually per device -- no auto-resolution. Car: .20, Base: .10, ChargeCart: .20 \\
   UDP\_PORT & 5005 & Real-time UDP streaming port \\
   TCP\_PORT & 5006 & Retransmission port \\
   WS\_PORT & 9080 & WebSocket port for PECAN \\
   ENABLE\_TX\_WS & false & Enable CAN writes from TX page \\
-  SIMULATE & false & Simulate CAN (no hardware needed) \\
+  SIMULATE & false & Force CAN simulation (fake IDs 192/256/512/768 at 100\,Hz). Bus() failure triggers sim with warning banner; recv() errors do not. \\
   ENABLE\_VIDEO & false & Video streaming \\
   ENABLE\_AUDIO & false & Audio streaming \\
   ENABLE\_INFLUX\_LOGGING & true & Log telemetry to local InfluxDB3 \\
@@ -616,9 +736,11 @@
 \begin{tabularx}{\linewidth}{X}
   \cmd{docker-compose.prod.yml} -- \textbf{Prod} (pulls GHCR images -- use this on RPi) \\
   \cmd{docker-compose.yml} -- Dev (builds locally, slow on RPi) \\[1mm]
-  \textbf{Prod deploy:} \\
-  \cmd{docker compose -f docker-compose.prod.yml pull} \\
-  \cmd{docker compose -f docker-compose.prod.yml up -d} \\
+  \textbf{Prod deploy -- profile is required (no profile = nothing starts):} \\
+  \cmd{docker compose -f docker-compose.prod.yml --profile car up -d} \quad (car RPi) \\
+  \cmd{docker compose -f docker-compose.prod.yml --profile base up -d} \quad (base RPi) \\[1mm]
+  \textbf{Restart after config change:} \\
+  \cmd{docker compose -f docker-compose.prod.yml --profile car down \&\& ... up -d} \\
 \end{tabularx}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -638,5 +760,8 @@
   \cmd{grep "time sync"} -- ECU clock synced? & \cmd{grep "trusting RPi"} -- System clock fallback? \\
   \hline
 \end{tabularx}
+
+\vfill
+\noindent\textcolor{gray}{\tiny \buildversion}
 
 \end{document}

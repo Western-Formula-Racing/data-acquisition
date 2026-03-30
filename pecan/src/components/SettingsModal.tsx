@@ -10,6 +10,9 @@ import { useRemoteConfig } from "../lib/useRemoteConfig";
 import { getCategoryConfigString, updateCategories } from "../config/categories";
 import { useSerialStatus } from "../lib/useSerialStatus";
 import NotNotGame from "./NotNotGame";
+import { useDataStoreControls } from "../lib/useDataStore";
+
+const RETENTION_STORAGE_KEY = "pecan:retention-window-ms";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -133,6 +136,12 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
     const [isGameOpen, setIsGameOpen] = useState(false);
     const [bridgeOs, setBridgeOs] = useState<"linux" | "windows">("linux");
     const isSerialConnected = useSerialStatus();
+    const { setRetentionWindow, getRetentionWindow } = useDataStoreControls();
+    const [retentionWindowMs, setRetentionWindowMsState] = useState<number>(() => {
+        const raw = localStorage.getItem(RETENTION_STORAGE_KEY);
+        const parsed = raw ? Number(raw) : NaN;
+        return Number.isFinite(parsed) ? parsed : 30 * 60 * 1000;
+    });
 
     const { session, loadConfig, saveConfig } = useRemoteConfig();
     const [categoryText, setCategoryText] = useState("");
@@ -141,6 +150,7 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
     useEffect(() => {
         if (isOpen) {
             setCategoryText(getCategoryConfigString());
+            setRetentionWindowMsState(getRetentionWindow());
             if (session?.user) {
                 loadConfig().then(config => {
                     if (config?.categoryConfig) {
@@ -229,7 +239,7 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                 </button>
 
                 {/* Header */}
-                {!isGameOpen && <h2 className="text-2xl font-semibold text-white mb-6">Settings</h2>}
+                {!isGameOpen && <h2 className="app-modal-title mb-6">Settings</h2>}
 
                 {/* Settings content area - scrollable for future settings */}
                 <div className="flex-1 overflow-y-auto space-y-4">
@@ -266,34 +276,64 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                             </div>
 
                             {/* WebSocket URL Section */}
-                            <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
-                                <div className="flex flex-col">
-                                    <span className="text-sm font-medium">Custom WebSocket URL</span>
-                                    <span className="text-xs text-gray-400">Leave empty to use auto (Local/Cloud)</span>
+                            <div className="flex flex-col w-full rounded-lg text-white bg-option gap-2 px-4 py-3">
+                                <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-medium">Custom WebSocket URL</span>
+                                        <span className="text-xs text-gray-400">Leave empty to use auto (Local/Cloud)</span>
+                                    </div>
+                                    <div className="flex gap-2 items-center">
+                                        <input
+                                            type="text"
+                                            placeholder="ws://localhost:9080"
+                                            className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none flex-1 min-w-0 md:w-48 h-9"
+                                            value={customWsUrl}
+                                            onChange={(e) => setCustomWsUrl(e.target.value)}
+                                        />
+                                        <Button
+                                            onClick={() => {
+                                                if (customWsUrl) {
+                                                    localStorage.setItem("custom-ws-url", customWsUrl);
+                                                } else {
+                                                    localStorage.removeItem("custom-ws-url");
+                                                }
+                                                webSocketService.reconnect();
+                                                onClose();
+                                            }}
+                                            variant="primary"
+                                        >
+                                            Apply
+                                        </Button>
+                                    </div>
                                 </div>
-                                <div className="flex gap-2 items-center">
-                                    <input
-                                        type="text"
-                                        placeholder="ws://localhost:9080"
-                                        className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none flex-1 min-w-0 md:w-48 h-9"
-                                        value={customWsUrl}
-                                        onChange={(e) => setCustomWsUrl(e.target.value)}
-                                    />
-                                    <Button
-                                        onClick={() => {
-                                            if (customWsUrl) {
-                                                localStorage.setItem("custom-ws-url", customWsUrl);
-                                            } else {
-                                                localStorage.removeItem("custom-ws-url");
-                                            }
-                                            webSocketService.reconnect();
-                                            onClose();
-                                        }}
-                                        variant="primary"
-                                    >
-                                        Apply
-                                    </Button>
-                                </div>
+                                {(() => {
+                                    try {
+                                        const presets: { label: string; url: string }[] = JSON.parse(
+                                            import.meta.env.VITE_WS_PRESETS ?? "[]"
+                                        );
+                                        if (presets.length === 0) return null;
+                                        return (
+                                            <div className="flex flex-wrap gap-2">
+                                                {presets.map((preset) => (
+                                                    <button
+                                                        key={preset.url}
+                                                        className="text-xs px-3 py-1 rounded border border-gray-500 text-gray-300 hover:border-blue-400 hover:text-white transition-colors"
+                                                        onClick={() => {
+                                                            setCustomWsUrl(preset.url);
+                                                            localStorage.setItem("custom-ws-url", preset.url);
+                                                            webSocketService.reconnect();
+                                                            onClose();
+                                                        }}
+                                                    >
+                                                        {preset.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        );
+                                    } catch {
+                                        return null;
+                                    }
+                                })()}
                             </div>
 
                             {/* Performance Overlay Toggle */}
@@ -317,6 +357,32 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                     />
                                     <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                                 </label>
+                            </div>
+
+                            {/* Telemetry Retention Window */}
+                            <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium">Telemetry History Retention</span>
+                                    <span className="text-xs text-gray-400">Controls in-browser data history window (default 30 min)</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none h-9"
+                                        value={retentionWindowMs}
+                                        onChange={(e) => {
+                                            const next = Number(e.target.value);
+                                            setRetentionWindowMsState(next);
+                                            localStorage.setItem(RETENTION_STORAGE_KEY, String(next));
+                                            setRetentionWindow(next);
+                                        }}
+                                    >
+                                        <option value={5 * 60 * 1000}>5 minutes</option>
+                                        <option value={15 * 60 * 1000}>15 minutes</option>
+                                        <option value={30 * 60 * 1000}>30 minutes (default)</option>
+                                        <option value={45 * 60 * 1000}>45 minutes</option>
+                                        <option value={60 * 60 * 1000}>60 minutes</option>
+                                    </select>
+                                </div>
                             </div>
 
                             {/* Local USB CAN Adapter Toggle */}
