@@ -274,8 +274,12 @@ const SensorValidator: React.FC = () => {
 
         ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
+        const styles = getComputedStyle(document.body);
+        const gridColor = styles.getPropertyValue("--color-text-muted").trim() || "#666";
+        const labelColor = styles.getPropertyValue("--color-text-muted").trim() || "#666";
+
         if (capturedPoints.length === 0 && !selectedSignal) {
-            ctx.fillStyle = "#999";
+            ctx.fillStyle = gridColor;
             ctx.font = "14px Inter";
             ctx.textAlign = "center";
             ctx.fillText("Select a signal to begin", CANVAS_SIZE / 2, CANVAS_SIZE / 2);
@@ -323,7 +327,7 @@ const SensorValidator: React.FC = () => {
         const scaleY = (val: number) => CANVAS_SIZE - PADDING - ((val - minRef) / rangeRef) * (CANVAS_SIZE - 2 * PADDING);
 
         // Grid
-        ctx.strokeStyle = "#333";
+        ctx.strokeStyle = gridColor;
         ctx.setLineDash([2, 4]);
         ctx.beginPath();
         for (let i = 0; i <= 4; i++) {
@@ -342,7 +346,7 @@ const SensorValidator: React.FC = () => {
         ctx.setLineDash([]);
 
         // Labels
-        ctx.fillStyle = "#666";
+        ctx.fillStyle = labelColor;
         ctx.font = "10px Inter";
         ctx.textAlign = "center";
         ctx.fillText(minCan.toFixed(1), scaleX(minCan), CANVAS_SIZE - PADDING + 15);

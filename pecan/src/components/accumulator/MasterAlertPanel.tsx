@@ -55,7 +55,7 @@ function AlertIndicator({ label, state, onClick }: AlertIndicatorProps) {
             {/* Label */}
             <span
                 className="text-xs font-bold tracking-wide"
-                style={{ color: isActive ? bgColor : '#9ca3af' }}
+                style={{ color: isActive ? bgColor : 'var(--color-text-muted)' }}
             >
                 {label}
             </span>

@@ -85,12 +85,12 @@ function Cell({ moduleId, cellIndex, stats, onClick }: {
       `}
             onClick={onClick}
             style={{
-                backgroundColor: isHighlighted ? '#ffffff' : bgColor,
-                color: isHighlighted ? '#000000' : '#ffffff'
+                backgroundColor: isHighlighted ? 'var(--color-text-primary)' : bgColor,
+                color: isHighlighted ? 'var(--color-background)' : 'var(--color-text-primary)'
             }}
             title={`${signalName}\nCurrent: ${current !== null ? `${current.toFixed(3)}V` : '--'}\n1s range: ${range}`}
         >
-            <span className={`drop-shadow-md text-xs ${isHighlighted ? 'text-black' : 'text-white'}`}>
+            <span className={`drop-shadow-md text-xs ${isHighlighted ? 'text-[var(--color-background)]' : 'text-[var(--color-text-primary)]'}`}>
                 {current !== null ? current.toFixed(3) : '---'}
             </span>
         </div>

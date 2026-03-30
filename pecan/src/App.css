@@ -6,7 +6,7 @@
 
 body {
     margin: 0;
-    background-color: black;
+    background-color: var(--color-background, #0d0c11);
 }
 
 @keyframes logo-spin {

@@ -13,6 +13,7 @@ import NotNotGame from "./NotNotGame";
 import { useDataStoreControls } from "../lib/useDataStore";
 
 const RETENTION_STORAGE_KEY = "pecan:retention-window-ms";
+const THEME_STORAGE_KEY = "pecan:theme";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -141,6 +142,11 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
         const raw = localStorage.getItem(RETENTION_STORAGE_KEY);
         const parsed = raw ? Number(raw) : NaN;
         return Number.isFinite(parsed) ? parsed : 30 * 60 * 1000;
+    });
+
+    const [theme, setTheme] = useState<"dark" | "light">(() => {
+        const saved = localStorage.getItem(THEME_STORAGE_KEY);
+        return saved === "light" ? "light" : "dark";
     });
 
     const { session, loadConfig, saveConfig } = useRemoteConfig();
@@ -357,6 +363,44 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                     />
                                     <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                                 </label>
+                            </div>
+
+                            {/* Theme Toggle */}
+                            <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium">Theme</span>
+                                    <span className="text-xs text-gray-400">Switch between dark and light appearance</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => {
+                                            const next = "dark";
+                                            setTheme(next);
+                                            localStorage.setItem(THEME_STORAGE_KEY, next);
+                                            document.body.classList.remove("theme-light");
+                                        }}
+                                        className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${theme === "dark" ? "bg-blue-600 border-blue-500 text-white" : "border-gray-500 text-gray-400 hover:border-gray-300 hover:text-gray-200"}`}
+                                    >
+                                        Dark
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            const next = "light";
+                                            setTheme(next);
+                                            localStorage.setItem(THEME_STORAGE_KEY, next);
+                                            document.body.classList.remove("theme-dark");
+                                            document.body.classList.add("theme-light");
+                                        }}
+                                        className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${theme === "light" ? "bg-blue-600 border-blue-500 text-white" : "border-gray-500 text-gray-400 hover:border-gray-300 hover:text-gray-200"}`}
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            Light
+                                            <span className="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/40 font-mono tracking-wider">
+                                                DEV
+                                            </span>
+                                        </span>
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Telemetry Retention Window */}

@@ -73,8 +73,8 @@ function PlotManager({
         autorange: true,
       },
       margin: { t: 40, r: 20, b: 40, l: 60 },
-      paper_bgcolor: "#1a1a1a",
-      plot_bgcolor: "#2a2a2a",
+      paper_bgcolor: "#0d0c11",
+      plot_bgcolor: "#20202f",
       font: { color: "#ffffff" },
       showlegend: false,
     };
@@ -108,6 +108,12 @@ function PlotManager({
       const resolution = calculateDownsampleResolution(timeWindowMs);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const traces: any[] = [];
+
+      // Read theme-aware colors from CSS variables
+      const styles = getComputedStyle(document.body);
+      const paperBg = styles.getPropertyValue("--color-background").trim() || "#0d0c11";
+      const plotBg = styles.getPropertyValue("--color-data-module-bg").trim() || "#20202f";
+      const fontColor = styles.getPropertyValue("--color-text-primary").trim() || "#ffffff";
 
       const visibleCheckpointLines = checkpoints
         .filter(
@@ -233,9 +239,9 @@ function PlotManager({
             autorange: true,
           },
           margin: { t: 40, r: 20, b: 40, l: 60 },
-          paper_bgcolor: "#1a1a1a",
-          plot_bgcolor: "#2a2a2a",
-          font: { color: "#ffffff" },
+          paper_bgcolor: paperBg,
+          plot_bgcolor: plotBg,
+          font: { color: fontColor },
           showlegend: false,
           shapes: visibleCheckpointLines,
           annotations: checkpointAnnotations,

@@ -16,7 +16,6 @@
 @theme {
 
     --color-background: #0d0c11;
-
     --color-sidebar: #171720;
     --color-sidebarfg: #8e8eab;
     --color-option: #20202f;
@@ -29,6 +28,79 @@
     --color-banner-button: #3d3d4f;
     --color-banner-button-hover: #4e4e66;
 
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #e2e8f0;
+    --color-text-muted: #8e8eab;
+    --color-text-heading: #f1f5f9;
+    --color-border: rgba(255, 255, 255, 0.12);
+    --color-border-strong: rgba(255, 255, 255, 0.2);
+    --color-border-subtle: rgba(255, 255, 255, 0.06);
+
+    --color-trace-row-alt: #0f0e17;
+    --color-trace-row-hover: #1a1929;
+    --color-trace-header-bg: #0a0912;
+    --color-trace-toolbar-bg: #100f1a;
+    --color-trace-panel-bg: #05040a;
+    --color-trace-panel-header-bg: #0b0a14;
+    --color-trace-panel-row-alt: #060515;
+    --color-trace-panel-row-alt2: #050311;
+    --color-trace-panel-row-hover: #151329;
+
+    --color-floating-bg: #070615;
+    --color-floating-bg-hover: #120f2a;
+
+    /* Tailwind palette — dark defaults used by text/bg/border utilities */
+    --color-white: #ffffff;
+    --color-slate-50: #f8fafc;
+    --color-slate-100: #f1f5f9;
+    --color-slate-200: #e2e8f0;
+    --color-slate-300: #cbd5e1;
+    --color-slate-400: #94a3b8;
+    --color-slate-500: #64748b;
+    --color-slate-600: #475569;
+    --color-slate-700: #334155;
+    --color-slate-800: #1e293b;
+    --color-slate-900: #0f172a;
+    --color-gray-50: #f9fafb;
+    --color-gray-100: #f3f4f6;
+    --color-gray-200: #e5e7eb;
+    --color-gray-300: #d1d5db;
+    --color-gray-400: #9ca3af;
+    --color-gray-500: #6b7280;
+    --color-gray-600: #4b5563;
+    --color-gray-700: #374151;
+    --color-gray-800: #1f2937;
+    --color-gray-900: #111827;
+    --color-zinc-50: #fafafa;
+    --color-zinc-100: #f4f4f5;
+    --color-zinc-200: #e4e4e7;
+    --color-zinc-300: #d4d4d8;
+    --color-zinc-400: #a1a1aa;
+    --color-zinc-500: #71717a;
+    --color-zinc-600: #52525b;
+    --color-zinc-700: #3f3f46;
+    --color-zinc-800: #27272a;
+    --color-zinc-900: #18181b;
+    --color-neutral-100: #f5f5f5;
+    --color-neutral-200: #e5e5e5;
+    --color-neutral-300: #d4d4d4;
+    --color-neutral-400: #a3a3a3;
+    --color-neutral-500: #737373;
+    --color-neutral-600: #525252;
+    --color-neutral-700: #404040;
+    --color-neutral-800: #262626;
+    --color-neutral-900: #171717;
+    --color-stone-50: #fafaf9;
+    --color-stone-100: #f5f5f4;
+    --color-stone-200: #e7e5e4;
+    --color-stone-300: #d6d3d1;
+    --color-stone-400: #a8a29e;
+    --color-stone-500: #78716c;
+    --color-stone-600: #57534e;
+    --color-stone-700: #44403c;
+    --color-stone-800: #292524;
+    --color-stone-900: #1c1917;
+
     --font-heading: "ZipSonik", sans-serif;
     --font-footer: "Days One", sans-serif;
 }
@@ -36,7 +108,6 @@
 /* Local CAN Mode Mid-Blue Theme */
 body.theme-local-can {
     --color-background: #0c0e11;
-
     --color-sidebar: #171c26;
     --color-sidebarfg: #8aa1c9;
     --color-option: #1e2636;
@@ -48,6 +119,72 @@ body.theme-local-can {
     --color-data-textbox-bg: #2d3b52;
     --color-banner-button: #2d3b52;
     --color-banner-button-hover: #3d4e6d;
+
+    --color-text-primary: #ffffff;
+    --color-text-secondary: #e2e8f0;
+    --color-text-muted: #8aa1c9;
+    --color-text-heading: #f1f5f9;
+    --color-border: rgba(255, 255, 255, 0.12);
+    --color-border-strong: rgba(255, 255, 255, 0.2);
+    --color-border-subtle: rgba(255, 255, 255, 0.06);
+
+    --color-trace-row-alt: #121320;
+    --color-trace-row-hover: #1c1f30;
+    --color-trace-header-bg: #0a0e18;
+    --color-trace-toolbar-bg: #0f1422;
+    --color-trace-panel-bg: #060810;
+    --color-trace-panel-header-bg: #0a0d18;
+    --color-trace-panel-row-alt: #080b18;
+    --color-trace-panel-row-alt2: #070a16;
+    --color-trace-panel-row-hover: #141828;
+
+    --color-floating-bg: #07090f;
+    --color-floating-bg-hover: #0f1220;
+}
+
+/* Light Mode Theme */
+body.theme-light {
+    /* Page background — medium gray so elevated cards visually "lift" off it */
+    --color-background: #dde1e8;
+    /* Sidebar and nav — slightly lighter than page */
+    --color-sidebar: #eaecf0;
+    --color-sidebarfg: #6b6b7a;
+    --color-option: #dfe2e8;
+    --color-option-select: #cdd1db;
+
+    /* Cards/modules — pure white so they pop off the gray background */
+    --color-data-module-bg: #ffffff;
+    --color-dropdown-menu-bg: #475569;
+    --color-dropdown-menu-secondary: #8e8eab;
+    /* Field inputs inside cards — very light gray to show depth within cards */
+    --color-data-textbox-bg: #edf0f5;
+    --color-banner-button: #475569;
+    --color-banner-button-hover: #334155;
+
+    --color-text-primary: #1e293b;
+    --color-text-secondary: #475569;
+    --color-text-muted: #94a3b8;
+    --color-text-heading: #0f172a;
+    --color-border: rgba(0, 0, 0, 0.1);
+    --color-border-strong: rgba(0, 0, 0, 0.18);
+    --color-border-subtle: rgba(0, 0, 0, 0.06);
+
+    /* Card shadow — used to give modules the "elevated card" feel */
+    --shadow-card: 0 1px 3px rgba(0,0,0,0.10), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-card-sm: 0 1px 2px rgba(0,0,0,0.08);
+
+    --color-trace-row-alt: #f0f2f6;
+    --color-trace-row-hover: #e4e8f0;
+    --color-trace-header-bg: #eaecf0;
+    --color-trace-toolbar-bg: #e4e8f0;
+    --color-trace-panel-bg: #ffffff;
+    --color-trace-panel-header-bg: #eaecf0;
+    --color-trace-panel-row-alt: #f0f2f6;
+    --color-trace-panel-row-alt2: #eaecf0;
+    --color-trace-panel-row-hover: #e4e8f0;
+
+    --color-floating-bg: #eaecf0;
+    --color-floating-bg-hover: #dde1e8;
 }
 
 body {
@@ -163,7 +300,7 @@ p {
     font-size: 1.75rem;
     line-height: 1;
     font-weight: 700;
-    color: #ffffff;
+    color: var(--color-text-primary);
     letter-spacing: 0.02em;
 }
 
@@ -171,7 +308,7 @@ p {
     font-size: 1.5rem;
     line-height: 1;
     font-weight: 700;
-    color: #ffffff;
+    color: var(--color-text-primary);
     letter-spacing: 0.01em;
 }
 
@@ -179,7 +316,7 @@ p {
     font-size: 1.125rem;
     line-height: 1.15;
     font-weight: 700;
-    color: #e2e8f0;
+    color: var(--color-text-secondary);
     letter-spacing: 0.01em;
 }
 
@@ -187,17 +324,17 @@ p {
     font-size: 1.5rem;
     line-height: 1.1;
     font-weight: 700;
-    color: #ffffff;
+    color: var(--color-text-primary);
     letter-spacing: 0.01em;
 }
 
 .sidebar-nav-link {
-    color: #ffffff;
+    color: var(--color-text-primary);
     text-decoration: none;
 }
 
 .sidebar-nav-label {
-    color: #ffffff;
+    color: var(--color-text-primary);
     font-family: var(--font-heading);
     font-size: 1.7rem;
     line-height: 1;
@@ -209,7 +346,7 @@ p {
 }
 
 .sidebar-nav-label-nested {
-    color: #e2e8f0;
+    color: var(--color-text-secondary);
     font-size: 0.92rem;
     line-height: 1.1;
     font-weight: 600;
@@ -219,24 +356,24 @@ p {
 
 .sidebar-group-shell {
     margin-top: 0.65rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-top: 1px solid var(--color-border);
     padding-top: 0.45rem;
 }
 
 .sidebar-group-header {
     width: 100%;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid var(--color-border);
     border-radius: 0.5rem;
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--color-border-subtle);
 }
 
 .sidebar-group-header:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: var(--color-border-strong);
+    border-color: var(--color-border-strong);
 }
 
 .sidebar-group-title {
-    color: #f1f5f9;
+    color: var(--color-text-heading);
     font-family: var(--font-heading);
     font-size: 1.45rem;
     line-height: 1;
@@ -248,7 +385,7 @@ p {
 }
 
 .sidebar-footer-label {
-    color: #e2e8f0;
+    color: var(--color-text-secondary);
     font-size: 0.95rem;
     line-height: 1.1;
     font-weight: 600;
@@ -267,8 +404,8 @@ p {
 }
 
 .trace-btn {
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    color: #e2e8f0;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
     border-radius: 0.375rem;
     padding: 0.32rem 0.72rem;
     font-size: 0.72rem;
@@ -277,7 +414,7 @@ p {
     letter-spacing: 0;
     text-transform: uppercase;
     transition: all 150ms ease;
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--color-border-subtle);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -285,8 +422,8 @@ p {
 }
 
 .trace-btn:hover {
-    background: rgba(255, 255, 255, 0.09);
-    border-color: rgba(255, 255, 255, 0.24);
+    background: var(--color-border-strong);
+    border-color: var(--color-border-strong);
 }
 
 .trace-btn:disabled {
@@ -331,8 +468,8 @@ p {
 
 /* Backward-compatible aliases while transitioning existing components */
 .timeline-btn {
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    color: #e2e8f0;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
     border-radius: 0.375rem;
     padding: 0.32rem 0.72rem;
     font-size: 0.68rem;
@@ -340,7 +477,7 @@ p {
     letter-spacing: 0.08em;
     text-transform: uppercase;
     transition: all 150ms ease;
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--color-border-subtle);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -348,8 +485,8 @@ p {
 }
 
 .timeline-btn:hover {
-    background: rgba(255, 255, 255, 0.09);
-    border-color: rgba(255, 255, 255, 0.24);
+    background: var(--color-border-strong);
+    border-color: var(--color-border-strong);
 }
 
 .timeline-btn:disabled {
@@ -378,7 +515,7 @@ p {
     border-radius: 9999px;
     padding: 0.2rem 0.56rem;
     font-size: 0.58rem;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid var(--color-border-strong);
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     letter-spacing: 0.1em;
     text-transform: uppercase;
@@ -402,7 +539,7 @@ p {
     height: 22px;
     border-radius: 9999px;
     background: transparent;
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    border: 1px solid var(--color-border);
     padding: 0;
 }
 
@@ -553,3 +690,103 @@ p {
     background: rgba(248, 113, 113, 0.24);
 }
 
+/* =========================================================
+   Light mode overrides.
+   Strategy: use !important to beat Tailwind v4's generated
+   utilities. For dark containers that need white text (banners,
+   dropdowns), use higher-specificity (3-class) !important rules
+   placed AFTER — specificity beats !important when importance
+   level is equal, so 0,3,0 beats 0,2,0 both !important.
+   ========================================================= */
+
+/* Default body text color */
+body.theme-light { color: var(--color-text-primary); }
+
+/* --- Text overrides (0,2,0 specificity + !important) --- */
+body.theme-light .text-white     { color: var(--color-text-primary) !important; }
+body.theme-light .text-slate-50,
+body.theme-light .text-slate-100 { color: var(--color-slate-100) !important; }
+body.theme-light .text-slate-200 { color: var(--color-slate-200) !important; }
+body.theme-light .text-slate-300 { color: var(--color-slate-300) !important; }
+body.theme-light .text-slate-400 { color: var(--color-slate-400) !important; }
+body.theme-light .text-slate-500 { color: var(--color-slate-500) !important; }
+body.theme-light .text-gray-100  { color: var(--color-gray-100) !important; }
+body.theme-light .text-gray-200  { color: var(--color-gray-200) !important; }
+body.theme-light .text-gray-300  { color: var(--color-gray-300) !important; }
+body.theme-light .text-gray-400  { color: var(--color-gray-400) !important; }
+body.theme-light .text-gray-500  { color: var(--color-gray-500) !important; }
+body.theme-light .text-zinc-700  { color: var(--color-gray-700) !important; }
+body.theme-light .text-zinc-800  { color: var(--color-gray-800) !important; }
+body.theme-light .text-neutral-300 { color: var(--color-neutral-300) !important; }
+body.theme-light .text-neutral-400 { color: var(--color-neutral-400) !important; }
+body.theme-light .text-stone-300 { color: var(--color-stone-300) !important; }
+body.theme-light .text-stone-400 { color: var(--color-stone-400) !important; }
+
+/* --- White text restoration for intentionally dark containers ---
+   Specificity 0,3,0 beats the 0,2,0 overrides above, even with
+   both !important. Higher specificity wins at equal importance level. */
+body.theme-light .bg-dropdown-menu-bg.text-white,
+body.theme-light .bg-dropdown-menu-bg .text-white,
+body.theme-light .bg-dropdown-menu-bg .text-gray-300,
+body.theme-light .bg-dropdown-menu-bg .text-slate-100,
+body.theme-light .bg-dropdown-menu-bg .text-slate-200,
+body.theme-light .bg-dropdown-menu-bg .text-slate-300 { color: white !important; }
+body.theme-light .bg-dropdown-menu-secondary.text-white,
+body.theme-light .bg-dropdown-menu-secondary .text-white { color: white !important; }
+body.theme-light .bg-banner-button.text-white,
+body.theme-light .bg-banner-button .text-white           { color: white !important; }
+
+/* --- Background overrides (0,2,0 + !important) --- */
+body.theme-light .bg-slate-900 { background-color: var(--color-slate-800) !important; }
+body.theme-light .bg-slate-800 { background-color: var(--color-slate-700) !important; }
+body.theme-light .bg-slate-700 { background-color: var(--color-slate-600) !important; }
+body.theme-light .bg-gray-900  { background-color: var(--color-gray-800) !important; }
+body.theme-light .bg-gray-800  { background-color: var(--color-gray-700) !important; }
+body.theme-light .bg-gray-700  { background-color: var(--color-gray-600) !important; }
+body.theme-light .bg-zinc-800  { background-color: var(--color-zinc-700) !important; }
+body.theme-light .bg-zinc-700  { background-color: var(--color-zinc-600) !important; }
+body.theme-light .bg-black\/60 { background-color: rgba(0,0,0,0.4) !important; }
+body.theme-light .bg-black\/80 { background-color: rgba(0,0,0,0.5) !important; }
+body.theme-light .bg-black\/40 { background-color: rgba(0,0,0,0.2) !important; }
+body.theme-light .bg-black\/20 { background-color: rgba(0,0,0,0.1) !important; }
+body.theme-light .bg-black\/50 { background-color: rgba(0,0,0,0.25) !important; }
+
+/* --- Border overrides (0,2,0 + !important) --- */
+body.theme-light .border-slate-700  { border-color: var(--color-slate-300) !important; }
+body.theme-light .border-gray-700   { border-color: var(--color-gray-400) !important; }
+body.theme-light .border-gray-600   { border-color: var(--color-gray-400) !important; }
+body.theme-light .border-zinc-700   { border-color: var(--color-zinc-400) !important; }
+body.theme-light .border-white      { border-color: var(--color-gray-300) !important; }
+body.theme-light .border-white\/10  { border-color: rgba(0,0,0,0.15) !important; }
+body.theme-light .border-white\/20  { border-color: rgba(0,0,0,0.2) !important; }
+body.theme-light .border-white\/5   { border-color: rgba(0,0,0,0.08) !important; }
+
+/* Divider pseudo-element */
+body.theme-light .after\:bg-white::after { background-color: var(--color-border) !important; }
+
+/* --- Elevated card feel in light mode ---
+   bg-data-module-bg and bg-sidebar are the main container classes.
+   Give them a white background + subtle shadow so they lift off the
+   gray page background. Rounded containers also get a border. */
+body.theme-light .bg-data-module-bg {
+    box-shadow: var(--shadow-card);
+}
+body.theme-light .bg-sidebar {
+    box-shadow: var(--shadow-card-sm);
+}
+/* Timeline, toolbar, and panel wrappers that use rounded-md / rounded-lg */
+body.theme-light .bg-data-module-bg.rounded-md,
+body.theme-light .bg-data-module-bg.rounded-lg,
+body.theme-light .bg-data-module-bg.rounded-xl {
+    border: 1px solid rgba(0,0,0,0.07);
+}
+body.theme-light .bg-sidebar.rounded-sm,
+body.theme-light .bg-sidebar.rounded-md,
+body.theme-light .bg-sidebar.rounded-lg {
+    border: 1px solid rgba(0,0,0,0.07);
+}
+
+/* Timeline box should have a faint blue-grey tint in light mode */
+body.theme-light .timeline-box {
+    background-color: rgba(71, 85, 105, 0.10) !important; /* slate-600 with alpha */
+}

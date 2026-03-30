@@ -424,7 +424,7 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
   }
 
   return (
-    <div className="bg-data-module-bg/92 rounded-md p-2.5 mb-2 border border-white/10 sticky top-0 z-20 backdrop-blur-[1px]">
+    <div className="timeline-box bg-data-module-bg/92 rounded-md p-2.5 mb-2 border border-white/10 sticky top-0 z-20 backdrop-blur-[1px]">
       {header}
 
       <div className="flex items-center gap-1.5 mt-1.5 mb-1.5 flex-wrap">

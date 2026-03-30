@@ -190,7 +190,8 @@ const Throttle_Mapper: React.FC = () => {
             CANVAS_SIZE - PADDING - val * (CANVAS_SIZE - 2 * PADDING);
 
         // Grid
-        ctx.strokeStyle = "#e5e7eb";
+        const styles = getComputedStyle(document.body);
+        ctx.strokeStyle = styles.getPropertyValue("--color-text-secondary").trim() || "#e5e7eb";
         ctx.lineWidth = 1;
         ctx.beginPath();
         for (let i = 0; i <= 10; i++) {
@@ -203,7 +204,7 @@ const Throttle_Mapper: React.FC = () => {
         ctx.stroke();
 
         // Axes
-        ctx.strokeStyle = "#9ca3af";
+        ctx.strokeStyle = styles.getPropertyValue("--color-text-muted").trim() || "#9ca3af";
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(scaleX(0), scaleY(0));
@@ -213,7 +214,7 @@ const Throttle_Mapper: React.FC = () => {
         ctx.stroke();
 
         // Labels
-        ctx.fillStyle = "#6b7280";
+        ctx.fillStyle = styles.getPropertyValue("--color-text-muted").trim() || "#6b7280";
         ctx.font = "10px sans-serif";
         ctx.fillText("0%", scaleX(0) - 10, scaleY(0) + 15);
         ctx.fillText("100% Input", scaleX(1) - 60, scaleY(0) + 15);

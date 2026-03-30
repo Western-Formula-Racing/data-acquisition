@@ -168,8 +168,8 @@ function exportPecanSession(
 function rowClass(dir: string | undefined, idx: number): string {
   const base =
     idx % 2 === 0
-      ? "bg-[#0f0e17] hover:bg-[#1a1929]"
-      : "bg-[#121120] hover:bg-[#1a1929]";
+      ? "bg-[var(--color-data-module-bg)] hover:bg-[var(--color-option-select)]"
+      : "bg-[var(--color-background)] hover:bg-[var(--color-option-select)]";
   if (dir === "tx") return `${base} text-amber-400/90`;
   return `${base} text-slate-300`;
 }
@@ -511,9 +511,9 @@ function Trace() {
   const totalFrames = frames.length;
 
   return (
-    <div className="h-full flex flex-col bg-[#0d0c11] text-slate-200 overflow-hidden">
+    <div className="h-full flex flex-col bg-[var(--color-background)] text-slate-200 overflow-hidden">
       {/* ── Toolbar ── */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-white/10 bg-[#100f1a] flex-shrink-0 flex-wrap">
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-white/10 bg-[var(--color-sidebar)] flex-shrink-0 flex-wrap">
         {/* Title */}
         <span
           id="trace-toolbar-title"
@@ -632,7 +632,7 @@ function Trace() {
       {viewMode === "scroll" ? (
         <div
           id="trace-table-header"
-          className="flex items-center font-mono text-[10px] uppercase tracking-widest text-slate-600 bg-[#0a0912] border-b border-white/[0.06] flex-shrink-0 px-0 py-1"
+          className="flex items-center font-mono text-[10px] uppercase tracking-widest text-slate-600 bg-[var(--color-background)] border-b border-white/[0.06] flex-shrink-0 px-0 py-1"
         >
           <span className="w-14 shrink-0 px-2 text-right">#</span>
           <span className="w-32 shrink-0 px-2">Timestamp</span>
@@ -647,7 +647,7 @@ function Trace() {
       ) : (
         <div
           id="trace-table-header"
-          className="flex items-center font-mono text-[10px] uppercase tracking-widest text-slate-600 bg-[#0a0912] border-b border-white/[0.06] flex-shrink-0 px-0 py-1"
+          className="flex items-center font-mono text-[10px] uppercase tracking-widest text-slate-600 bg-[var(--color-background)] border-b border-white/[0.06] flex-shrink-0 px-0 py-1"
         >
           <span className="w-14 shrink-0 px-2 text-right">#</span>
           <span className="w-32 shrink-0 px-2">Timestamp</span>
@@ -692,7 +692,7 @@ function Trace() {
       {/* ── Status bar ── */}
       <div
         id="trace-status-bar"
-        className="flex items-center gap-4 px-4 py-1 border-t border-white/[0.06] bg-[#0a0912] text-[10px] font-mono text-slate-600 flex-shrink-0"
+        className="flex items-center gap-4 px-4 py-1 border-t border-white/[0.06] bg-[var(--color-background)] text-[10px] font-mono text-slate-600 flex-shrink-0"
       >
         <span>
           Buffer: {Math.min(totalFrames, 10000).toLocaleString()} / 10,000

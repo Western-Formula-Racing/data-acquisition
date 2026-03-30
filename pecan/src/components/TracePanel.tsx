@@ -143,7 +143,7 @@ export default function TracePanel({
 
   return (
     <div
-      className="fixed z-40 flex flex-col bg-[#05040a]/95 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-md overflow-hidden max-w-[90vw]"
+      className="fixed z-40 flex flex-col bg-[var(--color-trace-panel-bg)]/95 border border-white/10 rounded-2xl shadow-2xl backdrop-blur-md overflow-hidden max-w-[90vw]"
       style={{
         top: position.top,
         left: position.left,
@@ -152,7 +152,7 @@ export default function TracePanel({
       }}
     >
       <div
-        className="flex items-center justify-between px-3 py-1.5 border-b border-white/10 bg-[#0b0a14]/90 cursor-move select-none touch-none"
+        className="flex items-center justify-between px-3 py-1.5 border-b border-white/10 bg-[var(--color-trace-panel-header-bg)]/90 cursor-move select-none touch-none"
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest("button")) return;
           e.preventDefault();
@@ -252,7 +252,7 @@ export default function TracePanel({
           <table
             className="w-full border-collapse text-[11px] font-mono"
           >
-            <thead className="bg-[#080715] text-slate-500 sticky top-0">
+            <thead className="bg-[var(--color-trace-header-bg)] text-slate-500 sticky top-0">
               <tr>
                 <th className="px-2 py-1 text-left w-24">Time</th>
                 <th className="px-2 py-1 text-left w-16">ID</th>
@@ -266,8 +266,8 @@ export default function TracePanel({
                 <tr
                   key={`${f.timestamp}-${idx}`}
                   className={
-                    (idx % 2 === 0 ? "bg-[#060515]" : "bg-[#050311]") +
-                    " hover:bg-[#151329]"
+                    (idx % 2 === 0 ? "bg-[var(--color-trace-panel-row-alt)]" : "bg-[var(--color-trace-panel-row-alt2)]") +
+                    " hover:bg-[var(--color-trace-panel-row-hover)]"
                   }
                 >
                   <td className="px-2 py-0.5 text-slate-400">

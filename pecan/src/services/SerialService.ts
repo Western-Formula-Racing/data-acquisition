@@ -38,6 +38,8 @@ export class SerialService {
     private isConnected: boolean = false;
     // Hold decoder instance to parse messages
     private canInstance: Can | null = null;
+    // Track previous theme to restore on disconnect
+    private previousTheme: string | null = null;
 
     // Callbacks for UI updates (legacy, use event listener for new code)
     public onConnectionChange: ((connected: boolean) => void) | null = null;
@@ -74,7 +76,8 @@ export class SerialService {
 
             this.notifyConnectionChange(true);
 
-            // Apply orange theme for local CAN mode
+            // Save current theme and apply local CAN mode theme
+            this.previousTheme = localStorage.getItem("pecan:theme");
             document.body.classList.add("theme-local-can");
 
             console.log('Serial port opened');
@@ -162,8 +165,11 @@ export class SerialService {
                 this.port = null;
             }
 
-            // Revert orange theme
+            // Revert local CAN mode theme and restore previous light/dark theme
             document.body.classList.remove("theme-local-can");
+            if (this.previousTheme === "light") {
+                document.body.classList.add("theme-light");
+            }
 
             // Resume WebSocket ingestion
             webSocketService.setSuppressIngestion(false);

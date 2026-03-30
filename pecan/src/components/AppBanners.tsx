@@ -58,7 +58,7 @@ function DefaultBanner({ open, onClose, onOpenSettings }: Readonly<InputProps>) 
       <div className="flex items-center gap-2">
         <span className="text-white text-[14pt] font-semibold text-center whitespace-nowrap overflow-hidden text-ellipsis">
           Using preconfigured DBC file.
-          <span className="text-gray-300 ml-2 font-normal">
+          <span className="ml-2 font-normal opacity-80">
             (Dismissing in {timeLeft}s)
           </span>
         </span>

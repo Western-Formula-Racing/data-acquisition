@@ -40,6 +40,15 @@ export default function ChargingCurve({
 }: ChargingCurveProps) {
     const [data, setData] = useState<ChartDataPoint[]>([]);
 
+    const chartColors = useMemo(() => {
+        const styles = getComputedStyle(document.body);
+        return {
+            tickColor: styles.getPropertyValue("--color-text-muted").trim() || "#9ca3af",
+            axisColor: styles.getPropertyValue("--color-border-strong").trim() || "#374151",
+            tooltipBg: styles.getPropertyValue("--color-data-module-bg").trim() || "#1f2937",
+        };
+    }, [data]);
+
     // Update chart data every second
     useEffect(() => {
         const updateData = () => {
@@ -149,18 +158,18 @@ export default function ChargingCurve({
                         dataKey="time"
                         type="number"
                         domain={[-(timeWindowMs / 1000), 0]}
-                        tick={{ fill: '#9ca3af', fontSize: 10 }}
+                        tick={{ fill: chartColors.tickColor, fontSize: 10 }}
                         tickFormatter={(v) => `${v}s`}
-                        axisLine={{ stroke: '#374151' }}
-                        tickLine={{ stroke: '#374151' }}
+                        axisLine={{ stroke: chartColors.axisColor }}
+                        tickLine={{ stroke: chartColors.axisColor }}
                     />
                     <YAxis
                         yAxisId="voltage"
                         domain={voltageRange}
                         tick={{ fill: '#22c55e', fontSize: 10 }}
                         tickFormatter={(v) => `${v.toFixed(1)}V`}
-                        axisLine={{ stroke: '#374151' }}
-                        tickLine={{ stroke: '#374151' }}
+                        axisLine={{ stroke: chartColors.axisColor }}
+                        tickLine={{ stroke: chartColors.axisColor }}
                         width={45}
                     />
                     <YAxis
@@ -169,18 +178,18 @@ export default function ChargingCurve({
                         domain={tempRange}
                         tick={{ fill: '#f97316', fontSize: 10 }}
                         tickFormatter={(v) => `${v}°`}
-                        axisLine={{ stroke: '#374151' }}
-                        tickLine={{ stroke: '#374151' }}
+                        axisLine={{ stroke: chartColors.axisColor }}
+                        tickLine={{ stroke: chartColors.axisColor }}
                         width={35}
                     />
                     <Tooltip
                         contentStyle={{
-                            backgroundColor: '#1f2937',
-                            border: '1px solid #374151',
+                            backgroundColor: chartColors.tooltipBg,
+                            border: `1px solid ${chartColors.axisColor}`,
                             borderRadius: '4px',
                             fontSize: '11px',
                         }}
-                        labelStyle={{ color: '#9ca3af' }}
+                        labelStyle={{ color: chartColors.tickColor }}
                         formatter={(value, name) => {
                             if (value === undefined) return ['--', name];
                             const v = value as number;

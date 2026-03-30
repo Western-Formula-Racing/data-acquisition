@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router";
 import DataCard from "../components/DataCard";
 import DataRow from "../components/DataRow";
@@ -8,17 +8,10 @@ import PlotControls from "../components/PlotControls";
 import TracePanel from "../components/TracePanel";
 import { dataStore } from "../lib/DataStore";
 import { useAllLatestMessages, useDataStoreStats } from "../lib/useDataStore";
-import atozIcon from "../assets/atoz.png";
-import ztoaIcon from "../assets/ztoa.png";
-import sortIcon from "../assets/sort.png";
-import idAscendingIcon from "../assets/id_ascending.png";
-import idDescendingIcon from "../assets/id_descending.png";
-import listViewIcon from "../assets/list-view.png";
-import gridViewIcon from "../assets/grid-view.png";
 import TourGuide from "../components/TourGuide";
 import type { TourStep } from "../components/TourGuide";
 import { useRemoteConfig } from "../lib/useRemoteConfig";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle, ArrowDownAZ, ArrowUpZA, Tag, ArrowDown01, ArrowUp10, LayoutList, LayoutGrid } from "lucide-react";
 import TimelineBar from "../components/TimelineBar";
 import { useTimeline } from "../context/TimelineContext";
 import type { ReplayPlotLayout } from "../types/replay";
@@ -85,7 +78,7 @@ function Dashboard() {
   const [sortingMethod, setSortingMethod] = useState("name");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [tickUpdate, setTickUpdate] = useState(Date.now());
-  const [currentSortIcon, setCurrentSortIcon] = useState(atozIcon);
+  const [currentSortIcon, setCurrentSortIcon] = useState<React.ReactNode>(<ArrowDownAZ size={20} />);
   const [viewMode, setViewMode] = useState<"cards" | "list">("list");
 
   const [tourOpen, setTourOpen] = useState(false);
@@ -338,8 +331,8 @@ function Dashboard() {
         sortingFilter.current.prev = "name";
         setCurrentSortIcon(
           sortingFilter.current.name == 0
-            ? atozIcon
-            : ztoaIcon
+            ? <ArrowDownAZ size={20} />
+            : <ArrowUpZA size={20} />
         );
         break;
       case "category":
@@ -347,7 +340,7 @@ function Dashboard() {
           sortingFilter.current.category = 1 - sortingFilter.current.category;
         }
         sortingFilter.current.prev = "category";
-        setCurrentSortIcon(sortIcon);
+        setCurrentSortIcon(<Tag size={20} />);
         break;
       case "id":
         if (sortingFilter.current.prev == "id") {
@@ -356,8 +349,8 @@ function Dashboard() {
         sortingFilter.current.prev = "id";
         setCurrentSortIcon(
           sortingFilter.current.id == 0
-            ? idAscendingIcon
-            : idDescendingIcon
+            ? <ArrowDown01 size={20} />
+            : <ArrowUp10 size={20} />
         );
         break;
     }
@@ -591,9 +584,9 @@ function Dashboard() {
                 <div id="dash-sort-btn" className="relative">
                   <button
                     onClick={() => setSortMenuOpen((o) => !o)}
-                    className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
+                    className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors text-[var(--color-text-secondary)]"
                   >
-                    <img src={currentSortIcon} alt="Sort" />
+                    {currentSortIcon}
                   </button>
                   {sortMenuOpen && (
                     <div className="flex flex-col block fixed top-30 z-100 rounded-md bg-dropdown-menu-bg w-30 h-20 text-center text-white">
@@ -640,17 +633,17 @@ function Dashboard() {
                 <div id="dash-view-toggle" className="hidden md:flex">
                   <button
                     onClick={() => setViewMode("list")}
-                    className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
+                    className={`w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer transition-colors ${viewMode === "list" ? "bg-data-textbox-bg text-[var(--color-text-primary)]" : "hover:bg-data-textbox-bg/50 text-[var(--color-text-secondary)]"}`}
                     aria-pressed={viewMode === "list"}
                   >
-                    <img src={listViewIcon} alt="List view" />
+                    <LayoutList size={20} />
                   </button>
                   <button
                     onClick={() => setViewMode("cards")}
-                    className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
+                    className={`w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer transition-colors ${viewMode === "cards" ? "bg-data-textbox-bg text-[var(--color-text-primary)]" : "hover:bg-data-textbox-bg/50 text-[var(--color-text-secondary)]"}`}
                     aria-pressed={viewMode === "cards"}
                   >
-                    <img src={gridViewIcon} alt="Grid view" />
+                    <LayoutGrid size={20} />
                   </button>
                 </div>
 
