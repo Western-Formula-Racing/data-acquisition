@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTimeline } from "../context/TimelineContext";
 import { dataStore, type TelemetrySample } from "../lib/DataStore";
 import { coldStore } from "../lib/ColdStore";
-import type { ReplayFrame, ReplayPlotLayout, ReplaySession } from "../types/replay";
+import type { ReplayFrame, ReplayPlotLayout } from "../types/replay";
 import { parseReplayFile } from "../utils/replayParser";
+import { serializePecanV2 } from "../utils/pecanSerializer";
 
 interface TimelineBarProps {
   plotLayouts?: ReplayPlotLayout[];
@@ -270,9 +271,12 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
 
       let frames: ReplayFrame[] = [];
 
+      let epochBaseMs: number | undefined;
+
       if (source === "replay" && replaySession) {
         const minRelMs        = replaySession.frames[0]?.tRelMs ?? 0;
         const replayEpochBase = replaySession.startTimeMs - minRelMs;
+        epochBaseMs = rangeStart;
 
         frames = replaySession.frames
           .filter((frame) => {
@@ -285,17 +289,16 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
               : replayEpochBase + frame.tRelMs;
             return {
               tRelMs:    Math.max(0, absTime - rangeStart),
-              tLocalTime: formatLocalTimestamp(absTime),
               canId:     frame.canId,
               isExtended: frame.isExtended,
               direction: frame.direction,
               dlc:       frame.dlc,
               dataHex:   frame.dataHex,
-              channel:   frame.channel,
-              source:    frame.source,
             };
           });
       } else {
+        epochBaseMs = rangeStart;
+
         // Hot-buffer frames for the range.
         const hotFrames: ReplayFrame[] = dataStore
           .getTrace()
@@ -307,15 +310,13 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
         const coldFrames: ReplayFrame[] = coldRawFrames.map((f) => ({
           tRelMs:    Math.max(0, f.timestamp - rangeStart),
           tEpochMs:  f.timestamp,
-          tLocalTime: formatLocalTimestamp(f.timestamp),
           canId:     f.canId,
           isExtended: f.canId > 0x7FF,
           direction: f.direction,
           dlc:       f.dlc,
           dataHex:   Array.from(f.data.slice(0, f.dlc))
-                       .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+                       .map((b) => b.toString(16).padStart(2, "0"))
                        .join(""),
-          source:    "cold-export",
         }));
 
         // Merge hot + cold, sort by epoch time.
@@ -324,10 +325,9 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
         );
       }
 
-      const session: ReplaySession = {
-        format:  "pecan-session",
-        version: 1,
+      const blob = new Blob([serializePecanV2({
         frames,
+        epochBaseMs,
         timeline: {
           windowMs,
           lastCursorMs: Math.max(0, sliderValue - rangeStart),
@@ -340,9 +340,7 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
             })),
         },
         plots: plotLayouts.length > 0 ? { layouts: plotLayouts } : undefined,
-      };
-
-      const blob = new Blob([JSON.stringify(session, null, 2)], { type: "application/json" });
+      })], { type: "application/json" });
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
       a.href     = url;

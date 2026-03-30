@@ -107,29 +107,61 @@ describe("replayParser", () => {
   });
 
   describe("parsePecanSessionJson", () => {
-    it("parses valid pecan session", () => {
+    it("parses valid v2 pecan session", () => {
+      // flags: 0 = rx + standard
       const content = JSON.stringify({
         format: "pecan-session",
-        version: 1,
-        frames: [
-          {
-            tRelMs: 0,
-            canId: 256,
-            isExtended: false,
-            direction: "rx",
-            dlc: 2,
-            dataHex: "0A0B",
-          },
-        ],
-        timeline: {
-          windowMs: 30000,
-        },
+        version: 2,
+        columns: ["tRelMs", "canId", "flags", "dataHex"],
+        frames: [[0, 256, 0, "0a0b"]],
+        timeline: { windowMs: 30000 },
       });
 
       const result = parsePecanSessionJson(content);
       expect(result.errors).toHaveLength(0);
       expect(result.frames).toHaveLength(1);
+      expect(result.frames[0]).toMatchObject({
+        tRelMs: 0,
+        canId: 256,
+        isExtended: false,
+        direction: "rx",
+        dlc: 2,
+        dataHex: "0a0b",
+      });
       expect(result.sessionMeta?.timeline?.windowMs).toBe(30000);
+    });
+
+    it("decodes flags correctly (tx + extended)", () => {
+      // flags: 3 = isExtended(bit0=1) + isTx(bit1=1)
+      const content = JSON.stringify({
+        format: "pecan-session",
+        version: 2,
+        columns: ["tRelMs", "canId", "flags", "dataHex"],
+        frames: [[100, 512, 3, "01020304"]],
+      });
+
+      const result = parsePecanSessionJson(content);
+      expect(result.errors).toHaveLength(0);
+      expect(result.frames[0]).toMatchObject({
+        isExtended: true,
+        direction: "tx",
+        dlc: 4,
+      });
+    });
+
+    it("derives tEpochMs from epochBaseMs", () => {
+      const epochBaseMs = 1700000000000;
+      const content = JSON.stringify({
+        format: "pecan-session",
+        version: 2,
+        columns: ["tRelMs", "canId", "flags", "dataHex"],
+        epochBaseMs,
+        frames: [[500, 256, 0, "aa"]],
+      });
+
+      const result = parsePecanSessionJson(content);
+      expect(result.errors).toHaveLength(0);
+      expect(result.frames[0].tEpochMs).toBe(epochBaseMs + 500);
     });
 
     it("fails on invalid JSON", () => {
@@ -145,24 +177,27 @@ describe("replayParser", () => {
       expect(result.errors.some((e) => e.field === "version")).toBe(true);
     });
 
-    it("fails frame validation", () => {
+    it("fails on malformed frame tuple", () => {
       const result = parsePecanSessionJson(
         JSON.stringify({
           format: "pecan-session",
-          version: 1,
-          frames: [
-            {
-              tRelMs: -1,
-              canId: 256,
-              isExtended: false,
-              direction: "rx",
-              dlc: 1,
-              dataHex: "AA",
-            },
-          ],
+          version: 2,
+          columns: ["tRelMs", "canId", "flags", "dataHex"],
+          frames: [[123]],
         })
       );
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
 
+    it("fails frame validation on negative tRelMs", () => {
+      const result = parsePecanSessionJson(
+        JSON.stringify({
+          format: "pecan-session",
+          version: 2,
+          columns: ["tRelMs", "canId", "flags", "dataHex"],
+          frames: [[-1, 256, 0, "aa"]],
+        })
+      );
       expect(result.errors.some((e) => e.field === "t_rel_ms")).toBe(true);
     });
   });

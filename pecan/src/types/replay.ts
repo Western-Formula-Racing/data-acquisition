@@ -13,6 +13,13 @@ export interface ReplayFrame {
   source?: string;
 }
 
+/**
+ * Compact frame tuple: [tRelMs, canId, flags, dataHex]
+ * flags: bit0 = isExtended, bit1 = isTx (direction === "tx")
+ * dlc is derived from dataHex.length / 2
+ */
+export type ReplayFrameTuple = [number, number, number, string];
+
 export interface ReplayDecodeEmbeddedDBC {
   format: "dbc";
   encoding: "utf-8";
@@ -56,8 +63,12 @@ export interface ReplayPlotsMetadata {
 
 export interface ReplaySession {
   format: "pecan-session";
-  version: 1;
-  frames: ReplayFrame[];
+  version: 2;
+  /** Column names for each position in the frame tuples. Always ["tRelMs","canId","flags","dataHex"]. */
+  columns: ["tRelMs", "canId", "flags", "dataHex"];
+  /** Wall-clock base for tRelMs. epoch_ms = epochBaseMs + tRelMs. */
+  epochBaseMs?: number;
+  frames: ReplayFrameTuple[];
   decode?: ReplayDecodeMetadata;
   timeline?: ReplayTimelineMetadata;
   plots?: ReplayPlotsMetadata;

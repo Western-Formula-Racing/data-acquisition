@@ -207,8 +207,8 @@ export function parsePecanSessionJson(content: string): ReplayParseResult {
   if (session.format !== "pecan-session") {
     errors.push({ field: "format", message: "format must be 'pecan-session'" });
   }
-  if (session.version !== 1) {
-    errors.push({ field: "version", message: "version must be 1" });
+  if (session.version !== 2) {
+    errors.push({ field: "version", message: "version must be 2" });
   }
   if (!Array.isArray(session.frames)) {
     errors.push({ field: "frames", message: "frames must be an array" });
@@ -219,20 +219,28 @@ export function parsePecanSessionJson(content: string): ReplayParseResult {
   }
 
   const frames: ReplayFrame[] = [];
-  const sourceFrames = session.frames as Partial<ReplayFrame>[];
+  const epochBase: number | undefined = typeof (session as Record<string, unknown>).epochBaseMs === "number"
+    ? (session as Record<string, unknown>).epochBaseMs as number
+    : undefined;
 
-  sourceFrames.forEach((frameLike, idx) => {
+  (session.frames as unknown[]).forEach((row, idx) => {
+    if (!Array.isArray(row) || row.length < 4) {
+      errors.push({ row: idx + 1, message: "frame must be a 4-element array [tRelMs, canId, flags, dataHex]" });
+      return;
+    }
+
+    const [tRelMs, canId, flags, dataHexRaw] = row as [unknown, unknown, unknown, unknown];
+    const dataHex = normalizeHex(String(dataHexRaw ?? ""));
+    const dlc = dataHex.length / 2;
+
     const frame: ReplayFrame = {
-      tRelMs: Number(frameLike.tRelMs),
-      canId: Number(frameLike.canId),
-      isExtended: Boolean(frameLike.isExtended),
-      direction: frameLike.direction === "tx" ? "tx" : "rx",
-      dlc: Number(frameLike.dlc),
-      dataHex: normalizeHex(String(frameLike.dataHex ?? "")),
-      tEpochMs: frameLike.tEpochMs !== undefined ? Number(frameLike.tEpochMs) : undefined,
-      tLocalTime: frameLike.tLocalTime !== undefined ? String(frameLike.tLocalTime) : undefined,
-      channel: frameLike.channel,
-      source: frameLike.source,
+      tRelMs: Number(tRelMs),
+      canId: Number(canId),
+      isExtended: Boolean(Number(flags) & 1),
+      direction: (Number(flags) & 2) ? "tx" : "rx",
+      dlc,
+      dataHex,
+      tEpochMs: epochBase !== undefined ? epochBase + Number(tRelMs) : undefined,
     };
 
     const frameErrors = validateFrame(frame, idx + 1);

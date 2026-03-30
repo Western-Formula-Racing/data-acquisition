@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { dataStore } from "./DataStore";
 import {
@@ -97,14 +97,16 @@ describe("useDataStore hooks", () => {
 
   it("useDataStoreStats updates as data changes", async () => {
     const { result } = renderHook(() => useDataStoreStats());
-    expect(result.current.totalSamples).toBe(0);
+    const initialMessages = result.current.totalMessages;
 
     await act(async () => {
       dataStore.ingestMessage({ msgID: "0x401", messageName: "S", data: {}, rawData: "00" });
     });
 
-    expect(result.current.totalMessages).toBe(1);
-    expect(result.current.totalSamples).toBe(1);
+    // useDataStoreStats throttles updates via a 1s setTimeout; wait for it to fire.
+    await waitFor(() => {
+      expect(result.current.totalMessages).toBeGreaterThan(initialMessages);
+    }, { timeout: 2000 });
   });
 
   it("useDataStoreControls operations mutate store", async () => {

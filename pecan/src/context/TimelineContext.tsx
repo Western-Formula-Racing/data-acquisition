@@ -188,9 +188,7 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
 
         setCollectionStartMs(extendedStart);
         setCollectionEndMs(stats.newestSample);
-      }
 
-      if (mode === "live") {
         if (stats.newestSample !== null) {
           setSelectedTimeMs(stats.newestSample);
         } else if (extendedStart === null) {

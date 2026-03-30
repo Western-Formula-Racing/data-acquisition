@@ -18,8 +18,10 @@ import { DefaultBanner, CacheBanner, RecoveredSessionBanner } from "./components
 import FloatingTools from "./components/FloatingTools";
 import { useRemoteConfig } from "./lib/useRemoteConfig";
 import { updateCategories } from "./config/categories";
+import { useTimeline } from "./context/TimelineContext";
 
 function App() {
+  const { clearCheckpoints } = useTimeline();
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
@@ -69,6 +71,7 @@ function App() {
     dataStore.clear();
     dataStore.setActiveSource("live");
     dataStore.clearPersistedSnapshot();
+    clearCheckpoints();
     // Also wipe the OPFS cold store so getColdExtent() returns null and
     // TimelineContext resets its collectionStartMs to null (not the old timestamps).
     coldStore.clear().catch(console.warn);

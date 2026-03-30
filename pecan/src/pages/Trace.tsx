@@ -9,7 +9,7 @@ import { Link, useSearchParams } from "react-router";
 import { Play, Pause, Trash2, HelpCircle } from "lucide-react";
 import { useTraceBuffer } from "../lib/useDataStore";
 import type { TelemetrySample } from "../lib/DataStore";
-import type { ReplaySession } from "../types/replay";
+import { serializePecanV2 } from "../utils/pecanSerializer";
 import TourGuide, { type TourStep } from "../components/TourGuide";
 import RaceCarGame from "../components/RaceCarGame";
 import TimelineBar from "../components/TimelineBar";
@@ -125,9 +125,9 @@ function exportPecanSession(
   windowMs: number
 ): void {
   const baseTimestamp = frames[0]?.timestamp ?? Date.now();
-  const session: ReplaySession = {
-    format: "pecan-session",
-    version: 1,
+
+  const blob = new Blob([serializePecanV2({
+    epochBaseMs: baseTimestamp,
     frames: frames.map((frame) => {
       const canIdNumeric = parseCanIdToNumber(frame.msgID);
       const dataHex = rawDataToHex(frame.rawData);
@@ -135,13 +135,11 @@ function exportPecanSession(
 
       return {
         tRelMs: Math.max(0, frame.timestamp - baseTimestamp),
-        tEpochMs: frame.timestamp,
         canId: canIdNumeric,
         isExtended: canIdNumeric > 0x7ff,
         direction: frame.direction ?? "rx",
         dlc,
         dataHex,
-        source: "trace",
       };
     }),
     timeline: {
@@ -152,9 +150,7 @@ function exportPecanSession(
         tRelMs: Math.max(0, checkpoint.timeMs - baseTimestamp),
       })),
     },
-  };
-
-  const blob = new Blob([JSON.stringify(session, null, 2)], { type: "application/json" });
+  })], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
