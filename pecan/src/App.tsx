@@ -9,6 +9,7 @@ import {
   usingCachedDBC,
 } from "./utils/canProcessor";
 import { dataStore } from "./lib/DataStore";
+import { coldStore } from "./lib/ColdStore";
 import { Outlet } from "react-router";
 import { webSocketService } from "./services/WebSocketService";
 import { telemetryHandler } from "./services/TelemetryHandler";
@@ -68,6 +69,9 @@ function App() {
     dataStore.clear();
     dataStore.setActiveSource("live");
     dataStore.clearPersistedSnapshot();
+    // Also wipe the OPFS cold store so getColdExtent() returns null and
+    // TimelineContext resets its collectionStartMs to null (not the old timestamps).
+    coldStore.clear().catch(console.warn);
   };
 
   useEffect(() => {

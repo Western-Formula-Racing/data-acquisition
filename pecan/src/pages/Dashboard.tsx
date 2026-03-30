@@ -848,20 +848,21 @@ function Dashboard() {
             <h3 className="text-white font-semibold mb-2">Plot Settings</h3>
             <div className="flex flex-col gap-2">
               <label className="text-gray-300 text-sm">
-                Time Window (seconds):
+                Time Window (seconds, max 120):
               </label>
               <input
                 type="number"
-                min="0"
-                max="300"
-                value={plotTimeWindow / 1000}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (value === '' || value === null) {
-                    return;
-                  }
-                  const seconds = Math.max(0, Math.min(300, Number(value)));
+                min="1"
+                max="120"
+                defaultValue={plotTimeWindow / 1000}
+                key={plotTimeWindow}
+                onBlur={(e) => {
+                  const seconds = Math.max(1, Math.min(120, Number(e.target.value) || 1));
+                  e.target.value = String(seconds);
                   setPlotTimeWindow(seconds * 1000);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                 }}
                 className="bg-data-textbox-bg text-white rounded px-2 py-1 text-sm"
               />
@@ -949,6 +950,11 @@ function Dashboard() {
                 Store: {dataStoreStats.totalMessages} msgs, {dataStoreStats.totalSamples} samples
               </span>
               <span className="hidden lg:inline">Store Mem: {dataStoreStats.memoryEstimateMB}MB</span>
+              {dataStoreStats.coldDurationMs > 0 && (
+                <span className={`hidden xl:inline ${dataStoreStats.coldNearingLimit ? "text-amber-400" : ""}`}>
+                  Cold: {Math.round(dataStoreStats.coldDurationMs / 60000)}m / {Math.round(dataStoreStats.coldSizeBytes / (1024 * 1024))}MB
+                </span>
+              )}
             </div>
           )}
           <button

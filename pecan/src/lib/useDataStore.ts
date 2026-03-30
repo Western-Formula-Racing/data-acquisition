@@ -177,29 +177,65 @@ export function useAllSignals(): { msgID: string, signalName: string }[] {
 }
 
 /**
- * Hook to get DataStore statistics
- * 
- * @returns DataStore stats object
+ * Hook to get DataStore statistics.
+ * Throttled to at most once per second to avoid rebuilding stats on every frame.
  */
-export function useDataStoreStats(): {
-  totalMessages: number;
-  totalSamples: number;
-  oldestSample: number | null;
-  newestSample: number | null;
-  memoryEstimateMB: number;
-} {
+export function useDataStoreStats(): ReturnType<typeof dataStore.getStats> {
   const [stats, setStats] = useState(() => dataStore.getStats());
 
   useEffect(() => {
-    // Update stats on every data change
-    const unsubscribe = dataStore.subscribe(() => {
-      setStats(dataStore.getStats());
-    });
+    let scheduled = false;
 
+    const schedule = () => {
+      if (scheduled) return;
+      scheduled = true;
+      setTimeout(() => {
+        scheduled = false;
+        setStats(dataStore.getStats());
+      }, 1000);
+    };
+
+    const unsubscribe = dataStore.subscribe(schedule);
     return unsubscribe;
   }, []);
 
   return stats;
+}
+
+/**
+ * Hook for warm-cache loading state and cold-store warnings.
+ * Updates whenever a warm-cache prefetch starts/finishes or a cold warning fires.
+ */
+export function useColdStoreState(): {
+  isLoading: boolean;
+  coldWarning: string | null;
+  coldSizeBytes: number;
+  coldDurationMs: number;
+  coldNearingLimit: boolean;
+} {
+  const [isLoading,       setIsLoading]       = useState(() => dataStore.isColdCacheLoading());
+  const [coldWarning,     setColdWarning]     = useState<string | null>(null);
+  const [coldSizeBytes,   setColdSizeBytes]   = useState(() => dataStore.getColdStoreSizeBytes());
+  const [coldDurationMs,  setColdDurationMs]  = useState(() => dataStore.getColdExtent()?.endMs
+    ? (dataStore.getColdExtent()!.endMs - dataStore.getColdExtent()!.startMs) : 0);
+  const [coldNearingLimit, setColdNearingLimit] = useState(() => dataStore.isColdNearingLimit());
+
+  useEffect(() => {
+    const unsubscribe = dataStore.subscribeColdState(() => {
+      setIsLoading(dataStore.isColdCacheLoading());
+
+      const warning = dataStore.consumeColdWarning();
+      if (warning) setColdWarning(warning);
+
+      setColdSizeBytes(dataStore.getColdStoreSizeBytes());
+      const extent = dataStore.getColdExtent();
+      setColdDurationMs(extent ? extent.endMs - extent.startMs : 0);
+      setColdNearingLimit(dataStore.isColdNearingLimit());
+    });
+    return unsubscribe;
+  }, []);
+
+  return { isLoading, coldWarning, coldSizeBytes, coldDurationMs, coldNearingLimit };
 }
 
 /**

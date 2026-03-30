@@ -39,6 +39,11 @@ interface TimelineContextValue {
     frames: ReplayFrame[];
     plots?: ReplayPlotsMetadata;
   } | null;
+  /** True while a cold-store prefetch is in flight for the current scrub position. */
+  isColdLoading: boolean;
+  /** Warning message when cold storage is approaching its 1 h limit. */
+  coldWarning: string | null;
+  dismissColdWarning: () => void;
   setWindowMs: (windowMs: number) => void;
   seek: (timeMs: number) => void;
   goLive: () => void;
@@ -136,6 +141,20 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
   const [latestLiveDataMs, setLatestLiveDataMs] = useState<number | null>(null);
   const [replaySession, setReplaySession] = useState<TimelineContextValue["replaySession"]>(null);
 
+  // Cold store state
+  const [isColdLoading, setIsColdLoading] = useState(false);
+  const [coldWarning, setColdWarning] = useState<string | null>(null);
+
+  // Subscribe to cold-store state changes (loading, warnings).
+  useEffect(() => {
+    const unsubscribe = dataStore.subscribeColdState(() => {
+      setIsColdLoading(dataStore.isColdCacheLoading());
+      const warning = dataStore.consumeColdWarning();
+      if (warning) setColdWarning(warning);
+    });
+    return unsubscribe;
+  }, []);
+
   useEffect(() => {
     dataStore.setActiveSource(source);
   }, [source]);
@@ -154,16 +173,30 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const stats = dataStore.getStats("live");
+      const stats      = dataStore.getStats("live");
+      const coldExtent = dataStore.getColdExtent();
+
       setLatestLiveDataMs(stats.newestSample);
 
       if (mode === "live") {
-        setCollectionStartMs(stats.oldestSample);
+        // Extend collection start to include cold-store history.
+        const hotOldest  = stats.oldestSample;
+        const coldOldest = coldExtent?.startMs ?? null;
+        const extendedStart =
+          hotOldest !== null && coldOldest !== null ? Math.min(hotOldest, coldOldest)
+          : hotOldest ?? coldOldest;
+
+        setCollectionStartMs(extendedStart);
         setCollectionEndMs(stats.newestSample);
       }
 
-      if (mode === "live" && stats.newestSample !== null) {
-        setSelectedTimeMs(stats.newestSample);
+      if (mode === "live") {
+        if (stats.newestSample !== null) {
+          setSelectedTimeMs(stats.newestSample);
+        } else if (extendedStart === null) {
+          // Store was fully cleared — reset cursor to now so stale timestamps don't linger.
+          setSelectedTimeMs(Date.now());
+        }
       }
     };
 
@@ -188,7 +221,8 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
   }, [checkpoints, source]);
 
   const setWindowMs = useCallback((value: number) => {
-    const clamped = Math.max(1000, Math.min(60 * 60 * 1000, value));
+    // Hard cap at 120 s — plot window beyond this exhausts the warm cache budget.
+    const clamped = Math.max(1000, Math.min(120_000, value));
     setWindowMsState(clamped);
   }, []);
 
@@ -197,6 +231,23 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
       const clamped = clampTime(timeMs, collectionStartMs, collectionEndMs);
       setSelectedTimeMs(clamped);
       setMode("paused");
+
+      // If the cursor moved into cold territory, prefetch a warm cache window.
+      if (source === "live") {
+        const hotStats  = dataStore.getStats("live");
+        const hotOldest = hotStats.oldestSample;
+        if (hotOldest !== null && clamped < hotOldest) {
+          // Prefetch slightly wider than the current windowMs so small scrub
+          // movements don't immediately trigger another load.
+          const pad      = windowMs * 0.2;
+          const fetchStart = Math.max(collectionStartMs ?? clamped, clamped - windowMs - pad);
+          const fetchEnd   = clamped + pad;
+          dataStore.prefetchWarmCache(fetchStart, fetchEnd).catch(console.warn);
+        } else {
+          // Back in hot territory — drop the warm cache to free memory.
+          dataStore.clearWarmCache();
+        }
+      }
     },
     [collectionStartMs, collectionEndMs]
   );
@@ -402,6 +453,8 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
     [checkpoints, seek]
   );
 
+  const dismissColdWarning = useCallback(() => setColdWarning(null), []);
+
   const value = useMemo<TimelineContextValue>(
     () => ({
       source,
@@ -413,6 +466,9 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
       latestLiveDataMs,
       checkpoints,
       replaySession,
+      isColdLoading,
+      coldWarning,
+      dismissColdWarning,
       setWindowMs,
       seek,
       goLive,
@@ -433,6 +489,9 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
       latestLiveDataMs,
       checkpoints,
       replaySession,
+      isColdLoading,
+      coldWarning,
+      dismissColdWarning,
       setWindowMs,
       seek,
       goLive,
