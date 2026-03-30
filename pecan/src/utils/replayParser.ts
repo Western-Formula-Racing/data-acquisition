@@ -230,6 +230,7 @@ export function parsePecanSessionJson(content: string): ReplayParseResult {
       dlc: Number(frameLike.dlc),
       dataHex: normalizeHex(String(frameLike.dataHex ?? "")),
       tEpochMs: frameLike.tEpochMs !== undefined ? Number(frameLike.tEpochMs) : undefined,
+      tLocalTime: frameLike.tLocalTime !== undefined ? String(frameLike.tLocalTime) : undefined,
       channel: frameLike.channel,
       source: frameLike.source,
     };

@@ -8,6 +8,7 @@ export interface ReplayFrame {
   dlc: number;
   dataHex: string;
   tEpochMs?: number;
+  tLocalTime?: string;
   channel?: string;
   source?: string;
 }

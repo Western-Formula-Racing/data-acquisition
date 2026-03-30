@@ -60,6 +60,17 @@ function rawDataToHex(rawData: string): string {
   return rawData.replace(/\s+/g, "").toLowerCase();
 }
 
+function formatLocalFilenameTimestamp(ts: number): string {
+  const d = new Date(ts);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}_${hh}-${mi}-${ss}`;
+}
+
 /** Build enriched frames by computing per-ID delta. */
 function buildEnriched(frames: TelemetrySample[]): EnrichedFrame[] {
   const lastSeen = new Map<string, number>(); // msgID -> last timestamp
@@ -103,7 +114,7 @@ function exportCsv(frames: EnrichedFrame[]): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `pecan_replay_${Date.now()}.csv`;
+  a.download = `pecan_replay_${formatLocalFilenameTimestamp(Date.now())}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -147,7 +158,7 @@ function exportPecanSession(
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `pecan_session_${Date.now()}.pecan`;
+  a.download = `pecan_session_${formatLocalFilenameTimestamp(Date.now())}.pecan`;
   a.click();
   URL.revokeObjectURL(url);
 }

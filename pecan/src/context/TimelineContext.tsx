@@ -26,6 +26,7 @@ interface TimelineContextValue {
   windowMs: number;
   collectionStartMs: number | null;
   collectionEndMs: number | null;
+  latestLiveDataMs: number | null;
   checkpoints: TimelineCheckpoint[];
   replaySession: {
     fileName: string;
@@ -91,6 +92,7 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
   );
   const [collectionStartMs, setCollectionStartMs] = useState<number | null>(null);
   const [collectionEndMs, setCollectionEndMs] = useState<number | null>(null);
+  const [latestLiveDataMs, setLatestLiveDataMs] = useState<number | null>(null);
   const [replaySession, setReplaySession] = useState<TimelineContextValue["replaySession"]>(null);
 
   useEffect(() => {
@@ -100,8 +102,13 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
 
     const updateBounds = () => {
       const stats = dataStore.getStats();
-      setCollectionStartMs(stats.oldestSample);
-      setCollectionEndMs(stats.newestSample);
+      setLatestLiveDataMs(stats.newestSample);
+
+      if (mode === "live") {
+        setCollectionStartMs(stats.oldestSample);
+        setCollectionEndMs(stats.newestSample);
+      }
+
       if (mode === "live" && stats.newestSample !== null) {
         setSelectedTimeMs(stats.newestSample);
       }
@@ -141,6 +148,7 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
     setSource("live");
     setMode("live");
     const stats = dataStore.getStats();
+    setLatestLiveDataMs(stats.newestSample);
     setCollectionStartMs(stats.oldestSample);
     setCollectionEndMs(stats.newestSample);
     if (stats.newestSample !== null) {
@@ -153,6 +161,7 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
     setSource("live");
     setMode("live");
     const stats = dataStore.getStats();
+    setLatestLiveDataMs(stats.newestSample);
     setCollectionStartMs(stats.oldestSample);
     setCollectionEndMs(stats.newestSample);
     if (stats.newestSample !== null) {
@@ -183,6 +192,7 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
 
     setSource("replay");
     setMode("paused");
+    setLatestLiveDataMs(null);
     setCollectionStartMs(startTimeMs);
     setCollectionEndMs(endTimeMs);
     setSelectedTimeMs(startTimeMs);
@@ -230,6 +240,7 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
       windowMs,
       collectionStartMs,
       collectionEndMs,
+      latestLiveDataMs,
       checkpoints,
       replaySession,
       setWindowMs,
@@ -249,6 +260,7 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
       windowMs,
       collectionStartMs,
       collectionEndMs,
+      latestLiveDataMs,
       checkpoints,
       replaySession,
       setWindowMs,
