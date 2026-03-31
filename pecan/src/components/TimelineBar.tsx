@@ -3,8 +3,9 @@ import { useTimeline } from "../context/TimelineContext";
 import { dataStore, type TelemetrySample } from "../lib/DataStore";
 import { coldStore } from "../lib/ColdStore";
 import type { ReplayFrame, ReplayPlotLayout } from "../types/replay";
-import { parseReplayFile } from "../utils/replayParser";
+import { parseReplayFile, REPLAY_FRAME_HARD_CAP } from "../utils/replayParser";
 import { serializePecanV2 } from "../utils/pecanSerializer";
+import ReplayImportClipModal from "./ReplayImportClipModal";
 
 interface TimelineBarProps {
   plotLayouts?: ReplayPlotLayout[];
@@ -135,7 +136,14 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
   const [exportStartMs, setExportStartMs] = useState<number | null>(null);
   const [exportEndMs, setExportEndMs] = useState<number | null>(null);
   const [isImportingReplay, setIsImportingReplay] = useState(false);
+  const [pendingClipImport, setPendingClipImport] = useState<{
+    frames: ReplayFrame[];
+    fileName: string;
+    timelineMeta?: Parameters<typeof loadReplayFrames>[2];
+    plotsMeta?: Parameters<typeof loadReplayFrames>[3];
+  } | null>(null);
   const replayFileInputRef = useRef<HTMLInputElement | null>(null);
+  const showColdStoreSupportHint = source === "live" && !dataStore.isColdStoreSupported();
 
   const hasData = collectionStartMs !== null && collectionEndMs !== null;
   const durationMs = hasData ? Math.max(0, collectionEndMs - collectionStartMs) : 0;
@@ -368,12 +376,21 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
         return;
       }
 
-      await loadReplayFrames(
-        parseResult.frames,
-        file.name,
-        parseResult.sessionMeta?.timeline,
-        parseResult.sessionMeta?.plots
-      );
+      if (parseResult.frames.length > REPLAY_FRAME_HARD_CAP) {
+        setPendingClipImport({
+          frames: parseResult.frames,
+          fileName: file.name,
+          timelineMeta: parseResult.sessionMeta?.timeline,
+          plotsMeta: parseResult.sessionMeta?.plots,
+        });
+      } else {
+        await loadReplayFrames(
+          parseResult.frames,
+          file.name,
+          parseResult.sessionMeta?.timeline,
+          parseResult.sessionMeta?.plots
+        );
+      }
 
       if (parseResult.warnings.length > 0) {
         window.alert(`Replay imported with ${parseResult.warnings.length} warning(s).`);
@@ -452,6 +469,22 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
 
   return (
     <div className="timeline-box bg-data-module-bg/92 rounded-md p-2.5 mb-2 border border-white/10 sticky top-0 z-20 backdrop-blur-[1px]">
+      {pendingClipImport && (
+        <ReplayImportClipModal
+          frames={pendingClipImport.frames}
+          fileName={pendingClipImport.fileName}
+          onCancel={() => setPendingClipImport(null)}
+          onConfirm={(framesToLoad) => {
+            void loadReplayFrames(
+              framesToLoad,
+              pendingClipImport.fileName,
+              pendingClipImport.timelineMeta,
+              pendingClipImport.plotsMeta
+            );
+            setPendingClipImport(null);
+          }}
+        />
+      )}
       {coldWarning && (
         <div className="flex items-center gap-2 mb-1.5 rounded bg-amber-500/15 border border-amber-400/40 px-2.5 py-1 text-[11px] text-amber-300">
           <span className="flex-1">⚠ {coldWarning}</span>
@@ -463,6 +496,12 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
           >
             ×
           </button>
+        </div>
+      )}
+      {showColdStoreSupportHint && (
+        <div className="mb-1.5 rounded border border-sky-400/35 bg-sky-500/10 px-2.5 py-1 text-[11px] text-sky-200">
+          Cold-store persistence is unavailable in this browser/session. Timeline history and replay import features may be limited.
+          For best long-session history, use a Chromium-based browser.
         </div>
       )}
       {header}

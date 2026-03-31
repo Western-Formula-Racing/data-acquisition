@@ -204,6 +204,12 @@ class DataStore {
     }
 
     this.activeSource = source;
+    if (source === "replay") {
+      // Cold-store limits/warnings are only relevant to live capture.
+      // Clear any pending cold warning so replay imports don't surface stale 1h-limit alerts.
+      this.coldWarningMessage = null;
+      this.notifyColdState();
+    }
     this.scheduleSnapshotSave();
     this.notifyAll();
     this.notifyTrace();
@@ -1004,6 +1010,9 @@ class DataStore {
 
   /** The cold-store warning message (if any) from the last limit-enforcement pass. */
   public consumeColdWarning(): string | null {
+    if (this.activeSource !== "live") {
+      return null;
+    }
     const msg = this.coldWarningMessage;
     this.coldWarningMessage = null;
     return msg;
@@ -1014,16 +1023,35 @@ class DataStore {
    * Used by TimelineContext to extend the collection-start timestamp.
    */
   public getColdExtent(): { startMs: number; endMs: number } | null {
+    if (this.activeSource !== "live") {
+      return null;
+    }
     return coldStore.getTimeRange();
   }
 
   /** Returns cold store on-disk size in bytes. */
   public getColdStoreSizeBytes(): number {
+    if (this.activeSource !== "live") {
+      return 0;
+    }
     return coldStore.getTotalBytes();
   }
 
   public isColdNearingLimit(): boolean {
+    if (this.activeSource !== "live") {
+      return false;
+    }
     return coldStore.isNearingLimit();
+  }
+
+  /**
+   * Feature capability check for OPFS-backed cold storage.
+   * Uses capability detection (not user-agent sniffing).
+   */
+  public isColdStoreSupported(): boolean {
+    if (typeof navigator === "undefined") return false;
+    if (!("storage" in navigator)) return false;
+    return typeof (navigator.storage as { getDirectory?: unknown }).getDirectory === "function";
   }
 
   /**
@@ -1281,9 +1309,9 @@ class DataStore {
       oldestSample,
       newestSample,
       memoryEstimateMB: Math.round(memoryEstimateMB * 100) / 100,
-      coldSizeBytes:    coldStore.getTotalBytes(),
-      coldDurationMs:   coldStore.getSessionDurationMs(),
-      coldNearingLimit: coldStore.isNearingLimit(),
+      coldSizeBytes:    source === "live" ? coldStore.getTotalBytes() : 0,
+      coldDurationMs:   source === "live" ? coldStore.getSessionDurationMs() : 0,
+      coldNearingLimit: source === "live" ? coldStore.isNearingLimit() : false,
     };
   }
 }

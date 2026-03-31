@@ -10,6 +10,7 @@ import type {
 const SOFT_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const HARD_FILE_SIZE_BYTES = 150 * 1024 * 1024;
 const HARD_FRAME_CAP = 1_000_000;
+export const REPLAY_FRAME_HARD_CAP = HARD_FRAME_CAP;
 
 function normalizeHex(input: string): string {
   return input.replace(/\s+/g, "").toLowerCase();
@@ -167,6 +168,16 @@ function deriveTRelFromEpoch(frames: ReplayFrame[]): void {
       frame.tRelMs = Math.max(0, frame.tEpochMs - firstEpoch);
     }
   }
+}
+
+function appendFrameCapWarning(frames: ReplayFrame[], warnings: ReplayValidationWarning[]): void {
+  if (frames.length <= HARD_FRAME_CAP) {
+    return;
+  }
+  warnings.push({
+    code: "frame-cap-exceeded",
+    message: `Frame count ${frames.length.toLocaleString()} exceeds hard cap of ${HARD_FRAME_CAP.toLocaleString()}. Choose a timestamp clip range to import.`,
+  });
 }
 
 function parseWFRECUEpochBaseMsFromFilename(fileName?: string): number | undefined {
@@ -352,13 +363,7 @@ export function parseWFRECUCsv(content: string, fileName?: string): ReplayParseR
     frames.push(frame);
   }
 
-  if (frames.length > HARD_FRAME_CAP) {
-    errors.push({
-      field: "frames",
-      message: `Frame count ${frames.length.toLocaleString()} exceeds hard cap of ${HARD_FRAME_CAP.toLocaleString()}.`,
-    });
-  }
-
+  appendFrameCapWarning(frames, warnings);
   return { frames, warnings, errors };
 }
 
@@ -445,12 +450,7 @@ export function parsePecanSessionJson(content: string): ReplayParseResult {
     frames.push(frame);
   });
 
-  if (frames.length > HARD_FRAME_CAP) {
-    errors.push({
-      field: "frames",
-      message: `Frame count ${frames.length.toLocaleString()} exceeds hard cap of ${HARD_FRAME_CAP.toLocaleString()}.`,
-    });
-  }
+  appendFrameCapWarning(frames, warnings);
 
   return {
     frames,
@@ -524,13 +524,7 @@ export function parseReplayCsv(content: string): ReplayParseResult {
     });
   }
 
-  if (frames.length > HARD_FRAME_CAP) {
-    errors.push({
-      field: "frames",
-      message: `Frame count ${frames.length.toLocaleString()} exceeds hard cap of ${HARD_FRAME_CAP.toLocaleString()}.`,
-    });
-  }
-
+  appendFrameCapWarning(frames, warnings);
   return { frames, warnings, errors };
 }
 

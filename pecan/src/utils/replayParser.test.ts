@@ -105,6 +105,18 @@ describe("replayParser", () => {
       expect(result.errors).toHaveLength(0);
       expect(result.frames[0].source).toBe("quoted,source");
     });
+
+    it("flags when frame count exceeds hard cap", () => {
+      const rows: string[] = ["t_rel_ms,can_id,is_extended,direction,dlc,data_hex"];
+      for (let i = 0; i < 1_000_005; i += 1) {
+        rows.push(`${i},256,0,rx,1,AA`);
+      }
+
+      const result = parseReplayCsv(rows.join("\n"));
+      expect(result.errors).toHaveLength(0);
+      expect(result.frames).toHaveLength(1_000_005);
+      expect(result.warnings.some((w) => w.code === "frame-cap-exceeded")).toBe(true);
+    });
   });
 
   describe("parseWFRECUCsv", () => {
@@ -160,6 +172,19 @@ describe("replayParser", () => {
         direction: "rx",
         dataHex: "0000000000000000",
       });
+    });
+
+    it("flags oversized ECU imports for clipping", () => {
+      const fileName = "2026-03-29-20-06-42.csv";
+      const rows: string[] = [];
+      for (let i = 0; i < 1_000_002; i += 1) {
+        rows.push(`${i},CAN,176,0,0,1,0,0,0,4,0`);
+      }
+
+      const result = parseWFRECUCsv(rows.join("\n"), fileName);
+      expect(result.errors).toHaveLength(0);
+      expect(result.frames).toHaveLength(1_000_002);
+      expect(result.warnings.some((w) => w.code === "frame-cap-exceeded")).toBe(true);
     });
   });
 
