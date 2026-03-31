@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parsePecanSessionJson,
+  parseWFRECUCsv,
   parseReplayCsv,
   validateFileSize,
 } from "./replayParser";
@@ -103,6 +104,62 @@ describe("replayParser", () => {
       const result = parseReplayCsv(csv);
       expect(result.errors).toHaveLength(0);
       expect(result.frames[0].source).toBe("quoted,source");
+    });
+  });
+
+  describe("parseWFRECUCsv", () => {
+    it("maps headerless ECU rows into PECAN replay frames", () => {
+      const fileName = "2026-03-29-20-06-42.csv";
+      const content = [
+        "42504,CAN,176,0,0,248,255,0,0,4,0",
+        "42505,CAN,160,11,1,16,1,13,1,102,1",
+      ].join("\n");
+
+      const result = parseWFRECUCsv(content, fileName);
+      expect(result.errors).toHaveLength(0);
+      expect(result.warnings.some((w) => w.code === "ecu-epoch-from-filename-missing")).toBe(false);
+      expect(result.frames).toHaveLength(2);
+
+      expect(result.frames[0]).toMatchObject({
+        tRelMs: 42504,
+        canId: 176,
+        direction: "rx",
+        isExtended: false,
+        dlc: 8,
+        dataHex: "0000f8ff00000400",
+        source: "wfrecu",
+      });
+    });
+
+    it("derives tEpochMs from filename start time + ECU ms since start", () => {
+      const fileName = "2026-03-29-20-06-42.csv";
+      const tRelMs = 42504;
+      const content = [`${tRelMs},CAN,176,0,0,248,255,0,0,4,0`].join("\n");
+
+      const expectedEpochBaseMs = new Date(2026, 2, 29, 20, 6, 42).getTime();
+      const result = parseWFRECUCsv(content, fileName);
+
+      expect(result.errors).toHaveLength(0);
+      expect(result.frames).toHaveLength(1);
+      expect(result.frames[0].tEpochMs).toBe(expectedEpochBaseMs + tRelMs);
+    });
+
+    it("accepts trailing comma (12-column) ECU rows", () => {
+      const fileName = "2026-03-29-20-06-42.csv";
+      const content = [
+        "70026,CAN,2048,0,0,0,0,0,0,0,0,",
+      ].join("\n");
+
+      const result = parseWFRECUCsv(content, fileName);
+      expect(result.errors).toHaveLength(0);
+      expect(result.frames).toHaveLength(1);
+      expect(result.frames[0]).toMatchObject({
+        canId: 2048,
+        isExtended: true,
+        dlc: 8,
+        direction: "rx",
+        dataHex: "0000000000000000",
+      });
     });
   });
 

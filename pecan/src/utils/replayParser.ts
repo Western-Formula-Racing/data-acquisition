@@ -169,6 +169,199 @@ function deriveTRelFromEpoch(frames: ReplayFrame[]): void {
   }
 }
 
+function parseWFRECUEpochBaseMsFromFilename(fileName?: string): number | undefined {
+  if (!fileName) return undefined;
+
+  // Expected: "YYYY-MM-DD-HH-mm-ss.csv" (time is the record start time in local time).
+  const match = fileName.match(/(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})/);
+  if (!match) return undefined;
+
+  const [
+    _full,
+    yearRaw,
+    monthRaw,
+    dayRaw,
+    hourRaw,
+    minuteRaw,
+    secondRaw,
+  ] = match;
+
+  const year = Number(yearRaw);
+  const monthIndex = Number(monthRaw) - 1;
+  const day = Number(dayRaw);
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  const second = Number(secondRaw);
+
+  if (![year, monthIndex, day, hour, minute, second].every((n) => Number.isFinite(n))) return undefined;
+
+  // Validate against Date rollover so invalid dates don't silently pass.
+  const d = new Date(year, monthIndex, day, hour, minute, second);
+  if (
+    d.getFullYear() !== year ||
+    d.getMonth() !== monthIndex ||
+    d.getDate() !== day ||
+    d.getHours() !== hour ||
+    d.getMinutes() !== minute ||
+    d.getSeconds() !== second
+  ) {
+    return undefined;
+  }
+
+  return d.getTime();
+}
+
+function isLikelyWFRECUCsv(content: string): boolean {
+  const firstLine = content
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (!firstLine) return false;
+
+  const cells = parseCsvLine(firstLine);
+  if (cells.length !== 11 && cells.length !== 12) return false;
+
+  const bus = (cells[1] ?? "").trim().toUpperCase();
+  if (bus !== "CAN") return false;
+
+  const tRel = Number(cells[0]);
+  const canId = Number(cells[2]);
+  if (!Number.isFinite(tRel) || !Number.isFinite(canId)) return false;
+  if (tRel < 0 || canId < 0) return false;
+
+  // Validate the 8 payload bytes quickly; final field may be empty if there is a trailing comma.
+  const bytes = cells.slice(3, 11);
+  if (bytes.length !== 8) return false;
+  return bytes.every((b) => {
+    const n = Number(b);
+    return Number.isFinite(n) && Number.isInteger(n) && n >= 0 && n <= 255;
+  });
+}
+
+export function parseWFRECUCsv(content: string, fileName?: string): ReplayParseResult {
+  const warnings: ReplayValidationWarning[] = [];
+  const errors: ReplayValidationError[] = [];
+
+  const epochBaseMs = parseWFRECUEpochBaseMsFromFilename(fileName);
+  if (epochBaseMs === undefined) {
+    warnings.push({
+      code: "ecu-epoch-from-filename-missing",
+      message: "Could not parse ECU record start time from filename; t_epoch_ms may be derived at import time.",
+    });
+  }
+
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (lines.length === 0) {
+    return {
+      frames: [],
+      warnings,
+      errors: [{ message: "ECU CSV must contain at least one data row." }],
+    };
+  }
+
+  const frames: ReplayFrame[] = [];
+
+  // ECU format (WFRECU):
+  //   t_ms_since_ecu_start,CAN,can_id,b0,b1,b2,b3,b4,b5,b6,b7
+  // Optional trailing comma may produce an extra empty field (12 columns).
+  for (let idx = 0; idx < lines.length; idx += 1) {
+    const line = lines[idx]!;
+    const rowNumber = idx + 1;
+    const cells = parseCsvLine(line);
+
+    if (cells.length !== 11 && cells.length !== 12) {
+      errors.push({ row: rowNumber, message: `ECU CSV expected 11 columns, got ${cells.length}.` });
+      continue;
+    }
+
+    const tRelRaw = cells[0] ?? "";
+    const bus = (cells[1] ?? "").trim().toUpperCase();
+    const canIdRaw = cells[2] ?? "";
+
+    const tRel = Number(tRelRaw);
+    const canId = Number(canIdRaw);
+
+    if (!Number.isFinite(tRel) || tRel < 0 || !Number.isInteger(tRel)) {
+      errors.push({ row: rowNumber, field: "t_rel_ms", message: "t_ms_since_ecu_start must be a non-negative integer" });
+      continue;
+    }
+
+    if (!Number.isFinite(canId) || canId < 0 || !Number.isInteger(canId)) {
+      errors.push({ row: rowNumber, field: "can_id", message: "can_id must be a non-negative integer" });
+      continue;
+    }
+
+    // If bus isn't CAN, don't hard-fail: just still attempt the mapping.
+    if (bus !== "CAN") {
+      warnings.push({
+        code: "ecu-non-can-bus",
+        message: `Row ${rowNumber}: expected bus "CAN", got "${bus}". Proceeding with mapping.`,
+      });
+    }
+
+    const bytes = cells.slice(3, 11);
+    if (bytes.length !== 8) {
+      errors.push({ row: rowNumber, field: "payload", message: "Expected exactly 8 payload byte columns." });
+      continue;
+    }
+
+    const byteNumbers: number[] = [];
+    let byteParseFailed = false;
+    for (const b of bytes) {
+      const n = Number(b);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > 255) {
+        byteParseFailed = true;
+        break;
+      }
+      byteNumbers.push(n);
+    }
+
+    if (byteParseFailed) {
+      errors.push({ row: rowNumber, field: "payload", message: "Payload bytes must be integers in [0, 255]." });
+      continue;
+    }
+
+    const dataHex = byteNumbers
+      .map((n) => Math.trunc(n).toString(16).padStart(2, "0"))
+      .join("");
+
+    const frame: ReplayFrame = {
+      tRelMs: tRel,
+      canId: canId,
+      // 11-bit vs 29-bit is determined from the numeric arbitration id.
+      // WFRECU currently uses ids up to 2048, so extended frames are represented with can_id > 0x7FF.
+      isExtended: canId > 0x7ff,
+      direction: "rx",
+      dlc: 8,
+      dataHex,
+      tEpochMs: epochBaseMs !== undefined ? epochBaseMs + tRel : undefined,
+      source: "wfrecu",
+      channel: "CAN",
+    };
+
+    const frameErrors = validateFrame(frame, rowNumber);
+    if (frameErrors.length > 0) {
+      errors.push(...frameErrors);
+      continue;
+    }
+
+    frames.push(frame);
+  }
+
+  if (frames.length > HARD_FRAME_CAP) {
+    errors.push({
+      field: "frames",
+      message: `Frame count ${frames.length.toLocaleString()} exceeds hard cap of ${HARD_FRAME_CAP.toLocaleString()}.`,
+    });
+  }
+
+  return { frames, warnings, errors };
+}
+
 export function validateFileSize(fileSizeBytes: number): {
   warnings: ReplayValidationWarning[];
   errors: ReplayValidationError[];
@@ -352,7 +545,9 @@ export async function parseReplayFile(file: File): Promise<ReplayParseResult> {
 
   const parsed = lower.endsWith(".pecan") || lower.endsWith(".json")
     ? parsePecanSessionJson(content)
-    : parseReplayCsv(content);
+    : isLikelyWFRECUCsv(content)
+      ? parseWFRECUCsv(content, file.name)
+      : parseReplayCsv(content);
 
   return {
     ...parsed,
