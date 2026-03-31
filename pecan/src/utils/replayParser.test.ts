@@ -3,6 +3,7 @@ import {
   parsePecanSessionJson,
   parseWFRECUCsv,
   parseReplayCsv,
+  parseTSMasterBlf,
   validateFileSize,
 } from "./replayParser";
 
@@ -281,6 +282,64 @@ describe("replayParser", () => {
         })
       );
       expect(result.errors.some((e) => e.field === "t_rel_ms")).toBe(true);
+    });
+  });
+
+  describe("parseTSMasterBlf", () => {
+    it("returns error for file too small", () => {
+      const buffer = new ArrayBuffer(10);
+      const result = parseTSMasterBlf(buffer);
+      expect(result.errors[0]?.message).toContain("too small");
+    });
+
+    it("adds tsmaster source to parsed frames", () => {
+      // Build a minimal valid BLF buffer with a CAN_MESSAGE object
+      // BLF header (28 bytes) + minimal CAN message
+      const buffer = new ArrayBuffer(200);
+      const view = new DataView(buffer);
+
+      // BLF signature at offset 4: "BLF\n"
+      view.setUint8(4, 0x42); // B
+      view.setUint8(5, 0x4c); // L
+      view.setUint8(6, 0x46); // F
+      view.setUint8(7, 0x0a); // \n
+
+      // Object at offset 24: CAN_MESSAGE (type 0x01)
+      // Object header (24 bytes total):
+      // offset +0: object_size (4 bytes)
+      view.setUint32(24, 72, true); // object size = 72
+      // offset +4: object_header_size (4 bytes) = 24
+      view.setUint32(28, 24, true);
+      // offset +8: object_version (2 bytes)
+      view.setUint16(32, 2, true);
+      // offset +10: object_type (2 bytes) = 0x01 (CAN_MESSAGE)
+      view.setUint16(34, 0x01, true);
+      // offset +12: object_data_size (4 bytes) = 48
+      view.setUint32(36, 48, true);
+
+      // Object data starts at offset 48 (24 + 24)
+      // Timestamp (8 bytes) at offset 48
+      view.setBigUint64(48, BigInt(1000000000), true); // 1 second in ns
+      // CAN message data at offset 56
+      view.setUint32(56, 256, true); // arbitration ID
+      view.setUint8(60, 0x80); // direction = rx
+      view.setUint8(61, 0x00); // flags (not extended)
+      view.setUint8(62, 8); // DLC = 8
+      // Data bytes at offset 64-71
+      view.setUint8(64, 0x0a);
+      view.setUint8(65, 0x0b);
+      view.setUint8(66, 0x0c);
+      view.setUint8(67, 0x0d);
+      view.setUint8(68, 0x0e);
+      view.setUint8(69, 0x0f);
+      view.setUint8(70, 0x10);
+      view.setUint8(71, 0x11);
+
+      const result = parseTSMasterBlf(buffer);
+      expect(result.errors).toHaveLength(0);
+      expect(result.frames.length).toBeGreaterThan(0);
+      expect(result.frames[0].source).toBe("tsmaster");
+      expect(result.frames[0].channel).toBe("CAN");
     });
   });
 });
