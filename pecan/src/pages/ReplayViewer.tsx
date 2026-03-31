@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { Upload, AlertTriangle, FileJson } from "lucide-react";
 import TimelineBar from "../components/TimelineBar";
-import { parseReplayFile } from "../utils/replayParser";
-import type { ReplayFrame, ReplayParseResult } from "../types/replay";
+import ReplayImportClipModal from "../components/ReplayImportClipModal";
+import { parseReplayFile, REPLAY_FRAME_HARD_CAP } from "../utils/replayParser";
+import type { ReplayFrame, ReplayParseResult, ReplayPlotsMetadata, ReplayTimelineMetadata } from "../types/replay";
 import { useTimeline } from "../context/TimelineContext";
 
 function ReplayViewer() {
@@ -10,6 +11,12 @@ function ReplayViewer() {
   const [isParsing, setIsParsing] = useState(false);
   const [loadedFileName, setLoadedFileName] = useState<string>("");
   const [result, setResult] = useState<ReplayParseResult | null>(null);
+  const [pendingClipImport, setPendingClipImport] = useState<{
+    frames: ReplayFrame[];
+    fileName: string;
+    timelineMeta?: ReplayTimelineMetadata;
+    plotsMeta?: ReplayPlotsMetadata;
+  } | null>(null);
 
   const handleFilePick = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -22,12 +29,21 @@ function ReplayViewer() {
       const parseResult = await parseReplayFile(file);
       setResult(parseResult);
       if (parseResult.errors.length === 0 && parseResult.frames.length > 0) {
-        await loadReplayFrames(
-          parseResult.frames,
-          file.name,
-          parseResult.sessionMeta?.timeline,
-          parseResult.sessionMeta?.plots
-        );
+        if (parseResult.frames.length > REPLAY_FRAME_HARD_CAP) {
+          setPendingClipImport({
+            frames: parseResult.frames,
+            fileName: file.name,
+            timelineMeta: parseResult.sessionMeta?.timeline,
+            plotsMeta: parseResult.sessionMeta?.plots,
+          });
+        } else {
+          await loadReplayFrames(
+            parseResult.frames,
+            file.name,
+            parseResult.sessionMeta?.timeline,
+            parseResult.sessionMeta?.plots
+          );
+        }
       }
     } finally {
       setIsParsing(false);
@@ -46,6 +62,22 @@ function ReplayViewer() {
   return (
     <div className="h-full overflow-y-auto bg-background p-4 sm:p-6">
       <div className="mx-auto w-full max-w-[1200px] space-y-4">
+        {pendingClipImport && (
+          <ReplayImportClipModal
+            frames={pendingClipImport.frames}
+            fileName={pendingClipImport.fileName}
+            onCancel={() => setPendingClipImport(null)}
+            onConfirm={(framesToLoad) => {
+              void loadReplayFrames(
+                framesToLoad,
+                pendingClipImport.fileName,
+                pendingClipImport.timelineMeta,
+                pendingClipImport.plotsMeta
+              );
+              setPendingClipImport(null);
+            }}
+          />
+        )}
         <header className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="app-menu-title">REPLAY VIEWER</h1>

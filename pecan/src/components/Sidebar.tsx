@@ -74,6 +74,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 option="CAN TRACE"
                 path="/trace"
                 onClose={onClose}
+                isPending={true}
               />
               <SidebarOption
                 option="ACCUMULATOR"

@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTimeline } from "../context/TimelineContext";
 import { dataStore, type TelemetrySample } from "../lib/DataStore";
-import type { ReplayFrame, ReplayPlotLayout, ReplaySession } from "../types/replay";
-import { parseReplayFile } from "../utils/replayParser";
+import { coldStore } from "../lib/ColdStore";
+import type { ReplayFrame, ReplayPlotLayout } from "../types/replay";
+import { parseReplayFile, REPLAY_FRAME_HARD_CAP } from "../utils/replayParser";
+import { serializePecanV2 } from "../utils/pecanSerializer";
+import ReplayImportClipModal from "./ReplayImportClipModal";
 
 interface TimelineBarProps {
   plotLayouts?: ReplayPlotLayout[];
@@ -87,6 +90,7 @@ function sampleToReplayFrame(sample: TelemetrySample, exportStartMs: number): Re
 
   return {
     tRelMs: Math.max(0, sample.timestamp - exportStartMs),
+    tEpochMs: sample.timestamp,
     tLocalTime: formatLocalTimestamp(sample.timestamp),
     canId,
     isExtended: canId > 0x7ff,
@@ -116,6 +120,9 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
     jumpToCheckpoint,
     replaySession,
     windowMs,
+    isColdLoading,
+    coldWarning,
+    dismissColdWarning,
   } = useTimeline();
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
@@ -126,10 +133,18 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
   });
   const [hoveredCheckpointId, setHoveredCheckpointId] = useState<string | null>(null);
   const [clipModeEnabled, setClipModeEnabled] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [exportStartMs, setExportStartMs] = useState<number | null>(null);
   const [exportEndMs, setExportEndMs] = useState<number | null>(null);
   const [isImportingReplay, setIsImportingReplay] = useState(false);
+  const [pendingClipImport, setPendingClipImport] = useState<{
+    frames: ReplayFrame[];
+    fileName: string;
+    timelineMeta?: Parameters<typeof loadReplayFrames>[2];
+    plotsMeta?: Parameters<typeof loadReplayFrames>[3];
+  } | null>(null);
   const replayFileInputRef = useRef<HTMLInputElement | null>(null);
+  const showColdStoreSupportHint = source === "live" && !dataStore.isColdStoreSupported();
 
   const hasData = collectionStartMs !== null && collectionEndMs !== null;
   const durationMs = hasData ? Math.max(0, collectionEndMs - collectionStartMs) : 0;
@@ -255,74 +270,95 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
     setExportEndMs(next);
   };
 
-  const handleExportPecan = () => {
-    if (!hasData) return;
+  const handleExportPecan = async () => {
+    if (!hasData || isExporting) return;
+    setIsExporting(true);
 
-    const rangeStart = activeClipRange?.startMs ?? sliderMin;
-    const rangeEnd = activeClipRange?.endMs ?? sliderMax;
+    try {
+      const rangeStart = activeClipRange?.startMs ?? sliderMin;
+      const rangeEnd   = activeClipRange?.endMs   ?? sliderMax;
 
-    let frames: ReplayFrame[] = [];
+      let frames: ReplayFrame[] = [];
 
-    if (source === "replay" && replaySession) {
-      const minRelMs = replaySession.frames[0]?.tRelMs ?? 0;
-      const replayEpochBase = replaySession.startTimeMs - minRelMs;
+      let epochBaseMs: number | undefined;
 
-      frames = replaySession.frames
-        .filter((frame) => {
-          const absTime = replayEpochBase + frame.tRelMs;
-          return absTime >= rangeStart && absTime <= rangeEnd;
-        })
-        .map((frame) => {
-          const absTime = typeof frame.tEpochMs === "number"
-            ? frame.tEpochMs
-            : replayEpochBase + frame.tRelMs;
+      if (source === "replay" && replaySession) {
+        const minRelMs        = replaySession.frames[0]?.tRelMs ?? 0;
+        const replayEpochBase = replaySession.startTimeMs - minRelMs;
+        epochBaseMs = rangeStart;
 
-          return {
-            tRelMs: Math.max(0, absTime - rangeStart),
-            tLocalTime: formatLocalTimestamp(absTime),
-            canId: frame.canId,
-            isExtended: frame.isExtended,
-            direction: frame.direction,
-            dlc: frame.dlc,
-            dataHex: frame.dataHex,
-            channel: frame.channel,
-            source: frame.source,
-          };
-        });
-    } else {
-      frames = dataStore
-        .getTrace()
-        .filter((sample) => sample.timestamp >= rangeStart && sample.timestamp <= rangeEnd)
-        .map((sample) => sampleToReplayFrame(sample, rangeStart));
+        frames = replaySession.frames
+          .filter((frame) => {
+            const absTime = replayEpochBase + frame.tRelMs;
+            return absTime >= rangeStart && absTime <= rangeEnd;
+          })
+          .map((frame) => {
+            const absTime = typeof frame.tEpochMs === "number"
+              ? frame.tEpochMs
+              : replayEpochBase + frame.tRelMs;
+            return {
+              tRelMs:    Math.max(0, absTime - rangeStart),
+              canId:     frame.canId,
+              isExtended: frame.isExtended,
+              direction: frame.direction,
+              dlc:       frame.dlc,
+              dataHex:   frame.dataHex,
+            };
+          });
+      } else {
+        epochBaseMs = rangeStart;
+
+        // Hot-buffer frames for the range.
+        const hotFrames: ReplayFrame[] = dataStore
+          .getTrace()
+          .filter((s) => s.timestamp >= rangeStart && s.timestamp <= rangeEnd)
+          .map((s) => sampleToReplayFrame(s, rangeStart));
+
+        // Cold-store frames for the same range (silently no-ops if OPFS unavailable).
+        const coldRawFrames = await coldStore.loadRange(rangeStart, rangeEnd).catch(() => []);
+        const coldFrames: ReplayFrame[] = coldRawFrames.map((f) => ({
+          tRelMs:    Math.max(0, f.timestamp - rangeStart),
+          tEpochMs:  f.timestamp,
+          canId:     f.canId,
+          isExtended: f.canId > 0x7FF,
+          direction: f.direction,
+          dlc:       f.dlc,
+          dataHex:   Array.from(f.data.slice(0, f.dlc))
+                       .map((b) => b.toString(16).padStart(2, "0"))
+                       .join(""),
+        }));
+
+        // Merge hot + cold, sort by epoch time.
+        frames = [...coldFrames, ...hotFrames].sort(
+          (a, b) => (a.tEpochMs ?? 0) - (b.tEpochMs ?? 0)
+        );
+      }
+
+      const blob = new Blob([serializePecanV2({
+        frames,
+        epochBaseMs,
+        timeline: {
+          windowMs,
+          lastCursorMs: Math.max(0, sliderValue - rangeStart),
+          checkpoints: checkpoints
+            .filter((cp) => cp.timeMs >= rangeStart && cp.timeMs <= rangeEnd)
+            .map((cp) => ({
+              id:     cp.id,
+              label:  cp.label,
+              tRelMs: Math.max(0, cp.timeMs - rangeStart),
+            })),
+        },
+        plots: plotLayouts.length > 0 ? { layouts: plotLayouts } : undefined,
+      })], { type: "application/json" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `pecan_timeline_${formatLocalFilenameTimestamp(Date.now())}.pecan`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setIsExporting(false);
     }
-
-    const session: ReplaySession = {
-      format: "pecan-session",
-      version: 1,
-      frames,
-      timeline: {
-        windowMs,
-        lastCursorMs: Math.max(0, sliderValue - rangeStart),
-        checkpoints: checkpoints
-          .filter((checkpoint) => checkpoint.timeMs >= rangeStart && checkpoint.timeMs <= rangeEnd)
-          .map((checkpoint) => ({
-            id: checkpoint.id,
-            label: checkpoint.label,
-            tRelMs: Math.max(0, checkpoint.timeMs - rangeStart),
-          })),
-      },
-      plots: plotLayouts.length > 0 ? { layouts: plotLayouts } : undefined,
-    };
-
-    const blob = new Blob([JSON.stringify(session, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `pecan_timeline_${formatLocalFilenameTimestamp(Date.now())}.pecan`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   const handleImportReplay = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -341,12 +377,21 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
         return;
       }
 
-      await loadReplayFrames(
-        parseResult.frames,
-        file.name,
-        parseResult.sessionMeta?.timeline,
-        parseResult.sessionMeta?.plots
-      );
+      if (parseResult.frames.length > REPLAY_FRAME_HARD_CAP) {
+        setPendingClipImport({
+          frames: parseResult.frames,
+          fileName: file.name,
+          timelineMeta: parseResult.sessionMeta?.timeline,
+          plotsMeta: parseResult.sessionMeta?.plots,
+        });
+      } else {
+        await loadReplayFrames(
+          parseResult.frames,
+          file.name,
+          parseResult.sessionMeta?.timeline,
+          parseResult.sessionMeta?.plots
+        );
+      }
 
       if (parseResult.warnings.length > 0) {
         window.alert(`Replay imported with ${parseResult.warnings.length} warning(s).`);
@@ -425,6 +470,41 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
 
   return (
     <div className="timeline-box bg-data-module-bg/92 rounded-md p-2.5 mb-2 border border-white/10 sticky top-0 z-20 backdrop-blur-[1px]">
+      {pendingClipImport && (
+        <ReplayImportClipModal
+          frames={pendingClipImport.frames}
+          fileName={pendingClipImport.fileName}
+          onCancel={() => setPendingClipImport(null)}
+          onConfirm={(framesToLoad) => {
+            void loadReplayFrames(
+              framesToLoad,
+              pendingClipImport.fileName,
+              pendingClipImport.timelineMeta,
+              pendingClipImport.plotsMeta
+            );
+            setPendingClipImport(null);
+          }}
+        />
+      )}
+      {coldWarning && (
+        <div className="flex items-center gap-2 mb-1.5 rounded bg-amber-500/15 border border-amber-400/40 px-2.5 py-1 text-[11px] text-amber-300">
+          <span className="flex-1">⚠ {coldWarning}</span>
+          <button
+            type="button"
+            className="text-amber-400 hover:text-amber-200 font-bold leading-none"
+            onClick={dismissColdWarning}
+            title="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {showColdStoreSupportHint && (
+        <div className="mb-1.5 rounded border border-sky-400/35 bg-sky-500/10 px-2.5 py-1 text-[11px] text-sky-200">
+          Cold-store persistence is unavailable in this browser/session. Timeline history and replay import features may be limited.
+          For best long-session history, use a Chromium-based browser.
+        </div>
+      )}
       {header}
 
       <div className="flex items-center gap-1.5 mt-1.5 mb-1.5 flex-wrap">
@@ -489,10 +569,16 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
           type="button"
           className="trace-btn trace-btn-primary !text-[10px] !px-2 !py-1"
           onClick={handleExportPecan}
-          disabled={!hasData}
+          disabled={!hasData || isExporting}
+          title="Export hot + cold store history as .pecan session file"
         >
-          Export .pecan
+          {isExporting ? "Exporting…" : "Export .pecan"}
         </button>
+        {isColdLoading && (
+          <span className="text-[10px] text-sky-400 animate-pulse" title="Loading cold history…">
+            Loading cold…
+          </span>
+        )}
         <button
           type="button"
           className="trace-btn trace-btn-primary !text-[10px] !px-2 !py-1"

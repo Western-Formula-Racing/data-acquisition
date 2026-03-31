@@ -9,7 +9,8 @@ import {
   usingCachedDBC,
 } from "./utils/canProcessor";
 import { dataStore } from "./lib/DataStore";
-import { Outlet } from "react-router";
+import { coldStore } from "./lib/ColdStore";
+import { Outlet, useLocation } from "react-router";
 import { webSocketService } from "./services/WebSocketService";
 import { telemetryHandler } from "./services/TelemetryHandler";
 import { serialService } from "./services/SerialService";
@@ -17,8 +18,11 @@ import { DefaultBanner, CacheBanner, RecoveredSessionBanner } from "./components
 import FloatingTools from "./components/FloatingTools";
 import { useRemoteConfig } from "./lib/useRemoteConfig";
 import { updateCategories } from "./config/categories";
+import { useTimeline } from "./context/TimelineContext";
 
 function App() {
+  const location = useLocation();
+  const { clearCheckpoints } = useTimeline();
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
@@ -63,11 +67,17 @@ function App() {
   const closeSettings = () => setIsSettingsOpen(false);
   const openAuth = () => setIsAuthOpen(true);
   const closeAuth = () => setIsAuthOpen(false);
+  const showAppBanners = location.pathname !== "/";
 
-  const handleClearRecoveredSession = () => {
+  const handleClearRecoveredSession = async () => {
+    // Wipe cold store first so that getColdExtent() returns null by the time
+    // dataStore notifications fire and TimelineContext re-reads bounds.
+    await coldStore.clear().catch(console.warn);
     dataStore.clear();
     dataStore.setActiveSource("live");
     dataStore.clearPersistedSnapshot();
+    dataStore.notifyBoundsRefresh();
+    clearCheckpoints();
   };
 
   useEffect(() => {
@@ -110,20 +120,30 @@ function App() {
 
       {/* Main content area, Outlet element is needed to display the rendered child pages received from the routes */}
       <main id="main-content" className="flex-1 h-full min-w-0">
-        <DefaultBanner
-          open={displayDefaultBanner}
-          onClose={() => setDisplayDefaultBanner(false)}
-          onOpenSettings={openSettings}
-        />
-        <CacheBanner
-          open={displayCacheBanner}
-          onClose={() => setDisplayCacheBanner(false)}
-        />
-        <RecoveredSessionBanner
-          open={displayRecoveredSessionBanner}
-          onClose={() => setDisplayRecoveredSessionBanner(false)}
-          onClearRecovered={handleClearRecoveredSession}
-        />
+        {showAppBanners && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 w-full pointer-events-none">
+            <div className="pointer-events-auto w-full flex justify-center">
+              <DefaultBanner
+                open={displayDefaultBanner}
+                onClose={() => setDisplayDefaultBanner(false)}
+                onOpenSettings={openSettings}
+              />
+            </div>
+            <div className="pointer-events-auto w-full flex justify-center">
+              <CacheBanner
+                open={displayCacheBanner}
+                onClose={() => setDisplayCacheBanner(false)}
+              />
+            </div>
+            <div className="pointer-events-auto w-full flex justify-center">
+              <RecoveredSessionBanner
+                open={displayRecoveredSessionBanner}
+                onClose={() => setDisplayRecoveredSessionBanner(false)}
+                onClearRecovered={handleClearRecoveredSession}
+              />
+            </div>
+          </div>
+        )}
         <Outlet context={{ isSidebarOpen, openSettings, ...bannerApi }} />
         <SettingsModal isOpen={isSettingsOpen} onClose={closeSettings} bannerApi={bannerApi} />
         <AuthModal isOpen={isAuthOpen} onClose={closeAuth} />

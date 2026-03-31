@@ -10,6 +10,7 @@ import type {
 const SOFT_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const HARD_FILE_SIZE_BYTES = 150 * 1024 * 1024;
 const HARD_FRAME_CAP = 1_000_000;
+export const REPLAY_FRAME_HARD_CAP = HARD_FRAME_CAP;
 
 function normalizeHex(input: string): string {
   return input.replace(/\s+/g, "").toLowerCase();
@@ -169,6 +170,203 @@ function deriveTRelFromEpoch(frames: ReplayFrame[]): void {
   }
 }
 
+function appendFrameCapWarning(frames: ReplayFrame[], warnings: ReplayValidationWarning[]): void {
+  if (frames.length <= HARD_FRAME_CAP) {
+    return;
+  }
+  warnings.push({
+    code: "frame-cap-exceeded",
+    message: `Frame count ${frames.length.toLocaleString()} exceeds hard cap of ${HARD_FRAME_CAP.toLocaleString()}. Choose a timestamp clip range to import.`,
+  });
+}
+
+function parseWFRECUEpochBaseMsFromFilename(fileName?: string): number | undefined {
+  if (!fileName) return undefined;
+
+  // Expected: "YYYY-MM-DD-HH-mm-ss.csv" (time is the record start time in local time).
+  const match = fileName.match(/(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})/);
+  if (!match) return undefined;
+
+  const [
+    _full,
+    yearRaw,
+    monthRaw,
+    dayRaw,
+    hourRaw,
+    minuteRaw,
+    secondRaw,
+  ] = match;
+
+  const year = Number(yearRaw);
+  const monthIndex = Number(monthRaw) - 1;
+  const day = Number(dayRaw);
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  const second = Number(secondRaw);
+
+  if (![year, monthIndex, day, hour, minute, second].every((n) => Number.isFinite(n))) return undefined;
+
+  // Validate against Date rollover so invalid dates don't silently pass.
+  const d = new Date(year, monthIndex, day, hour, minute, second);
+  if (
+    d.getFullYear() !== year ||
+    d.getMonth() !== monthIndex ||
+    d.getDate() !== day ||
+    d.getHours() !== hour ||
+    d.getMinutes() !== minute ||
+    d.getSeconds() !== second
+  ) {
+    return undefined;
+  }
+
+  return d.getTime();
+}
+
+function isLikelyWFRECUCsv(content: string): boolean {
+  const firstLine = content
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (!firstLine) return false;
+
+  const cells = parseCsvLine(firstLine);
+  if (cells.length !== 11 && cells.length !== 12) return false;
+
+  const bus = (cells[1] ?? "").trim().toUpperCase();
+  if (bus !== "CAN") return false;
+
+  const tRel = Number(cells[0]);
+  const canId = Number(cells[2]);
+  if (!Number.isFinite(tRel) || !Number.isFinite(canId)) return false;
+  if (tRel < 0 || canId < 0) return false;
+
+  // Validate the 8 payload bytes quickly; final field may be empty if there is a trailing comma.
+  const bytes = cells.slice(3, 11);
+  if (bytes.length !== 8) return false;
+  return bytes.every((b) => {
+    const n = Number(b);
+    return Number.isFinite(n) && Number.isInteger(n) && n >= 0 && n <= 255;
+  });
+}
+
+export function parseWFRECUCsv(content: string, fileName?: string): ReplayParseResult {
+  const warnings: ReplayValidationWarning[] = [];
+  const errors: ReplayValidationError[] = [];
+
+  const epochBaseMs = parseWFRECUEpochBaseMsFromFilename(fileName);
+  if (epochBaseMs === undefined) {
+    warnings.push({
+      code: "ecu-epoch-from-filename-missing",
+      message: "Could not parse ECU record start time from filename; t_epoch_ms may be derived at import time.",
+    });
+  }
+
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (lines.length === 0) {
+    return {
+      frames: [],
+      warnings,
+      errors: [{ message: "ECU CSV must contain at least one data row." }],
+    };
+  }
+
+  const frames: ReplayFrame[] = [];
+
+  // ECU format (WFRECU):
+  //   t_ms_since_ecu_start,CAN,can_id,b0,b1,b2,b3,b4,b5,b6,b7
+  // Optional trailing comma may produce an extra empty field (12 columns).
+  for (let idx = 0; idx < lines.length; idx += 1) {
+    const line = lines[idx]!;
+    const rowNumber = idx + 1;
+    const cells = parseCsvLine(line);
+
+    if (cells.length !== 11 && cells.length !== 12) {
+      errors.push({ row: rowNumber, message: `ECU CSV expected 11 columns, got ${cells.length}.` });
+      continue;
+    }
+
+    const tRelRaw = cells[0] ?? "";
+    const bus = (cells[1] ?? "").trim().toUpperCase();
+    const canIdRaw = cells[2] ?? "";
+
+    const tRel = Number(tRelRaw);
+    const canId = Number(canIdRaw);
+
+    if (!Number.isFinite(tRel) || tRel < 0 || !Number.isInteger(tRel)) {
+      errors.push({ row: rowNumber, field: "t_rel_ms", message: "t_ms_since_ecu_start must be a non-negative integer" });
+      continue;
+    }
+
+    if (!Number.isFinite(canId) || canId < 0 || !Number.isInteger(canId)) {
+      errors.push({ row: rowNumber, field: "can_id", message: "can_id must be a non-negative integer" });
+      continue;
+    }
+
+    // If bus isn't CAN, don't hard-fail: just still attempt the mapping.
+    if (bus !== "CAN") {
+      warnings.push({
+        code: "ecu-non-can-bus",
+        message: `Row ${rowNumber}: expected bus "CAN", got "${bus}". Proceeding with mapping.`,
+      });
+    }
+
+    const bytes = cells.slice(3, 11);
+    if (bytes.length !== 8) {
+      errors.push({ row: rowNumber, field: "payload", message: "Expected exactly 8 payload byte columns." });
+      continue;
+    }
+
+    const byteNumbers: number[] = [];
+    let byteParseFailed = false;
+    for (const b of bytes) {
+      const n = Number(b);
+      if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > 255) {
+        byteParseFailed = true;
+        break;
+      }
+      byteNumbers.push(n);
+    }
+
+    if (byteParseFailed) {
+      errors.push({ row: rowNumber, field: "payload", message: "Payload bytes must be integers in [0, 255]." });
+      continue;
+    }
+
+    const dataHex = byteNumbers
+      .map((n) => Math.trunc(n).toString(16).padStart(2, "0"))
+      .join("");
+
+    const frame: ReplayFrame = {
+      tRelMs: tRel,
+      canId: canId,
+      // 11-bit vs 29-bit is determined from the numeric arbitration id.
+      // WFRECU currently uses ids up to 2048, so extended frames are represented with can_id > 0x7FF.
+      isExtended: canId > 0x7ff,
+      direction: "rx",
+      dlc: 8,
+      dataHex,
+      tEpochMs: epochBaseMs !== undefined ? epochBaseMs + tRel : undefined,
+      source: "wfrecu",
+      channel: "CAN",
+    };
+
+    const frameErrors = validateFrame(frame, rowNumber);
+    if (frameErrors.length > 0) {
+      errors.push(...frameErrors);
+      continue;
+    }
+
+    frames.push(frame);
+  }
+
+  appendFrameCapWarning(frames, warnings);
+  return { frames, warnings, errors };
+}
+
 export function validateFileSize(fileSizeBytes: number): {
   warnings: ReplayValidationWarning[];
   errors: ReplayValidationError[];
@@ -204,11 +402,14 @@ export function parsePecanSessionJson(content: string): ReplayParseResult {
   }
 
   const session = parsed as Partial<ReplaySession>;
+  const versionRaw = (parsed as Record<string, unknown>).version;
   if (session.format !== "pecan-session") {
     errors.push({ field: "format", message: "format must be 'pecan-session'" });
   }
-  if (session.version !== 1) {
-    errors.push({ field: "version", message: "version must be 1" });
+  if (versionRaw === 1) {
+    errors.push({ field: "version", message: "This .pecan file was exported in v1 format (named-object frames) which is no longer supported. Re-import from the original data source and re-export as v2." });
+  } else if (versionRaw !== 2) {
+    errors.push({ field: "version", message: `Unsupported session version: ${versionRaw}. Only v2 is supported.` });
   }
   if (!Array.isArray(session.frames)) {
     errors.push({ field: "frames", message: "frames must be an array" });
@@ -219,20 +420,35 @@ export function parsePecanSessionJson(content: string): ReplayParseResult {
   }
 
   const frames: ReplayFrame[] = [];
-  const sourceFrames = session.frames as Partial<ReplayFrame>[];
+  const rawEpochBase = (session as Record<string, unknown>).epochBaseMs;
+  const epochBase: number | undefined = Number.isFinite(rawEpochBase as number)
+    ? rawEpochBase as number
+    : undefined;
 
-  sourceFrames.forEach((frameLike, idx) => {
+  (session.frames as unknown[]).forEach((row, idx) => {
+    if (!Array.isArray(row) || row.length < 4) {
+      errors.push({ row: idx + 1, message: "frame must be a 4-element array [tRelMs, canId, flags, dataHex]" });
+      return;
+    }
+
+    const [tRelMs, canId, flags, dataHexRaw] = row as [unknown, unknown, unknown, unknown];
+    const flagsNum = Number(flags);
+    if (!Number.isFinite(flagsNum) || !Number.isInteger(flagsNum)) {
+      errors.push({ row: idx + 1, field: "flags", message: "flags must be an integer" });
+      return;
+    }
+    const tRelNum = Number(tRelMs);
+    const dataHex = normalizeHex(String(dataHexRaw ?? ""));
+    const dlc = dataHex.length / 2;
+
     const frame: ReplayFrame = {
-      tRelMs: Number(frameLike.tRelMs),
-      canId: Number(frameLike.canId),
-      isExtended: Boolean(frameLike.isExtended),
-      direction: frameLike.direction === "tx" ? "tx" : "rx",
-      dlc: Number(frameLike.dlc),
-      dataHex: normalizeHex(String(frameLike.dataHex ?? "")),
-      tEpochMs: frameLike.tEpochMs !== undefined ? Number(frameLike.tEpochMs) : undefined,
-      tLocalTime: frameLike.tLocalTime !== undefined ? String(frameLike.tLocalTime) : undefined,
-      channel: frameLike.channel,
-      source: frameLike.source,
+      tRelMs: tRelNum,
+      canId: Number(canId),
+      isExtended: Boolean(flagsNum & 1),
+      direction: (flagsNum & 2) ? "tx" : "rx",
+      dlc,
+      dataHex,
+      tEpochMs: epochBase !== undefined && Number.isFinite(tRelNum) ? epochBase + tRelNum : undefined,
     };
 
     const frameErrors = validateFrame(frame, idx + 1);
@@ -244,12 +460,7 @@ export function parsePecanSessionJson(content: string): ReplayParseResult {
     frames.push(frame);
   });
 
-  if (frames.length > HARD_FRAME_CAP) {
-    errors.push({
-      field: "frames",
-      message: `Frame count ${frames.length.toLocaleString()} exceeds hard cap of ${HARD_FRAME_CAP.toLocaleString()}.`,
-    });
-  }
+  appendFrameCapWarning(frames, warnings);
 
   return {
     frames,
@@ -323,13 +534,7 @@ export function parseReplayCsv(content: string): ReplayParseResult {
     });
   }
 
-  if (frames.length > HARD_FRAME_CAP) {
-    errors.push({
-      field: "frames",
-      message: `Frame count ${frames.length.toLocaleString()} exceeds hard cap of ${HARD_FRAME_CAP.toLocaleString()}.`,
-    });
-  }
-
+  appendFrameCapWarning(frames, warnings);
   return { frames, warnings, errors };
 }
 
@@ -344,7 +549,9 @@ export async function parseReplayFile(file: File): Promise<ReplayParseResult> {
 
   const parsed = lower.endsWith(".pecan") || lower.endsWith(".json")
     ? parsePecanSessionJson(content)
-    : parseReplayCsv(content);
+    : isLikelyWFRECUCsv(content)
+      ? parseWFRECUCsv(content, file.name)
+      : parseReplayCsv(content);
 
   return {
     ...parsed,

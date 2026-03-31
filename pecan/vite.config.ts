@@ -126,6 +126,21 @@ export default defineConfig({
       }
     })
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/plotly.js')) return 'vendor-plotly';
+          if (id.includes('node_modules/reactflow') || id.includes('node_modules/@reactflow')) return 'vendor-reactflow';
+          if (id.includes('node_modules/@jitsi')) return 'vendor-jitsi';
+          if (id.includes('node_modules/firebase')) return 'vendor-firebase';
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) return 'vendor-charts';
+          if (id.includes('node_modules/react-bootstrap') || id.includes('node_modules/bootstrap')) return 'vendor-ui';
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/') || id.includes('node_modules/react-router') || id.includes('node_modules/scheduler')) return 'vendor-react';
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',
