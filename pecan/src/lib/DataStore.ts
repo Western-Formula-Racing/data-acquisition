@@ -13,6 +13,7 @@
  */
 
 import { coldStore, type RawCanFrame } from "./ColdStore";
+import { createCanProcessor, formatCanId } from "../utils/canProcessor";
 
 // ── Binary-search helpers ──────────────────────────────────────────────────
 
@@ -67,7 +68,6 @@ interface SourceBufferSet {
 
 // Hard cap on the flat trace buffer (evicted entries go to ColdStore).
 const TRACE_BUFFER_HARD_MAX = 100_000;
-const CAN_STD_MAX = 0x7FF;
 
 // Per-message sample cap — prevents a single high-rate ID from dominating heap.
 const PER_MESSAGE_SAMPLE_CAP = 10_000;
@@ -272,14 +272,6 @@ class DataStore {
     }
   }
 
-  private formatCanIdFallback(canId: number): string {
-    const unsignedId = canId >>> 0;
-    if (unsignedId > CAN_STD_MAX) {
-      return `0x${unsignedId.toString(16).toUpperCase().padStart(8, "0")}`;
-    }
-    return `0x${unsignedId.toString(16).toUpperCase().padStart(3, "0")}`;
-  }
-
   private compactHexToBytes(compactHex: string): number[] {
     if (!compactHex || compactHex.length % 2 !== 0 || !/^[0-9A-Fa-f]+$/.test(compactHex)) {
       return [];
@@ -334,12 +326,7 @@ class DataStore {
     this.isRestoringSnapshot = true;
 
     try {
-      const canProcessorModule = await import("../utils/canProcessor").catch(() => null);
-      const createCanProcessor = canProcessorModule?.createCanProcessor;
-      const formatCanId = canProcessorModule?.formatCanId;
-      const processor = typeof createCanProcessor === "function"
-        ? await createCanProcessor().catch(() => null)
-        : null;
+      const processor = await createCanProcessor().catch(() => null);
 
       const chunkSize = 5000;
       for (let i = 0; i < frames.length; i += chunkSize) {
@@ -372,9 +359,7 @@ class DataStore {
 
           const timestamp = frame.t;
           const canId = frame.id >>> 0;
-          const msgID = typeof formatCanId === "function"
-            ? formatCanId(canId)
-            : this.formatCanIdFallback(canId);
+          const msgID = formatCanId(canId);
           const decoded = processor?.decode(canId, bytes, timestamp) ?? null;
 
           messages.push({
@@ -1079,17 +1064,10 @@ class DataStore {
 
       const byMsgId = new Map<string, TelemetrySample[]>();
       if (rawFrames.length > 0) {
-        const canProcessorModule = await import("../utils/canProcessor").catch(() => null);
-        const createCanProcessor = canProcessorModule?.createCanProcessor;
-        const formatCanId        = canProcessorModule?.formatCanId;
-        const processor = typeof createCanProcessor === "function"
-          ? await createCanProcessor().catch(() => null)
-          : null;
+        const processor = await createCanProcessor().catch(() => null);
 
         for (const frame of rawFrames) {
-          const msgID = typeof formatCanId === "function"
-            ? formatCanId(frame.canId)
-            : this.formatCanIdFallback(frame.canId);
+          const msgID = formatCanId(frame.canId);
 
           const bytes   = Array.from(frame.data.slice(0, frame.dlc));
           const decoded = processor?.decode(frame.canId, bytes, frame.timestamp) ?? null;
