@@ -278,9 +278,10 @@ class ColdStore {
 
   private async enforceLimits(): Promise<void> {
     if (!this.dir) return;
-    let didWarn = false;
+    let didWarnDuration = false;
+    let didWarnSize = false;
 
-    while (this.index.length > 1) {
+    while (this.index.length > 0) {
       const duration = this.getSessionDurationMs();
       const size     = this.getTotalBytes();
       if (duration <= MAX_DURATION_MS && size <= MAX_BYTES) break;
@@ -289,11 +290,13 @@ class ColdStore {
       try { await this.dir.removeEntry(oldest.filename); } catch { /* ignore */ }
       this.index.shift();
 
-      if (!didWarn && duration > MAX_DURATION_MS) {
-        this.onWarning?.(
-          "Session cold storage reached 1 h. Oldest data is being discarded."
-        );
-        didWarn = true;
+      if (!didWarnDuration && duration > MAX_DURATION_MS) {
+        this.onWarning?.("Session cold storage reached 1 h. Oldest data is being discarded.");
+        didWarnDuration = true;
+      }
+      if (!didWarnSize && size > MAX_BYTES) {
+        this.onWarning?.("Session cold storage reached 500 MB. Oldest data is being discarded.");
+        didWarnSize = true;
       }
     }
   }

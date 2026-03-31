@@ -402,11 +402,14 @@ export function parsePecanSessionJson(content: string): ReplayParseResult {
   }
 
   const session = parsed as Partial<ReplaySession>;
+  const versionRaw = (parsed as Record<string, unknown>).version;
   if (session.format !== "pecan-session") {
     errors.push({ field: "format", message: "format must be 'pecan-session'" });
   }
-  if (session.version !== 2) {
-    errors.push({ field: "version", message: "version must be 2" });
+  if (versionRaw === 1) {
+    errors.push({ field: "version", message: "This .pecan file was exported in v1 format (named-object frames) which is no longer supported. Re-import from the original data source and re-export as v2." });
+  } else if (versionRaw !== 2) {
+    errors.push({ field: "version", message: `Unsupported session version: ${versionRaw}. Only v2 is supported.` });
   }
   if (!Array.isArray(session.frames)) {
     errors.push({ field: "frames", message: "frames must be an array" });
@@ -417,8 +420,9 @@ export function parsePecanSessionJson(content: string): ReplayParseResult {
   }
 
   const frames: ReplayFrame[] = [];
-  const epochBase: number | undefined = typeof (session as Record<string, unknown>).epochBaseMs === "number"
-    ? (session as Record<string, unknown>).epochBaseMs as number
+  const rawEpochBase = (session as Record<string, unknown>).epochBaseMs;
+  const epochBase: number | undefined = Number.isFinite(rawEpochBase as number)
+    ? rawEpochBase as number
     : undefined;
 
   (session.frames as unknown[]).forEach((row, idx) => {
@@ -428,17 +432,23 @@ export function parsePecanSessionJson(content: string): ReplayParseResult {
     }
 
     const [tRelMs, canId, flags, dataHexRaw] = row as [unknown, unknown, unknown, unknown];
+    const flagsNum = Number(flags);
+    if (!Number.isFinite(flagsNum) || !Number.isInteger(flagsNum)) {
+      errors.push({ row: idx + 1, field: "flags", message: "flags must be an integer" });
+      return;
+    }
+    const tRelNum = Number(tRelMs);
     const dataHex = normalizeHex(String(dataHexRaw ?? ""));
     const dlc = dataHex.length / 2;
 
     const frame: ReplayFrame = {
-      tRelMs: Number(tRelMs),
+      tRelMs: tRelNum,
       canId: Number(canId),
-      isExtended: Boolean(Number(flags) & 1),
-      direction: (Number(flags) & 2) ? "tx" : "rx",
+      isExtended: Boolean(flagsNum & 1),
+      direction: (flagsNum & 2) ? "tx" : "rx",
       dlc,
       dataHex,
-      tEpochMs: epochBase !== undefined ? epochBase + Number(tRelMs) : undefined,
+      tEpochMs: epochBase !== undefined && Number.isFinite(tRelNum) ? epochBase + tRelNum : undefined,
     };
 
     const frameErrors = validateFrame(frame, idx + 1);

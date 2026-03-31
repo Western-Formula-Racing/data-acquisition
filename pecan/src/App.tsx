@@ -69,14 +69,15 @@ function App() {
   const closeAuth = () => setIsAuthOpen(false);
   const showAppBanners = location.pathname !== "/";
 
-  const handleClearRecoveredSession = () => {
+  const handleClearRecoveredSession = async () => {
+    // Wipe cold store first so that getColdExtent() returns null by the time
+    // dataStore notifications fire and TimelineContext re-reads bounds.
+    await coldStore.clear().catch(console.warn);
     dataStore.clear();
     dataStore.setActiveSource("live");
     dataStore.clearPersistedSnapshot();
+    dataStore.notifyBoundsRefresh();
     clearCheckpoints();
-    // Also wipe the OPFS cold store so getColdExtent() returns null and
-    // TimelineContext resets its collectionStartMs to null (not the old timestamps).
-    coldStore.clear().catch(console.warn);
   };
 
   useEffect(() => {

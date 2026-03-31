@@ -90,6 +90,7 @@ function sampleToReplayFrame(sample: TelemetrySample, exportStartMs: number): Re
 
   return {
     tRelMs: Math.max(0, sample.timestamp - exportStartMs),
+    tEpochMs: sample.timestamp,
     tLocalTime: formatLocalTimestamp(sample.timestamp),
     canId,
     isExtended: canId > 0x7ff,

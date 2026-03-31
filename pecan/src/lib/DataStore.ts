@@ -166,6 +166,9 @@ class DataStore {
   /** True while an async cold-range prefetch is in flight. */
   private warmCacheLoading = false;
 
+  /** Latest prefetch range requested while a load was in-flight; replayed after completion. */
+  private pendingWarmRange: { startMs: number; endMs: number } | null = null;
+
   /** Cold store warning message from the last enforceLimits pass. */
   private coldWarningMessage: string | null = null;
 
@@ -1047,7 +1050,11 @@ class DataStore {
    * Skips the load if the requested range is already covered by the cache.
    */
   public async prefetchWarmCache(startMs: number, endMs: number): Promise<void> {
-    if (this.warmCacheLoading) return;
+    if (this.warmCacheLoading) {
+      // Queue the latest range; it will be run after the current load finishes.
+      this.pendingWarmRange = { startMs, endMs };
+      return;
+    }
 
     // Already fully covered?
     if (
@@ -1093,7 +1100,24 @@ class DataStore {
     } finally {
       this.warmCacheLoading = false;
       this.notifyColdState();
+
+      // If another scrub request arrived while we were loading, service it now.
+      const pending = this.pendingWarmRange;
+      if (pending) {
+        this.pendingWarmRange = null;
+        this.prefetchWarmCache(pending.startMs, pending.endMs).catch(console.warn);
+      }
     }
+  }
+
+  /**
+   * Fire a bounds-refresh notification. Called after async operations that
+   * change cold-store contents (e.g. clearing OPFS) so that subscribers such
+   * as TimelineContext re-read getColdExtent() with up-to-date data.
+   */
+  public notifyBoundsRefresh(): void {
+    this.notifyAll();
+    this.notifyColdState();
   }
 
   /** Clear the warm cache (e.g. when returning to live mode). */

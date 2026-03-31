@@ -185,18 +185,23 @@ export function useDataStoreStats(): ReturnType<typeof dataStore.getStats> {
 
   useEffect(() => {
     let scheduled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const schedule = () => {
       if (scheduled) return;
       scheduled = true;
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         scheduled = false;
+        timeoutId = null;
         setStats(dataStore.getStats());
       }, 1000);
     };
 
     const unsubscribe = dataStore.subscribe(schedule);
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      if (timeoutId !== null) clearTimeout(timeoutId);
+    };
   }, []);
 
   return stats;
@@ -328,23 +333,28 @@ export function useTraceBuffer(throttleMs = 50, source?: TelemetrySource): {
 
   useEffect(() => {
     let pending = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const flush = () => {
       pending = false;
+      timeoutId = null;
       setFrames(dataStore.getTrace(source));
     };
 
     const unsubscribe = dataStore.subscribeTrace(() => {
       if (!pending) {
         pending = true;
-        setTimeout(flush, throttleMs);
+        timeoutId = setTimeout(flush, throttleMs);
       }
     });
 
     // Sync immediately on mount
     setFrames(dataStore.getTrace(source));
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      if (timeoutId !== null) clearTimeout(timeoutId);
+    };
   }, [throttleMs, source]);
 
   const clearTrace = useCallback(() => {

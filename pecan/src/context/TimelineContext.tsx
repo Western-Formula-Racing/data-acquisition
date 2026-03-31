@@ -247,7 +247,7 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [collectionStartMs, collectionEndMs]
+    [collectionStartMs, collectionEndMs, source, windowMs]
   );
 
   const goLive = useCallback(() => {
