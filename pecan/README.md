@@ -45,7 +45,7 @@ graph LR
     subgraph Pecan ["Pecan Dashboard (Browser)"]
         WS["WebSocketService"]
         CP["CAN Processor<br/>(candied + DBC)"]
-        DS["DataStore<br/>(Ring Buffer)"]
+        DS["DataStore<br/>(Hot Buffer + OPFS Cold)"]
         RH["React Hooks<br/>(useDataStore)"]
         UI["UI Components<br/>(Dashboard, Plots,<br/>Accumulator, Monitor)"]
     end
@@ -58,49 +58,61 @@ graph LR
     RH -->|reactive state| UI
 ```
 
-### Data Buffering Pipeline
+### Hot / Cold Data Pipeline
 
-The `DataStore` is a singleton in-browser ring buffer that serves as the single source of truth for live telemetry. Each CAN message ID gets its own sample array, pruned on every ingest.
+PECAN uses a three-tier memory architecture so the JS heap stays bounded even on a Raspberry Pi during a multi-hour session.
 
 ```mermaid
-flowchart TD
-    subgraph Ingestion
-        WS["WebSocket<br/>onmessage"]
-        WS -->|"JSON.parse()"| PROC["processWebSocketMessage()"]
-        PROC -->|"decode via DBC"| DEC["decodeCanMessage()"]
-        DEC -->|"DecodedMessage<br/>{canId, signals, time}"| INGEST["dataStore.ingestMessage()"]
+flowchart LR
+    subgraph ingest ["Ingest (hot path)"]
+        WS["WebSocket\nonmessage"] -->|"JSON.parse"| PROC["processWebSocketMessage()"]
+        PROC -->|"DBC decode"| DS["dataStore.ingestMessage()"]
     end
 
-    subgraph DataStore Ring Buffer
-        INGEST --> ROUND["Round sensor readings<br/>to 3 decimal places"]
-        ROUND --> PUSH["Push to<br/>buffer.get(msgID).samples[]"]
-        PUSH --> PRUNE["pruneOldSamples()<br/>Drop samples older<br/>than retention window"]
-        PRUNE --> NOTIFY["notifyAll(msgID)<br/>Pub/sub broadcast"]
+    subgraph hot ["Hot Buffer (JS Heap — last 5 min)"]
+        DS --> BYMSG["byMsgId\nMap per CAN ID\ncap: 10 000 samples"]
+        DS --> TRACE["trace[]\nchronological\ncap: 100 000 entries"]
+        BYMSG -->|"binary-search + splice prune"| EVICT["Evicted frames"]
+        TRACE  -->|"binary-search + splice prune"| EVICT
     end
 
-    subgraph Buffer Structure
-        BUF["Map&lt;msgID, MessageBuffer&gt;"]
-        MB1["msgID '256'<br/>samples: TelemetrySample[]<br/>lastUpdated: timestamp"]
-        MB2["msgID '512'<br/>samples: TelemetrySample[]<br/>lastUpdated: timestamp"]
-        BUF --- MB1
-        BUF --- MB2
+    subgraph cold ["Cold Store (OPFS — up to 1 h / 500 MB)"]
+        EVICT -->|"21-byte binary records\nasync batch write"| CHUNKS["5-min chunk files\nchunk_T.bin"]
+        CHUNKS --> INDEX["index.json\ntime range index"]
     end
 
-    subgraph React Consumption
-        NOTIFY --> HOOKS["useLatestMessage()<br/>useMessageHistory()<br/>useSignal()<br/>useAllLatestMessages()"]
-        HOOKS -->|"setState → re-render"| COMP["Dashboard Cards<br/>Plotly Charts<br/>Accumulator View<br/>Monitor Builder"]
+    subgraph warm ["Warm Cache (JS Heap — scrub window only)"]
+        INDEX -->|"loadRange(start, end)"| DECODE["DBC re-decode\nfiltered to needed msgIDs"]
+        DECODE --> WCACHE["warmCache\nbyMsgId per scrub window"]
     end
 
-    style PRUNE fill:#f9f,stroke:#333
-    style BUF fill:#bbf,stroke:#333
+    subgraph ui ["UI"]
+        TIMELINE["Timeline cursor\nseek()"] -->|"cursor in hot range"| BYMSG
+        TIMELINE -->|"cursor in cold range\nprefetchWarmCache()"| WCACHE
+        PLOT["PlotManager\ngetHistoryAt() sync"] --> BYMSG
+        PLOT -->|"warm cache fallback"| WCACHE
+        DASH["Dashboard\ngetAllLatestAt() sync"] --> BYMSG
+        DASH -->|"warm cache fallback"| WCACHE
+        EXPORT["Export .pecan\nuser-triggered"] -->|"hot frames"| BYMSG
+        EXPORT -->|"cold frames\ncoldStore.loadRange()"| CHUNKS
+    end
 ```
 
-**Key buffering details:**
-- **Retention window**: 5 minutes (300,000 ms) — configurable via `setRetentionWindow()`
-- **Pruning strategy**: On every `ingestMessage()`, samples older than the cutoff are filtered out
-- **Timestamp correction**: Timestamps older than 1 hour are replaced with `Date.now()` (handles recorded/replayed/ECU relative timestamp data)
-- **Per-message isolation**: Each CAN ID has its own independent sample array
-- **Memory estimate**: ~200 bytes per sample, tracked via `getStats()`
+**Key design decisions:**
+
+- **Hot buffer** holds the last **5 minutes** of decoded `TelemetrySample` objects per CAN ID (`byMsgId`, capped at 10 000 samples per message) plus a flat chronological `trace[]` (capped at 100 000 entries).  All pruning uses **binary search + in-place splice** — no `.filter()` array allocation.
+- **Cold store** (OPFS, `ColdStore.ts`): evicted frames are converted to 21-byte binary records and written to time-partitioned 5-minute chunk files on the Origin Private File System. Total cap: 1 hour / 500 MB. Oldest chunks are dropped when the limit is reached and a warning banner appears.
+- **Warm cache**: when the timeline cursor scrubs into cold territory, `prefetchWarmCache(start, end)` reads the relevant OPFS chunks, re-decodes them via the DBC, and populates a temporary `byMsgId` map. All sync read APIs (`getHistoryAt`, `getAllLatestAt`, `getHistory`) transparently merge hot + warm data.
+- **Export** is the only explicit user action that persists data. Clicking "Export .pecan" reads both the hot trace and cold store for the selected range — no "start recording" step required.
+
+**Memory budget on RPi (typical 56-message CAN bus at ~50 Hz):**
+
+| Layer | Max samples | Approx heap |
+|---|---|---|
+| `byMsgId` (hot) | 56 × 10 000 = 560 k | ~336 MB (600 B/sample) |
+| `trace[]` (hot) | 100 000 | shared refs, ~0 extra |
+| Warm cache | ~1 plot window | ~10–50 MB |
+| OPFS cold store | up to 1 h on disk | off-heap |
 
 ### WebSocket Connection Method
 

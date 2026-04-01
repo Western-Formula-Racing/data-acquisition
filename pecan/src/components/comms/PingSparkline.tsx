@@ -15,7 +15,20 @@ interface Props {
   windowMs?: number;
 }
 
+function useChartColors() {
+  return useMemo(() => {
+    const styles = getComputedStyle(document.body);
+    return {
+      tickColor: styles.getPropertyValue('--color-text-muted').trim() || '#9ca3af',
+      axisColor: styles.getPropertyValue('--color-border-strong').trim() || '#374151',
+      tooltipBg: styles.getPropertyValue('--color-data-module-bg').trim() || '#1f2937',
+    };
+  }, []);
+}
+
 export default function PingSparkline({ history, windowMs = 60_000 }: Props) {
+  const { tickColor, axisColor, tooltipBg } = useChartColors();
+
   const chartData = useMemo(() => {
     const now = Date.now();
     return history.map((s) => ({
@@ -53,15 +66,15 @@ export default function PingSparkline({ history, windowMs = 60_000 }: Props) {
             dataKey="time"
             type="number"
             domain={[-(windowMs / 1000), 0]}
-            tick={{ fill: '#9ca3af', fontSize: 9 }}
+            tick={{ fill: tickColor, fontSize: 9 }}
             tickFormatter={(v) => `${v}s`}
-            axisLine={{ stroke: '#374151' }}
+            axisLine={{ stroke: axisColor }}
             tickLine={false}
             ticks={[-60, -45, -30, -15, 0]}
           />
           <YAxis
             domain={[0, maxRtt]}
-            tick={{ fill: '#9ca3af', fontSize: 9 }}
+            tick={{ fill: tickColor, fontSize: 9 }}
             tickFormatter={(v) => `${v}`}
             axisLine={false}
             tickLine={false}
@@ -69,12 +82,12 @@ export default function PingSparkline({ history, windowMs = 60_000 }: Props) {
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: '#1f2937',
-              border: '1px solid #374151',
+              backgroundColor: tooltipBg,
+              border: `1px solid ${axisColor}`,
               borderRadius: '4px',
               fontSize: '10px',
             }}
-            labelStyle={{ color: '#9ca3af' }}
+            labelStyle={{ color: tickColor }}
             formatter={(v: number | undefined) => [`${v != null ? v.toFixed(1) : '--'} ms`, 'RTT']}
             labelFormatter={(v) => `${v}s ago`}
           />

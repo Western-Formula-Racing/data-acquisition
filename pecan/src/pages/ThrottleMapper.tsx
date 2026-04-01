@@ -190,7 +190,8 @@ const Throttle_Mapper: React.FC = () => {
             CANVAS_SIZE - PADDING - val * (CANVAS_SIZE - 2 * PADDING);
 
         // Grid
-        ctx.strokeStyle = "#e5e7eb";
+        const styles = getComputedStyle(document.body);
+        ctx.strokeStyle = styles.getPropertyValue("--color-text-secondary").trim() || "#e5e7eb";
         ctx.lineWidth = 1;
         ctx.beginPath();
         for (let i = 0; i <= 10; i++) {
@@ -203,7 +204,7 @@ const Throttle_Mapper: React.FC = () => {
         ctx.stroke();
 
         // Axes
-        ctx.strokeStyle = "#9ca3af";
+        ctx.strokeStyle = styles.getPropertyValue("--color-text-muted").trim() || "#9ca3af";
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(scaleX(0), scaleY(0));
@@ -213,7 +214,7 @@ const Throttle_Mapper: React.FC = () => {
         ctx.stroke();
 
         // Labels
-        ctx.fillStyle = "#6b7280";
+        ctx.fillStyle = styles.getPropertyValue("--color-text-muted").trim() || "#6b7280";
         ctx.font = "10px sans-serif";
         ctx.fillText("0%", scaleX(0) - 10, scaleY(0) + 15);
         ctx.fillText("100% Input", scaleX(1) - 60, scaleY(0) + 15);
@@ -352,7 +353,7 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                         <Activity className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold uppercase tracking-tight text-white">
+                        <h1 className="app-menu-title uppercase">
                             Throttle Mapper
                         </h1>
                         <p className="text-sm text-white">
@@ -610,7 +611,7 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                                     <div className="p-2 bg-blue-500/10 rounded-lg">
                                         <Zap className="w-5 h-5 text-blue-400" />
                                     </div>
-                                    <h3 className="text-lg font-bold text-white tracking-tight">CAN Dispatcher</h3>
+                                    <h3 className="app-section-title text-white">CAN Dispatcher</h3>
                                 </div>
                                 <div className="flex gap-2">
                                     <span className="px-3 py-1 rounded-full bg-slate-950 border border-slate-800 text-[10px] font-mono text-slate-400">

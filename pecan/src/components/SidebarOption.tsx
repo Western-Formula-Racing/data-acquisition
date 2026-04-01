@@ -20,14 +20,14 @@ function SidebarOption({
       <NavLink
         onClick={onClose}
         className={({ isActive }) =>
-          `flex gap-6 items-center box-border px-3 !no-underline ${isActive
+          `sidebar-nav-link flex gap-6 items-center box-border px-3 ${isActive
             ? "bg-option-select md:rounded-r-md md:mr-[-2%]"
             : "bg-option hover:bg-option-select/80 transition-colors duration-450"
           } ${nested ? "pl-10 h-15" : "h-20"}`
         }
         to={path}
       >
-        <span className={`${nested ? "text-xl" : "text-3xl"} text-sidebarfg text-3xl font-heading leading-6 scale-y-75 uppercase`}>
+        <span className={nested ? "sidebar-nav-label-nested" : "sidebar-nav-label"}>
           {option}
         </span>
         {isPending && (

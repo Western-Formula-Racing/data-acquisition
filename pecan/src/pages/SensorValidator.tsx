@@ -274,8 +274,12 @@ const SensorValidator: React.FC = () => {
 
         ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
+        const styles = getComputedStyle(document.body);
+        const gridColor = styles.getPropertyValue("--color-text-muted").trim() || "#666";
+        const labelColor = styles.getPropertyValue("--color-text-muted").trim() || "#666";
+
         if (capturedPoints.length === 0 && !selectedSignal) {
-            ctx.fillStyle = "#999";
+            ctx.fillStyle = gridColor;
             ctx.font = "14px Inter";
             ctx.textAlign = "center";
             ctx.fillText("Select a signal to begin", CANVAS_SIZE / 2, CANVAS_SIZE / 2);
@@ -323,7 +327,7 @@ const SensorValidator: React.FC = () => {
         const scaleY = (val: number) => CANVAS_SIZE - PADDING - ((val - minRef) / rangeRef) * (CANVAS_SIZE - 2 * PADDING);
 
         // Grid
-        ctx.strokeStyle = "#333";
+        ctx.strokeStyle = gridColor;
         ctx.setLineDash([2, 4]);
         ctx.beginPath();
         for (let i = 0; i <= 4; i++) {
@@ -342,7 +346,7 @@ const SensorValidator: React.FC = () => {
         ctx.setLineDash([]);
 
         // Labels
-        ctx.fillStyle = "#666";
+        ctx.fillStyle = labelColor;
         ctx.font = "10px Inter";
         ctx.textAlign = "center";
         ctx.fillText(minCan.toFixed(1), scaleX(minCan), CANVAS_SIZE - PADDING + 15);
@@ -384,7 +388,7 @@ const SensorValidator: React.FC = () => {
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                    <h1 className="text-2xl sm:text-4xl font-bold tracking-tight uppercase flex items-center gap-3">
+                    <h1 className="app-menu-title uppercase flex items-center gap-3">
                         <Activity className="text-blue-500 flex-shrink-0" size={28} />
                         Sensor Validation
                     </h1>
@@ -422,7 +426,7 @@ const SensorValidator: React.FC = () => {
                 <div className="flex flex-col gap-6">
                     {/* Signal Selection */}
                     <div className="bg-black/40 border border-white/10 p-5 rounded-lg">
-                        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-blue-400">
+                        <h2 className="app-section-title mb-4 flex items-center gap-2 text-blue-400">
                             <Database size={20} />
                             Signal Selection
                         </h2>
@@ -606,7 +610,7 @@ const SensorValidator: React.FC = () => {
                     <div className="bg-black/40 border border-white/10 p-5 rounded-lg h-full flex flex-col overflow-hidden">
                         <div className="flex flex-col gap-3 mb-4">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                                <h2 className="text-lg font-semibold flex items-center gap-2 text-blue-400 whitespace-nowrap overflow-hidden">
+                                <h2 className="app-section-title flex items-center gap-2 text-blue-400 whitespace-nowrap overflow-hidden">
                                     <LineChart size={20} className="flex-shrink-0" />
                                     Calibration Curve
                                 </h2>
@@ -686,7 +690,7 @@ const SensorValidator: React.FC = () => {
                 <div className="flex flex-col gap-6">
                     <div className="bg-black/40 border border-white/10 p-0 rounded-lg h-full flex flex-col overflow-hidden">
                         <div className="p-5 border-b border-white/10 flex justify-between items-center">
-                            <h2 className="text-lg font-semibold flex items-center gap-2 text-blue-400">
+                            <h2 className="app-section-title flex items-center gap-2 text-blue-400">
                                 <TableIcon size={20} />
                                 Data Points
                             </h2>

@@ -31,7 +31,7 @@ function FloatingTools() {
               onClick={() => {
                 setTracePanelOn((on) => !on);
               }}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#070615]/95 border border-purple-500/40 shadow-lg text-[11px] font-mono text-slate-100 hover:bg-[#120f2a] transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--color-floating-bg)]/95 border border-purple-500/40 shadow-lg text-[11px] font-mono text-slate-100 hover:bg-[var(--color-floating-bg-hover)] transition-colors"
             >
               <span className="px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px]">
                 {tracePanelOn ? "ON" : "OFF"}
@@ -46,7 +46,7 @@ function FloatingTools() {
                   navigate(-1);
                   setMenuOpen(false);
                 }}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#070615]/95 border border-slate-600/60 shadow-lg text-[11px] font-mono text-slate-200 hover:bg-[#141325] transition-colors"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--color-floating-bg)]/95 border border-slate-600/60 shadow-lg text-[11px] font-mono text-slate-200 hover:bg-[var(--color-floating-bg-hover)] transition-colors"
               >
                 <span>Back to previous</span>
                 <Terminal className="w-3 h-3 text-slate-300" />
@@ -57,7 +57,7 @@ function FloatingTools() {
                   navigate("/trace");
                   setMenuOpen(false);
                 }}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#070615]/95 border border-slate-600/60 shadow-lg text-[11px] font-mono text-slate-200 hover:bg-[#141325] transition-colors"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--color-floating-bg)]/95 border border-slate-600/60 shadow-lg text-[11px] font-mono text-slate-200 hover:bg-[var(--color-floating-bg-hover)] transition-colors"
               >
                 <span>CAN TRACE (full)</span>
                 <Terminal className="w-3 h-3 text-slate-300" />

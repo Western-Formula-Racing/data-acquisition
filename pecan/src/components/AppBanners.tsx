@@ -1,8 +1,8 @@
 import { clearDbcCache } from "../utils/canProcessor";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Banner, BannerButton } from "./Banner";
 
-export { DefaultBanner, CacheBanner };
+export { DefaultBanner, CacheBanner, RecoveredSessionBanner };
 
 interface InputProps {
   open: boolean;
@@ -10,21 +10,24 @@ interface InputProps {
   onOpenSettings?: () => void;
 }
 
-// Custom hook for auto-closing banners
+// Custom hook for auto-closing banners (countdown + onClose when timer hits 0)
 function useAutoClose(open: boolean, onClose: () => void, duration: number = 5) {
   const [timeLeft, setTimeLeft] = useState(duration);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) {
-      if (timeLeft !== duration) setTimeLeft(duration); // Reset
+      setTimeLeft(duration);
       return;
     }
 
+    setTimeLeft(duration);
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          onClose(); // Auto close
+          onCloseRef.current();
           return 0;
         }
         return prev - 1;
@@ -32,7 +35,7 @@ function useAutoClose(open: boolean, onClose: () => void, duration: number = 5) 
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [open, onClose, duration]);
+  }, [open, duration]);
 
   return timeLeft;
 }
@@ -42,9 +45,8 @@ const handleRevert = async () => {
 };
 
 function DefaultBanner({ open, onClose, onOpenSettings }: Readonly<InputProps>) {
-  if (!open) return null;
-
   const timeLeft = useAutoClose(open, onClose);
+  if (!open) return null;
 
   const handleOpenSettings = () => {
     onClose();
@@ -58,9 +60,6 @@ function DefaultBanner({ open, onClose, onOpenSettings }: Readonly<InputProps>) 
       <div className="flex items-center gap-2">
         <span className="text-white text-[14pt] font-semibold text-center whitespace-nowrap overflow-hidden text-ellipsis">
           Using preconfigured DBC file.
-          <span className="text-gray-300 ml-2 font-normal">
-            (Dismissing in {timeLeft}s)
-          </span>
         </span>
       </div>
       <div className="flex flex-row items-center gap-4 shrink-0">
@@ -68,7 +67,7 @@ function DefaultBanner({ open, onClose, onOpenSettings }: Readonly<InputProps>) 
           Open Settings
         </BannerButton>
         <BannerButton onClick={onClose}>
-          Dismiss
+          Dismiss ({timeLeft}s)
         </BannerButton>
       </div>
     </Banner>
@@ -76,18 +75,14 @@ function DefaultBanner({ open, onClose, onOpenSettings }: Readonly<InputProps>) 
 }
 
 function CacheBanner({ open, onClose }: Readonly<InputProps>) {
-  if (!open) return null;
-
   const timeLeft = useAutoClose(open, onClose);
+  if (!open) return null;
 
   return (
     <Banner open={open} className="z-50">
       <div className="flex justify-center">
         <span className="text-white text-[16pt] font-semibold text-center">
           Using cached DBC file. This file was uploaded from your browser.
-          <span className="text-gray-300 ml-2 font-normal text-[14pt]">
-            (Dismissing in {timeLeft}s)
-          </span>
         </span>
       </div>
       <div className="flex flex-row items-center justify-end gap-4">
@@ -95,7 +90,39 @@ function CacheBanner({ open, onClose }: Readonly<InputProps>) {
           Revert to Preconfigured
         </BannerButton>
         <BannerButton onClick={onClose}>
-          Dismiss
+          Dismiss ({timeLeft}s)
+        </BannerButton>
+      </div>
+    </Banner>
+  );
+}
+
+interface RecoveredSessionBannerProps extends InputProps {
+  onClearRecovered: () => void;
+}
+
+function RecoveredSessionBanner({ open, onClose, onClearRecovered }: Readonly<RecoveredSessionBannerProps>) {
+  const timeLeft = useAutoClose(open, onClose);
+  if (!open) return null;
+
+  const handleClear = () => {
+    onClearRecovered();
+    onClose();
+  };
+
+  return (
+    <Banner open={open} className="z-40">
+      <div className="flex items-center gap-2">
+        <span className="text-white text-[14pt] font-semibold text-center whitespace-nowrap overflow-hidden text-ellipsis">
+          Recovered previous telemetry session.
+        </span>
+      </div>
+      <div className="flex flex-row items-center gap-4 shrink-0">
+        <BannerButton onClick={handleClear}>
+          Clear Recovered Data
+        </BannerButton>
+        <BannerButton onClick={onClose}>
+          Keep ({timeLeft}s)
         </BannerButton>
       </div>
     </Banner>

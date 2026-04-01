@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { determineCategory, getCategoryColor } from "../config/categories";
 import { useIntersectionObserver } from "../utils/useIntersectionObserver";
 import { dataStore, FREQUENCY_WINDOW_MS } from "../lib/DataStore";
+import { useTimeline } from "../context/TimelineContext";
 
 const CAN_STD_MAX = 0x7FF;
 
@@ -39,6 +40,7 @@ interface DataRowProps {
 }
 
 export default function DataRow({ msgID, name, category, data, rawData, index, initialOpen = false, isTourRow = false, isHighlighted = false, tourSignal, onSignalClick, onTraceClick }: Readonly<DataRowProps>) {
+    const { mode, selectedTimeMs } = useTimeline();
 
     const [currentTime, setCurrentTime] = useState(Date.now());
     const [ref, isIntersecting] = useIntersectionObserver('200px'); // Pre-load slightly offscreen
@@ -50,7 +52,12 @@ export default function DataRow({ msgID, name, category, data, rawData, index, i
         return () => clearInterval(interval);
     }, [isIntersecting]);
 
-    const hz = useMemo(() => dataStore.getFrequency(msgID, FREQUENCY_WINDOW_MS), [msgID, currentTime]);
+    const hz = useMemo(() => {
+        if (mode === "paused") {
+            return dataStore.getFrequencyAt(msgID, FREQUENCY_WINDOW_MS, selectedTimeMs);
+        }
+        return dataStore.getFrequency(msgID, FREQUENCY_WINDOW_MS);
+    }, [msgID, currentTime, mode, selectedTimeMs]);
 
     const computedCategory = useMemo(() => {
         return determineCategory(msgID, category);

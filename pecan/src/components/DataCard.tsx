@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { determineCategory, getCategoryColor } from "../config/categories";
 import { useIntersectionObserver } from "../utils/useIntersectionObserver";
 import { dataStore, FREQUENCY_WINDOW_MS } from "../lib/DataStore";
+import { useTimeline } from "../context/TimelineContext";
 
 interface InputProps {
   msgID: string;
@@ -44,6 +45,7 @@ const DataTextBox = ({
 );
 
 function DataCard({ msgID, name, category, data, rawData, compact, onSignalClick, onTraceClick }: Readonly<InputProps>) {
+  const { mode, selectedTimeMs } = useTimeline();
 
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [ref, isIntersecting] = useIntersectionObserver('200px');
@@ -55,7 +57,12 @@ function DataCard({ msgID, name, category, data, rawData, compact, onSignalClick
     return () => clearInterval(interval);
   }, [isIntersecting]);
 
-  const hz = useMemo(() => dataStore.getFrequency(msgID, FREQUENCY_WINDOW_MS), [msgID, currentTime]);
+  const hz = useMemo(() => {
+    if (mode === "paused") {
+      return dataStore.getFrequencyAt(msgID, FREQUENCY_WINDOW_MS, selectedTimeMs);
+    }
+    return dataStore.getFrequency(msgID, FREQUENCY_WINDOW_MS);
+  }, [msgID, currentTime, mode, selectedTimeMs]);
 
   const computedCategory = useMemo(() => {
     return determineCategory(msgID, category);

@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { dataStore, type TelemetrySample } from './DataStore';
+import { dataStore, type TelemetrySample, type TelemetrySource } from './DataStore';
 
 /**
  * Hook to get the latest sample for a specific msgID
@@ -106,22 +106,22 @@ export function useSignal(msgID: string, signalName: string): {
  * 
  * @returns Map of msgID to latest telemetry sample
  */
-export function useAllLatestMessages(): Map<string, TelemetrySample> {
+export function useAllLatestMessages(source?: TelemetrySource): Map<string, TelemetrySample> {
   const [allLatest, setAllLatest] = useState<Map<string, TelemetrySample>>(() => 
-    dataStore.getAllLatest()
+    dataStore.getAllLatest(source)
   );
 
   useEffect(() => {
     // Initial value
-    setAllLatest(dataStore.getAllLatest());
+    setAllLatest(dataStore.getAllLatest(source));
 
     // Subscribe to all updates
     const unsubscribe = dataStore.subscribe(() => {
-      setAllLatest(dataStore.getAllLatest());
+      setAllLatest(dataStore.getAllLatest(source));
     });
 
     return unsubscribe;
-  }, []);
+  }, [source]);
 
   return allLatest;
 }
@@ -177,29 +177,70 @@ export function useAllSignals(): { msgID: string, signalName: string }[] {
 }
 
 /**
- * Hook to get DataStore statistics
- * 
- * @returns DataStore stats object
+ * Hook to get DataStore statistics.
+ * Throttled to at most once per second to avoid rebuilding stats on every frame.
  */
-export function useDataStoreStats(): {
-  totalMessages: number;
-  totalSamples: number;
-  oldestSample: number | null;
-  newestSample: number | null;
-  memoryEstimateMB: number;
-} {
+export function useDataStoreStats(): ReturnType<typeof dataStore.getStats> {
   const [stats, setStats] = useState(() => dataStore.getStats());
 
   useEffect(() => {
-    // Update stats on every data change
-    const unsubscribe = dataStore.subscribe(() => {
-      setStats(dataStore.getStats());
-    });
+    let scheduled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-    return unsubscribe;
+    const schedule = () => {
+      if (scheduled) return;
+      scheduled = true;
+      timeoutId = setTimeout(() => {
+        scheduled = false;
+        timeoutId = null;
+        setStats(dataStore.getStats());
+      }, 1000);
+    };
+
+    const unsubscribe = dataStore.subscribe(schedule);
+    return () => {
+      unsubscribe();
+      if (timeoutId !== null) clearTimeout(timeoutId);
+    };
   }, []);
 
   return stats;
+}
+
+/**
+ * Hook for warm-cache loading state and cold-store warnings.
+ * Updates whenever a warm-cache prefetch starts/finishes or a cold warning fires.
+ */
+export function useColdStoreState(): {
+  isLoading: boolean;
+  coldWarning: string | null;
+  coldSizeBytes: number;
+  coldDurationMs: number;
+  coldNearingLimit: boolean;
+} {
+  const [isLoading,       setIsLoading]       = useState(() => dataStore.isColdCacheLoading());
+  const [coldWarning,     setColdWarning]     = useState<string | null>(null);
+  const [coldSizeBytes,   setColdSizeBytes]   = useState(() => dataStore.getColdStoreSizeBytes());
+  const [coldDurationMs,  setColdDurationMs]  = useState(() => dataStore.getColdExtent()?.endMs
+    ? (dataStore.getColdExtent()!.endMs - dataStore.getColdExtent()!.startMs) : 0);
+  const [coldNearingLimit, setColdNearingLimit] = useState(() => dataStore.isColdNearingLimit());
+
+  useEffect(() => {
+    const unsubscribe = dataStore.subscribeColdState(() => {
+      setIsLoading(dataStore.isColdCacheLoading());
+
+      const warning = dataStore.consumeColdWarning();
+      if (warning) setColdWarning(warning);
+
+      setColdSizeBytes(dataStore.getColdStoreSizeBytes());
+      const extent = dataStore.getColdExtent();
+      setColdDurationMs(extent ? extent.endMs - extent.startMs : 0);
+      setColdNearingLimit(dataStore.isColdNearingLimit());
+    });
+    return unsubscribe;
+  }, []);
+
+  return { isLoading, coldWarning, coldSizeBytes, coldDurationMs, coldNearingLimit };
 }
 
 /**
@@ -237,6 +278,7 @@ export function useDataStoreControls() {
     rawData: string;
     timestamp?: number;
     direction?: "rx" | "tx";
+    source?: "live" | "replay";
   }) => {
     dataStore.ingestMessage(message);
   }, []);
@@ -281,39 +323,44 @@ export function useMessageData(msgID: string, windowMs?: number): {
  * @param throttleMs - Min ms between state updates (default 50)
  * @returns Snapshot of the trace buffer + a clearTrace() helper
  */
-export function useTraceBuffer(throttleMs = 50): {
+export function useTraceBuffer(throttleMs = 50, source?: TelemetrySource): {
   frames: TelemetrySample[];
   clearTrace: () => void;
 } {
   const [frames, setFrames] = useState<TelemetrySample[]>(() =>
-    dataStore.getTrace()
+    dataStore.getTrace(source)
   );
 
   useEffect(() => {
     let pending = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const flush = () => {
       pending = false;
-      setFrames(dataStore.getTrace());
+      timeoutId = null;
+      setFrames(dataStore.getTrace(source));
     };
 
     const unsubscribe = dataStore.subscribeTrace(() => {
       if (!pending) {
         pending = true;
-        setTimeout(flush, throttleMs);
+        timeoutId = setTimeout(flush, throttleMs);
       }
     });
 
     // Sync immediately on mount
-    setFrames(dataStore.getTrace());
+    setFrames(dataStore.getTrace(source));
 
-    return unsubscribe;
-  }, [throttleMs]);
+    return () => {
+      unsubscribe();
+      if (timeoutId !== null) clearTimeout(timeoutId);
+    };
+  }, [throttleMs, source]);
 
   const clearTrace = useCallback(() => {
-    dataStore.clearTrace();
+    dataStore.clearTrace(source);
     setFrames([]);
-  }, []);
+  }, [source]);
 
   return useMemo(() => ({ frames, clearTrace }), [frames, clearTrace]);
 }

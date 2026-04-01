@@ -194,11 +194,15 @@ export default function TelemetryDebug() {
       animationRef.current = requestAnimationFrame(draw);
       analyser.getByteTimeDomainData(dataArray);
 
-      canvasCtx.fillStyle = '#20202f'; // bg-data-module-bg
+      const styles = getComputedStyle(document.body);
+      const bgColor = styles.getPropertyValue("--color-data-module-bg").trim() || "#20202f";
+      const fgColor = styles.getPropertyValue("--color-sidebarfg").trim() || "#8e8eab";
+
+      canvasCtx.fillStyle = bgColor;
       canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
 
       canvasCtx.lineWidth = 2;
-      canvasCtx.strokeStyle = '#8e8eab'; // sidebarfg
+      canvasCtx.strokeStyle = fgColor;
       canvasCtx.beginPath();
 
       const sliceWidth = canvas.width * 1.0 / bufferLength;
@@ -312,7 +316,7 @@ export default function TelemetryDebug() {
             <Activity className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold uppercase tracking-wide text-white">System Link</h1>
+            <h1 className="app-menu-title uppercase">System Link</h1>
             <div className="flex items-center gap-2 text-xs text-sidebarfg font-footer mt-1">
               <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
               Base Station Link

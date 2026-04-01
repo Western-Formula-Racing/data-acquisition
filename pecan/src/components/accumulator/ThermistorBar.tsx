@@ -54,7 +54,7 @@ function ThermistorSegment({ moduleId, thermistorIndex, temp }: {
         ${isHighlighted ? 'z-10 shadow-lg scale-y-110 relative' : ''}
         ${!isHighlighted && isCritical ? 'animate-alert-pulse' : !isHighlighted && isWarning ? 'animate-warning-pulse' : ''}
       `}
-            style={{ backgroundColor: isHighlighted ? '#ffffff' : bgColor }}
+            style={{ backgroundColor: isHighlighted ? 'var(--color-text-primary)' : bgColor }}
             title={`${signalName}: ${temp !== null ? `${temp.toFixed(1)}°C` : 'No data'}`}
         />
     );

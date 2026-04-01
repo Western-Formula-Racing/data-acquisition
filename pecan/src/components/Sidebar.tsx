@@ -45,13 +45,13 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
       {/* Listener for outside of sidebar clicks */}
       {isOpen && (
         <button
-          className="fixed inset-0 z-50 hidden sm:block !cursor-default"
+          className="fixed inset-0 z-[79] hidden sm:block !cursor-default"
           onClick={onClose}
         ></button>
       )}
 
       <div
-        className={`fixed top-0 left-0 h-full lg:w-2/9 md:w-2/5 sm:w-3/5 w-full flex flex-col z-50 transform transition-all duration-450 overflow-y-auto overscroll-contain ${isOpen
+        className={`sidebar-scroll-none fixed top-0 left-0 h-full lg:w-2/9 md:w-2/5 sm:w-3/5 w-full flex flex-col z-[80] transform transition-all duration-450 overflow-y-auto overscroll-contain ${isOpen
           ? "translate-x-0 opacity-100"
           : "-translate-x-full opacity-0 pointer-events-none"
           }`}
@@ -74,6 +74,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 option="CAN TRACE"
                 path="/trace"
                 onClose={onClose}
+                isPending={true}
               />
               <SidebarOption
                 option="ACCUMULATOR"
@@ -87,23 +88,23 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 isPending={true}
               />
               <SidebarOption
-                option="MONITOR BUILDER"
+                option="CUSTOM MONITOR"
                 path="/monitor-builder"
                 onClose={onClose}
               />
               <SidebarOption
-                option="COMMS"
+                option="COMMS INTERFACE"
                 path="/comms"
                 onClose={onClose}
                 isPending={true}
               />
-              <li>
+              <li className="sidebar-group-shell px-3 pb-2">
                 <button
                   onClick={() => setIsControlOpen(!isControlOpen)}
-                  className="flex w-full gap-3 h-20 items-center justify-between box-border px-3 bg-option hover:bg-option-select/75 transition-colors border-none cursor-pointer"
+                  className="sidebar-group-header flex w-full gap-3 h-14 items-center justify-between box-border px-3 transition-colors cursor-pointer"
                 >
                   <span className="flex items-center gap-2">
-                    <span className="text-sidebarfg text-3xl font-heading leading-6 scale-y-75 uppercase text-left">
+                    <span className="sidebar-group-title text-left">
                       Vehicle Control
                     </span>
                     <span className="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/40 font-mono tracking-wider">
@@ -113,7 +114,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                   <ChevronDown className={`text-sidebarfg transition-transform duration-300 ${isControlOpen ? 'rotate-180' : ''}`} />
                 </button>
                 <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isControlOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
-                  <ul className="list-none p-0 m-0 bg-black/10">
+                  <ul className="list-none p-0 mt-2 m-0 bg-option/40 border border-white/10 rounded-md">
                     <SidebarOption
                       option="Throttle Mapper"
                       path="/throttle-mapper"
@@ -142,14 +143,14 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
             </ul>
           </div>
 
-          <footer className="font-footer flex flex-col items-start pl-[10%] gap-10 mb-10">
+          <footer className="flex flex-col items-start pl-[10%] gap-10 mb-10">
             {/* Should go to /account*/}
             <button
               onClick={handleAuthClick}
               className="!no-underline text-md flex flex-row items-center gap-6 bg-transparent border-none cursor-pointer"
             >
               <img src={avatar} alt="avatar" width={30} height={30} />
-              <span className="text-sidebarfg">Account</span>
+              <span className="sidebar-footer-label">Account</span>
             </button>
             {/* Settings - opens modal */}
             <button
@@ -157,7 +158,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
               className="!no-underline flex flex-row items-center gap-6 text-md cursor-pointer bg-transparent border-none"
             >
               <img src={settings} alt="settings" width={30} height={30} />
-              <span className="text-sidebarfg">Settings</span>
+              <span className="sidebar-footer-label">Settings</span>
             </button>
           </footer>
         </div>

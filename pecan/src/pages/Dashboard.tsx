@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router";
 import DataCard from "../components/DataCard";
 import DataRow from "../components/DataRow";
@@ -8,21 +8,29 @@ import PlotControls from "../components/PlotControls";
 import TracePanel from "../components/TracePanel";
 import { dataStore } from "../lib/DataStore";
 import { useAllLatestMessages, useDataStoreStats } from "../lib/useDataStore";
-import atozIcon from "../assets/atoz.png";
-import ztoaIcon from "../assets/ztoa.png";
-import sortIcon from "../assets/sort.png";
-import idAscendingIcon from "../assets/id_ascending.png";
-import idDescendingIcon from "../assets/id_descending.png";
-import listViewIcon from "../assets/list-view.png";
-import gridViewIcon from "../assets/grid-view.png";
 import TourGuide from "../components/TourGuide";
 import type { TourStep } from "../components/TourGuide";
 import { useRemoteConfig } from "../lib/useRemoteConfig";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle, ArrowDownAZ, ArrowUpZA, Tag, ArrowDown01, ArrowUp10, LayoutList, LayoutGrid } from "lucide-react";
+import TimelineBar from "../components/TimelineBar";
+import { useTimeline } from "../context/TimelineContext";
+import type { ReplayPlotLayout } from "../types/replay";
 
 interface Plot {
   id: string;
   signals: PlotSignal[];
+}
+
+function nextPlotCounter(plots: Plot[]): number {
+  const maxId = plots.reduce((max, plot) => {
+    const parsed = Number(plot.id);
+    if (Number.isFinite(parsed)) {
+      return Math.max(max, parsed);
+    }
+    return max;
+  }, 0);
+
+  return maxId + 1;
 }
 
 const TOUR_STEPS: TourStep[] = [
@@ -70,7 +78,7 @@ function Dashboard() {
   const [sortingMethod, setSortingMethod] = useState("name");
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const [tickUpdate, setTickUpdate] = useState(Date.now());
-  const [currentSortIcon, setCurrentSortIcon] = useState(atozIcon);
+  const [currentSortIcon, setCurrentSortIcon] = useState<React.ReactNode>(<ArrowDownAZ size={20} />);
   const [viewMode, setViewMode] = useState<"cards" | "list">("list");
 
   const [tourOpen, setTourOpen] = useState(false);
@@ -97,7 +105,12 @@ function Dashboard() {
   // =====================================================================
   const [plots, setPlots] = useState<Plot[]>([]);
   const [nextPlotId, setNextPlotId] = useState(1);
-  const [plotTimeWindow, setPlotTimeWindow] = useState(30000); // Default 30s in ms
+  const livePlotsSnapshotRef = useRef<Plot[] | null>(null);
+  // Stores the loadedAtMs of the replay session whose layout has been applied,
+  // or false when no replay layout is active. Using the timestamp rather than a
+  // plain boolean means re-importing a different .pecan file always triggers a
+  // fresh layout swap.
+  const replayLayoutAppliedRef = useRef<number | false>(false);
   const [plotControls, setPlotControls] = useState<{
     visible: boolean;
     signalInfo: {
@@ -153,8 +166,84 @@ function Dashboard() {
   // =====================================================================
 
   // Use the DataStore hooks to get all latest messages
-  const allLatestMessages = useAllLatestMessages();
+  const allLatestMessages = useAllLatestMessages("live");
   const dataStoreStats = useDataStoreStats();
+  const {
+    source: timelineSource,
+    windowMs: plotTimeWindow,
+    setWindowMs: setPlotTimeWindow,
+    selectedTimeMs,
+    mode: timelineMode,
+    replaySession,
+  } = useTimeline();
+
+  const replayPlotLayoutsForExport = useMemo<ReplayPlotLayout[]>(() => {
+    return plots.map((plot) => ({
+      id: plot.id,
+      title: `Plot ${plot.id}`,
+      series: plot.signals.map((signal) => ({
+        msgId: signal.msgID,
+        signalName: signal.signalName,
+      })),
+    }));
+  }, [plots]);
+
+  useEffect(() => {
+    if (timelineSource === "replay") {
+      // Skip if we've already applied the layout for this exact replay session.
+      if (replayLayoutAppliedRef.current === replaySession?.loadedAtMs) {
+        return;
+      }
+
+      // Snapshot live plots only on the first replay mount (not on re-imports).
+      if (replayLayoutAppliedRef.current === false) {
+        livePlotsSnapshotRef.current = plots;
+      }
+
+      const importedLayouts = replaySession?.plots?.layouts ?? [];
+
+      if (importedLayouts.length > 0) {
+        const importedPlots: Plot[] = importedLayouts
+          .map((layout) => ({
+            id: String(layout.id),
+            signals: layout.series.map((series) => {
+              const latestSample = dataStore.getLatest(series.msgId, "replay");
+              const unit = latestSample?.data?.[series.signalName]?.unit ?? "";
+              return {
+                msgID: series.msgId,
+                signalName: series.signalName,
+                messageName: latestSample?.messageName ?? `CAN_${series.msgId}`,
+                unit,
+              };
+            }),
+          }))
+          .filter((plot) => plot.signals.length > 0);
+
+        if (importedPlots.length > 0) {
+          setPlots(importedPlots);
+          setNextPlotId(nextPlotCounter(importedPlots));
+        }
+      }
+
+      // Mark this session's layout as applied.
+      replayLayoutAppliedRef.current = replaySession?.loadedAtMs ?? Date.now();
+      return;
+    }
+
+    // Returning to live — only restore if we had actually applied a replay layout.
+    if (replayLayoutAppliedRef.current === false) {
+      return;
+    }
+
+    const snapshot = livePlotsSnapshotRef.current;
+    if (snapshot) {
+      setPlots(snapshot);
+      setNextPlotId(nextPlotCounter(snapshot));
+    }
+
+    livePlotsSnapshotRef.current = null;
+    replayLayoutAppliedRef.current = false;
+  }, [timelineSource, replaySession?.loadedAtMs]);
 
   const [performanceStats, setPerformanceStats] = useState({
     memoryUsage: "N/A" as string | number,
@@ -214,8 +303,18 @@ function Dashboard() {
     };
   }, []);
 
-  // Convert Map to array for rendering
-  const canMessagesArray = Array.from(allLatestMessages.entries());
+  // Convert Map to array for rendering, anchored to timeline when paused
+  const canMessagesArray = useMemo(() => {
+    if (timelineSource === "replay") {
+      return Array.from(dataStore.getAllLatestAt(selectedTimeMs, "replay").entries());
+    }
+
+    if (timelineMode === "paused") {
+      return Array.from(dataStore.getAllLatestAt(selectedTimeMs, "live").entries());
+    }
+
+    return Array.from(allLatestMessages.entries());
+  }, [timelineSource, timelineMode, selectedTimeMs, allLatestMessages]);
 
   // Sorting Logic
   // =====================================================================
@@ -232,8 +331,8 @@ function Dashboard() {
         sortingFilter.current.prev = "name";
         setCurrentSortIcon(
           sortingFilter.current.name == 0
-            ? atozIcon
-            : ztoaIcon
+            ? <ArrowDownAZ size={20} />
+            : <ArrowUpZA size={20} />
         );
         break;
       case "category":
@@ -241,7 +340,7 @@ function Dashboard() {
           sortingFilter.current.category = 1 - sortingFilter.current.category;
         }
         sortingFilter.current.prev = "category";
-        setCurrentSortIcon(sortIcon);
+        setCurrentSortIcon(<Tag size={20} />);
         break;
       case "id":
         if (sortingFilter.current.prev == "id") {
@@ -250,8 +349,8 @@ function Dashboard() {
         sortingFilter.current.prev = "id";
         setCurrentSortIcon(
           sortingFilter.current.id == 0
-            ? idAscendingIcon
-            : idDescendingIcon
+            ? <ArrowDown01 size={20} />
+            : <ArrowUp10 size={20} />
         );
         break;
     }
@@ -471,6 +570,8 @@ function Dashboard() {
       {/* Data display section */}
       <div className={`relative flex flex-col md:h-full overflow-hidden pb-12 md:pb-0 ${plotPanelOpen ? 'h-[50vh]' : 'flex-1'} ${desktopPanelOpen ? 'md:col-span-2' : 'md:col-span-3'}`}>
         <div className="flex-1 p-4 pb-16 overflow-y-auto">
+          <TimelineBar plotLayouts={replayPlotLayoutsForExport} />
+
           {/* Data filter / view selection menu */}
           <div className="bg-data-module-bg w-full h-[60px] md:h-[100px] grid grid-cols-4 gap-1 rounded-md mb-[15px]">
             {/* Data category filters */}
@@ -483,9 +584,9 @@ function Dashboard() {
                 <div id="dash-sort-btn" className="relative">
                   <button
                     onClick={() => setSortMenuOpen((o) => !o)}
-                    className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
+                    className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors text-[var(--color-text-secondary)]"
                   >
-                    <img src={currentSortIcon} alt="Sort" />
+                    {currentSortIcon}
                   </button>
                   {sortMenuOpen && (
                     <div className="flex flex-col block fixed top-30 z-100 rounded-md bg-dropdown-menu-bg w-30 h-20 text-center text-white">
@@ -532,17 +633,17 @@ function Dashboard() {
                 <div id="dash-view-toggle" className="hidden md:flex">
                   <button
                     onClick={() => setViewMode("list")}
-                    className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
+                    className={`w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer transition-colors ${viewMode === "list" ? "bg-data-textbox-bg text-[var(--color-text-primary)]" : "hover:bg-data-textbox-bg/50 text-[var(--color-text-secondary)]"}`}
                     aria-pressed={viewMode === "list"}
                   >
-                    <img src={listViewIcon} alt="List view" />
+                    <LayoutList size={20} />
                   </button>
                   <button
                     onClick={() => setViewMode("cards")}
-                    className="w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer hover:bg-data-textbox-bg/50 transition-colors object-contain"
+                    className={`w-[50px] h-[50px] p-[10px] !rounded-lg flex justify-center items-center cursor-pointer transition-colors ${viewMode === "cards" ? "bg-data-textbox-bg text-[var(--color-text-primary)]" : "hover:bg-data-textbox-bg/50 text-[var(--color-text-secondary)]"}`}
                     aria-pressed={viewMode === "cards"}
                   >
-                    <img src={gridViewIcon} alt="Grid view" />
+                    <LayoutGrid size={20} />
                   </button>
                 </div>
 
@@ -747,20 +848,21 @@ function Dashboard() {
             <h3 className="text-white font-semibold mb-2">Plot Settings</h3>
             <div className="flex flex-col gap-2">
               <label className="text-gray-300 text-sm">
-                Time Window (seconds):
+                Time Window (seconds, max 120):
               </label>
               <input
                 type="number"
-                min="0"
-                max="300"
-                value={plotTimeWindow / 1000}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (value === '' || value === null) {
-                    return;
-                  }
-                  const seconds = Math.max(0, Math.min(300, Number(value)));
+                min="1"
+                max="120"
+                defaultValue={plotTimeWindow / 1000}
+                key={plotTimeWindow}
+                onBlur={(e) => {
+                  const seconds = Math.max(1, Math.min(120, Number(e.target.value) || 1));
+                  e.target.value = String(seconds);
                   setPlotTimeWindow(seconds * 1000);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                 }}
                 className="bg-data-textbox-bg text-white rounded px-2 py-1 text-sm"
               />
@@ -780,6 +882,8 @@ function Dashboard() {
                 plotId={plot.id}
                 signals={plot.signals}
                 timeWindowMs={plotTimeWindow}
+                cursorTimeMs={selectedTimeMs}
+                isLive={timelineMode === "live"}
                 onRemoveSignal={(msgID, signalName) =>
                   handleRemoveSignalFromPlot(plot.id, msgID, signalName)
                 }
@@ -846,6 +950,11 @@ function Dashboard() {
                 Store: {dataStoreStats.totalMessages} msgs, {dataStoreStats.totalSamples} samples
               </span>
               <span className="hidden lg:inline">Store Mem: {dataStoreStats.memoryEstimateMB}MB</span>
+              {dataStoreStats.coldDurationMs > 0 && (
+                <span className={`hidden xl:inline ${dataStoreStats.coldNearingLimit ? "text-amber-400" : ""}`}>
+                  Cold: {Math.round(dataStoreStats.coldDurationMs / 60000)}m / {Math.round(dataStoreStats.coldSizeBytes / (1024 * 1024))}MB
+                </span>
+              )}
             </div>
           )}
           <button
