@@ -65,10 +65,10 @@
   \rowcolor{tblhd}
   \textbf{} & \textbf{CAR side} & \textbf{BASE side} \\
   \hline
-  RPi IP       & \cmd{192.168.1.10} & \cmd{192.168.1.20} \\
-  Radio IP     & \cmd{192.168.1.11} & \cmd{192.168.1.21} \\
+  RPi IP       & \cmd{10.71.1.10} & \cmd{10.71.1.20} \\
+  Radio IP     & \cmd{10.71.1.11} & \cmd{10.71.1.21} \\
   Hotspot IP   & \cmd{192.168.10.1} & \cmd{192.168.20.1} \\
-  \cmd{REMOTE\_IP} & \cmd{192.168.1.20} (base RPi) & \cmd{192.168.1.10} (car RPi) \\
+  \cmd{REMOTE\_IP} & \cmd{10.71.1.20} (base RPi) & \cmd{10.71.1.10} (car RPi) \\
   CAN HAT      & Required (\cmd{can0}) & Not needed \\
   Serves       & TX WebSocket :9078, WSS :9443 & PECAN :3000, WSS :9443 \\
   Role trigger & \cmd{can0} present & \cmd{can0} absent \\
@@ -118,7 +118,7 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \textbf{Car RPi:} \cmd{192.168.1.10} \quad \textbf{Base RPi:} \cmd{192.168.1.20} \\[1mm]
+  \textbf{Car RPi:} \cmd{10.71.1.10} \quad \textbf{Base RPi:} \cmd{10.71.1.20} \\[1mm]
   No gateway is set -- the radio link is a direct point-to-point connection. \\[1mm]
   \textbf{Option A -- Script (recommended):} \\
   \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software} \\
@@ -129,13 +129,13 @@
   \cmd{\ \ \ \ version: 2} \\
   \cmd{\ \ \ \ ethernets:} \\
   \cmd{\ \ \ \ \ \ eth0:} \\
-  \cmd{\ \ \ \ \ \ \ \ addresses: [192.168.1.20/24]} \quad \textit{(or .10 on car)} \\
+  \cmd{\ \ \ \ \ \ \ \ addresses: [10.71.1.20/24]} \quad \textit{(or .10 on car)} \\
   \cmd{sudo chmod 600 /etc/netplan/10-eth0-static.yaml} \\
   \cmd{sudo netplan apply} \\[1mm]
   \textit{Note: \cmd{netplan apply} briefly resets the network -- Tailscale may drop for a few seconds.} \\[1mm]
   \textbf{Option C -- NetworkManager GUI:} IPv4 Settings $\rightarrow$ Method: Manual $\rightarrow$ Add address. \\
   \textit{The Gateway field cannot be left blank in the GUI -- enter \cmd{0.0.0.0} as a dummy value.} \\[1mm]
-  \textbf{PASS:} \cmd{ip addr show eth0} shows \cmd{192.168.1.10} or \cmd{192.168.1.20} \\
+  \textbf{PASS:} \cmd{ip addr show eth0} shows \cmd{10.71.1.10} or \cmd{10.71.1.20} \\
   \textbf{FAIL:} no IP after reboot -- another netplan file may be overriding; check \cmd{/etc/netplan/} \\
 \end{tabular}
 
@@ -145,8 +145,8 @@
 \noindent
 \begin{tabular}{p{126mm}}
   Connect a LAN cable directly between the two RPis. Then from each RPi, ping the other: \\[1mm]
-  \textbf{From car RPi:} \cmd{ping -c 4 192.168.1.20} \\
-  \textbf{From base RPi:} \cmd{ping -c 4 192.168.1.10} \\[1mm]
+  \textbf{From car RPi:} \cmd{ping -c 4 10.71.1.20} \\
+  \textbf{From base RPi:} \cmd{ping -c 4 10.71.1.10} \\[1mm]
   \textbf{PASS:} 4/4 replies, latency $<$ 1\,ms \\
   \textbf{FAIL:} 100\% loss \quad \textit{Fix:} re-check static IP assignment, reconnect cable \\
 \end{tabular}
@@ -209,7 +209,7 @@
   Download the \textbf{ARM64 .deb} from \cmd{nomachine.com/download} and install: \\[1mm]
   \cmd{sudo dpkg -i nomachine\_*\_arm64.deb} \\[1mm]
   NoMachine starts automatically on boot. Connect from any machine on the same network: \\
-  \cmd{nomachine://192.168.1.10} (car) \quad \cmd{nomachine://192.168.1.20} (base) \\[1mm]
+  \cmd{nomachine://10.71.1.10} (car) \quad \cmd{nomachine://10.71.1.20} (base) \\[1mm]
   \textbf{PASS:} desktop appears in NoMachine client \\
 \end{tabular}
 
@@ -248,7 +248,7 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  Car-side radio: \cmd{192.168.1.11} \quad Base-side radio: \cmd{192.168.1.21} \\[1mm]
+  Car-side radio: \cmd{10.71.1.11} \quad Base-side radio: \cmd{10.71.1.21} \\[1mm]
   \textbf{PASS:} power LED on each unit, no fault indicators \\
 \end{tabular}
 
@@ -258,7 +258,7 @@
 \noindent
 \begin{tabular}{p{126mm}}
   From any device on the subnet: \\
-  \cmd{http://192.168.1.11} -- car-side radio \quad \cmd{http://192.168.1.21} -- base-side radio \\[1mm]
+  \cmd{http://10.71.1.11} -- car-side radio \quad \cmd{http://10.71.1.21} -- base-side radio \\[1mm]
   \textbf{PASS:} Ubiquiti login page loads \\
   \textbf{FAIL:} timeout \quad \textit{Fix:} verify host IP is on \cmd{192.168.1.x/24}, check PoE injector \\
 \end{tabular}
@@ -279,9 +279,9 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  From car RPi (\cmd{192.168.1.10}): \\
-  \cmd{ping 192.168.1.21} \quad (base radio) \\
-  \cmd{ping 192.168.1.20} \quad (base RPi) \\[1mm]
+  From car RPi (\cmd{10.71.1.10}): \\
+  \cmd{ping 10.71.1.21} \quad (base radio) \\
+  \cmd{ping 10.71.1.20} \quad (base RPi) \\[1mm]
   \textbf{PASS:} replies $<$ 10ms at bench, $<$ 50ms in field \\
   \textbf{FAIL:} 100\% loss \quad \textit{Fix:} check radio link status above, then check base RPi static IP \\
 \end{tabular}
@@ -321,10 +321,10 @@
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{REMOTE\_IP} is read from \cmd{deploy/.env} (gitignored -- survives \cmd{git reset}). \\[1mm]
-  \textbf{CAR RPi} (\cmd{192.168.1.10}): \cmd{echo "REMOTE\_IP=192.168.1.20" > deploy/.env} \\
-  \textbf{BASE RPi} (\cmd{192.168.1.20}): \cmd{echo "REMOTE\_IP=192.168.1.10" > deploy/.env} \\[1mm]
+  \textbf{CAR RPi} (\cmd{10.71.1.10}): \cmd{echo "REMOTE\_IP=10.71.1.20" > deploy/.env} \\
+  \textbf{BASE RPi} (\cmd{10.71.1.20}): \cmd{echo "REMOTE\_IP=10.71.1.10" > deploy/.env} \\[1mm]
   \warnbox{One-time setup per RPi. Do NOT edit \cmd{docker-compose.prod.yml} for this.} \\[1mm]
-  \textit{Future ChargeCart RPi planned at} \cmd{192.168.1.30} -- set \cmd{REMOTE\_IP=192.168.1.20} (base). \\[1mm]
+  \textit{Future ChargeCart RPi planned at} \cmd{192.168.1.30} -- set \cmd{REMOTE\_IP=10.71.1.20} (base). \\[1mm]
   Verify: \cmd{cat deploy/.env} \quad Apply: \cmd{docker compose -f docker-compose.prod.yml --profile car down \&\& ... --profile car up -d} \\
   (use \cmd{--profile base} on the base RPi) \\
 \end{tabular}
@@ -396,7 +396,7 @@
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "UDP"} \\[1mm]
-  \textbf{PASS:} \cmd{Sending UDP packets to 192.168.1.20:5005} \\
+  \textbf{PASS:} \cmd{Sending UDP packets to 10.71.1.20:5005} \\
   \textbf{FAIL:} silent \quad \textit{Fix:} check REMOTE\_IP + can0 \\
 \end{tabular}
 
@@ -433,7 +433,7 @@ The WebSocket also runs on car -- useful if crew connect directly to the car hot
 and point their own Pecan instance at the car's WSS endpoint.
 
 \vspace{1mm}
-\textbf{Base dashboard:} \cmd{http://192.168.1.20:3000} \quad (or \cmd{http://192.168.20.1:3000} via hotspot)
+\textbf{Base dashboard:} \cmd{http://10.71.1.20:3000} \quad (or \cmd{http://192.168.20.1:3000} via hotspot)
 
 \noindent
 \begin{tabular}{p{126mm}}
@@ -442,7 +442,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 \end{tabular}
 
 \vspace{1mm}
-\textbf{TX Page:} \cmd{http://192.168.1.20:3000/transmitter}
+\textbf{TX Page:} \cmd{http://10.71.1.20:3000/transmitter}
 
 \noindent
 \begin{tabular}{p{126mm}}
@@ -491,7 +491,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 \begin{tabular}{p{126mm}}
   \cmd{curl http://localhost:9000/health} \\[1mm]
   \textbf{PASS:} \cmd{\{"status":"ok"\}} \quad \textbf{FAIL:} connection refused -- wait 30s, retry \\
-  Grafana: \cmd{http://192.168.1.20:8087} \quad user: \cmd{admin} \quad pass: \cmd{admin} \\
+  Grafana: \cmd{http://10.71.1.20:8087} \quad user: \cmd{admin} \quad pass: \cmd{admin} \\
   \textit{Token file:} \cmd{influxdb3-admin-token.json} is pre-committed -- no manual setup needed. \\[1mm]
   \warnbox{RPi 5 (DEFAULT) -- QEMU Setup Required} \\
   \noindent
@@ -567,7 +567,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 \noindent
 \begin{tabular}{p{126mm}}
   Open the status page on the \textbf{car RPi}: \\[1mm]
-  \textbf{On radio subnet:} \cmd{http://192.168.1.10:8080} \\
+  \textbf{On radio subnet:} \cmd{http://10.71.1.10:8080} \\
   \textbf{Via hotspot (phone/laptop):} \cmd{http://192.168.10.1:8080} \\[1mm]
   If clock is not synced, an amber banner is shown at the top with a datetime input. \\
   \quad 1.\ Click \textbf{Now\,$\circlearrowleft$} -- pre-fills with your laptop's current time (assumed correct). \\
@@ -581,7 +581,7 @@ and point their own Pecan instance at the car's WSS endpoint.
   the car already stamped every frame before UDP transmission, so Grafana and InfluxDB \\
   will show correct times even if the base is in 1970. \\
   Nice-to-have: set base clock for clean container logs and accurate cloud sync cursors. \\
-  Same method -- \cmd{http://192.168.1.20:8080} or \cmd{http://192.168.20.1:8080} via hotspot. \\
+  Same method -- \cmd{http://10.71.1.20:8080} or \cmd{http://192.168.20.1:8080} via hotspot. \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -663,8 +663,8 @@ and point their own Pecan instance at the car's WSS endpoint.
   \toprule
   \textbf{Symptom} & \textbf{Check First} & \textbf{Fix} \\
   \midrule
-  No data on PECAN & Base REMOTE\_IP correct? & Set to \cmd{192.168.1.10} \\
-  Car not sending UDP & Car REMOTE\_IP correct? & Set to \cmd{192.168.1.20} \\
+  No data on PECAN & Base REMOTE\_IP correct? & Set to \cmd{10.71.1.10} \\
+  Car not sending UDP & Car REMOTE\_IP correct? & Set to \cmd{10.71.1.20} \\
   Ping fails across radio & Radio link up? & Check \S 1 radio status \\
   can0 ERROR & CAN HAT driver loaded? & \cmd{sudo modprobe mcp251xfd} \\
   TX\_DISABLED & ENABLE\_TX\_WS=true? & Edit docker-compose.prod.yml \\
@@ -715,7 +715,7 @@ and point their own Pecan instance at the car's WSS endpoint.
   \textbf{Variable} & \textbf{Default} & \textbf{Description} \\
   \midrule
   ROLE & auto & Force car or base (auto-detected from can0) \\
-  REMOTE\_IP & 192.168.1.20 & IP of the other RPi. Set manually per device -- no auto-resolution. Car: .20, Base: .10, ChargeCart: .20 \\
+  REMOTE\_IP & 10.71.1.20 & IP of the other RPi. Set manually per device -- no auto-resolution. Car: .20, Base: .10, ChargeCart: .20 \\
   UDP\_PORT & 5005 & Real-time UDP streaming port \\
   TCP\_PORT & 5006 & Retransmission port \\
   WS\_PORT & 9080 & WebSocket port for PECAN \\
