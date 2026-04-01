@@ -3,7 +3,8 @@
 // Example: https://grafana-bridge.westernformularacing.org/api/grafana
 const GRAFANA_BRIDGE_URL =
   import.meta.env.VITE_GRAFANA_BRIDGE_URL ||
-  "http://localhost:3001/api/grafana";
+  "https://grafana-proxy.westernformularacing.workers.dev/grafana-bridge/api/grafana";
+  // "http://localhost:3001/api/grafana";
 
 interface CreateDashboardResponse {
   url: string;
