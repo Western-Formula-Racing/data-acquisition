@@ -590,7 +590,7 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
         <input
           ref={replayFileInputRef}
           type="file"
-          accept=".pecan,.json,.csv,text/csv,application/json"
+          accept=".pecan,.json,.csv,.blf,text/csv,application/json"
           className="hidden"
           onChange={handleImportReplay}
           disabled={isImportingReplay}
