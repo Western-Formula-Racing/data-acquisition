@@ -21,17 +21,19 @@ services:
       - LOCAL_INFLUX_URL=http://influxdb3:8181
       - LOCAL_INFLUX_TOKEN=apiv3_local-telemetry-token
       - LOCAL_INFLUX_ORG=WFR
-      - LOCAL_INFLUX_BUCKET=${INFLUX_SEASON:-WFR26}
+      - LOCAL_INFLUX_BUCKET=WFR26
       - INFLUX_TABLE=${INFLUX_SEASON:-WFR26}_base
-      - DBC_FILE_PATH=/app/example.dbc
+      - DBC_FILE_PATH=/app/active.dbc
       # Cloud sync (disabled by default in dev)
       - CLOUD_INFLUX_URL=${CLOUD_INFLUX_URL:-https://influxdb3.westernformularacing.org}
       - CLOUD_INFLUX_TOKEN=${CLOUD_INFLUX_TOKEN:-}
       - CLOUD_INFLUX_ORG=WFR
-      - CLOUD_INFLUX_BUCKET=${INFLUX_SEASON:-WFR26}
+      - CLOUD_INFLUX_BUCKET=WFR26
       - SYNC_INTERVAL_SECONDS=60
     volumes:
       - /lib/modules:/lib/modules # In case CAN drivers are needed
+      - ${DBC_HOST_PATH:-../example.dbc}:/app/active.dbc:ro
+      - raw_can_data:/app/raw_can_logs
     logging:
       driver: "json-file"
       options:
@@ -150,6 +152,7 @@ volumes:
   caddy_data:
   influxdb3_data:
   grafana_data:
+  raw_can_data:
 
     # Ports exposed (via network_mode: host):
     # 5005 - UDP (CAN data streaming)

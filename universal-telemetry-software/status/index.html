@@ -326,6 +326,11 @@
             </div>
         </div>
 
+        <!-- DBC Warning Banner -->
+        <div class="error-message" id="dbcWarningBanner" style="display: none; border: 2px solid #ef4444; margin-bottom: 15px; font-weight: 700; color: #fecaca; text-transform: uppercase;">
+            ⚠️ WARNING: USING PLACEHOLDER EXAMPLE.DBC! Telemetry is decoded with a fake schema. Raw CAN is saved, but DB will hold incorrect data! — Set DBC_HOST_PATH in deploy/.env and restart the telemetry container to fix.
+        </div>
+
         <!-- ECU / Clock sync banner -->
         <div class="sync-banner waiting" id="syncBanner">
             <div class="sync-banner-text">
@@ -575,6 +580,15 @@
 
             if ((received || 0) > 0 || (messages || 0) > 0) {
                 lastCarDataTime = Date.now();
+            }
+
+            if (stats.dbc_file) {
+                const dbcWarning = document.getElementById('dbcWarningBanner');
+                if (stats.dbc_file.includes('example.dbc')) {
+                    dbcWarning.style.display = 'block';
+                } else {
+                    dbcWarning.style.display = 'none';
+                }
             }
 
             if (stats.ecu_synced !== undefined) {

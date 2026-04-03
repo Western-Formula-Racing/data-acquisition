@@ -247,3 +247,6 @@ CLAUDE.md
 GEMINI.md
 flight-recorder/.env.local
 /.cursor
+/pecan/.claude
+/flight-recorder/.claude
+/universal-telemetry-software/deploy/.claude

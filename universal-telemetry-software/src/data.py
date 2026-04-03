@@ -8,6 +8,8 @@ import logging
 import can
 import redis.asyncio as aioredis
 from collections import deque
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from src.config import (
     REMOTE_IP, UDP_PORT, TCP_PORT,
@@ -373,6 +375,44 @@ class TelemetryNode:
         missing_seqs = set()
         stats = {"received": 0, "missing": 0, "recovered": 0, "messages": 0}
         
+        raw_logs_dir = "/app/raw_can_logs"
+        os.makedirs(raw_logs_dir, exist_ok=True)
+        session_id = os.environ.get("BOOT_SESSION_ID", "default")
+        parquet_path = os.path.join(raw_logs_dir, f"raw_can_{session_id}.parquet")
+        raw_msg_queue = asyncio.Queue()
+        parquet_schema = pa.schema([
+            ("time_ms", pa.int64()),
+            ("can_id", pa.int64()),
+            ("data", pa.binary())
+        ])
+
+        async def raw_parquet_logger():
+            writer = None
+            try:
+                while True:
+                    await asyncio.sleep(1.0)
+                    if raw_msg_queue.empty():
+                        continue
+                    batch = []
+                    while not raw_msg_queue.empty() and len(batch) < 10000:
+                        batch.append(raw_msg_queue.get_nowait())
+                    
+                    table = pa.Table.from_arrays([
+                        pa.array([m["time_ms"] for m in batch], type=pa.int64()),
+                        pa.array([m["can_id"] for m in batch], type=pa.int64()),
+                        pa.array([m["data"] for m in batch], type=pa.binary())
+                    ], schema=parquet_schema)
+                    
+                    if writer is None:
+                        writer = pq.ParquetWriter(parquet_path, parquet_schema)
+                    writer.write_table(table)
+            except Exception as e:
+                logger.error(f"Parquet logger error: {e}")
+            finally:
+                if writer is not None:
+                    writer.close()
+
+        
         # UDP Receiver Task
         async def udp_receiver():
             nonlocal expected_seq
@@ -485,6 +525,11 @@ class TelemetryNode:
                         "canId": msg.can_id,
                         "data": list(msg.data)
                     })
+                    raw_msg_queue.put_nowait({
+                        "time_ms": msg_time_ms,
+                        "can_id": msg.can_id,
+                        "data": bytes(msg.data)
+                    })
                     offset += 20
                 
                 if msgs_to_publish:
@@ -538,6 +583,11 @@ class TelemetryNode:
                                         "canId": m['id'],
                                         "data": list(bytes.fromhex(m['d']))
                                     })
+                                    raw_msg_queue.put_nowait({
+                                        "time_ms": msg_time_ms,
+                                        "can_id": m['id'],
+                                        "data": bytes.fromhex(m['d'])
+                                    })
                                 self.publish(REDIS_CAN_CHANNEL, json.dumps(msgs))
                                 missing_seqs.remove(seq)
                         
@@ -563,6 +613,7 @@ class TelemetryNode:
                     "ecu_synced": self._ecu_synced,
                     "ecu_sync_source": self._sync_source,
                     "influx": influx_status,
+                    "dbc_file": os.getenv("DBC_FILE_PATH", "unknown"),
                 }
                 self.publish("system_stats", json.dumps(payload))
                 stats["received"] = 0
@@ -628,7 +679,7 @@ class TelemetryNode:
             finally:
                 uplink_sock.close()
 
-        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), utils.heartbeat_coro(self.telemetry_event)]
+        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_parquet_logger(), utils.heartbeat_coro(self.telemetry_event)]
         if ENABLE_UPLINK:
             tasks.append(uplink_relay())
         await asyncio.gather(*tasks)
