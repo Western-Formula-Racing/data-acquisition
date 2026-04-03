@@ -18,7 +18,7 @@ cp deploy/.env.macbook deploy/.env
 Edit `deploy/.env` and set `REMOTE_IP` to the car's RPi's IP address. Per team convention, the IP address is 10.71.1.10. 
 
 ```bash
-docker compose -f deploy/docker-compose.macbook.yml --profile base up -d
+docker compose -f docker-compose.macbook.yml --profile base up -d
 ```
 
 Wait ~30 seconds for InfluxDB3 to finish initializing, then open:

@@ -66,6 +66,8 @@ class TelemetryNode:
         self._base_to_car_offset: float | None = None # Offset between base station time and car's 1970 time
         self._last_raw_car_time: float | None = None  # Raw timestamp of last message
         self._car_internal_jump: float | None = None  # Cumulative jump from 1970 to 2026+ internal car time
+        self._car_time_synced: bool = False           # True after successful time injection to car Pi
+        self._base_clock_bad: bool = False            # True if base clock is before 2026-04-01 (unsafe to inject)
 
     def publish(self, channel, data):
         redis_utils.safe_publish(self.redis_client, channel, data, logger)
@@ -614,6 +616,8 @@ class TelemetryNode:
                     "ecu_sync_source": self._sync_source,
                     "influx": influx_status,
                     "dbc_file": os.getenv("DBC_FILE_PATH", "unknown"),
+                    "car_time_synced": self._car_time_synced,
+                    "base_clock_bad": self._base_clock_bad,
                 }
                 self.publish("system_stats", json.dumps(payload))
                 stats["received"] = 0
@@ -679,7 +683,50 @@ class TelemetryNode:
             finally:
                 uplink_sock.close()
 
-        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_parquet_logger(), utils.heartbeat_coro(self.telemetry_event)]
+        # Car Time Injector — pushes base station clock to car Pi via /set-time every 30s.
+        # Safety gate: if base clock is before 2026-04-01, injection is blocked and
+        # _base_clock_bad is set so the status page can warn the operator.
+        _BASE_CLOCK_TRUST_EPOCH = 1743465600.0  # 2026-04-01 00:00:00 UTC
+        _CAR_TIME_INJECT_INTERVAL = 30.0
+        _CAR_STATUS_PORT = int(os.getenv("STATUS_PORT", "8080"))
+
+        async def car_time_injector():
+            import urllib.request
+            await asyncio.sleep(5.0)  # Let base clock settle first
+            while True:
+                now = time.time()
+                if now < _BASE_CLOCK_TRUST_EPOCH:
+                    self._base_clock_bad = True
+                    self._car_time_synced = False
+                    logger.warning(
+                        f"Base clock is before 2026-04-01 ({now:.0f}). "
+                        "Car time injection BLOCKED until base clock is corrected."
+                    )
+                else:
+                    self._base_clock_bad = False
+                    time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(now))
+                    url = f"http://{REMOTE_IP}:{_CAR_STATUS_PORT}/set-time"
+                    payload = json.dumps({"time": time_str}).encode()
+                    try:
+                        req = urllib.request.Request(
+                            url, data=payload,
+                            headers={"Content-Type": "application/json"},
+                            method="POST",
+                        )
+                        loop = asyncio.get_running_loop()
+                        resp = await loop.run_in_executor(
+                            None,
+                            lambda: urllib.request.urlopen(req, timeout=5)
+                        )
+                        resp.read()
+                        self._car_time_synced = True
+                        logger.info(f"Car Pi clock set to {time_str} UTC")
+                    except Exception as e:
+                        self._car_time_synced = False
+                        logger.warning(f"Car time injection failed ({url}): {e}")
+                await asyncio.sleep(_CAR_TIME_INJECT_INTERVAL)
+
+        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_parquet_logger(), car_time_injector(), utils.heartbeat_coro(self.telemetry_event)]
         if ENABLE_UPLINK:
             tasks.append(uplink_relay())
         await asyncio.gather(*tasks)

@@ -326,21 +326,27 @@
             </div>
         </div>
 
+        <!-- Base Clock Bad Banner -->
+        <div class="error-message" id="baseClockBadBanner" style="display: none; border: 2px solid #ef4444; margin-bottom: 15px; font-weight: 700; color: #fecaca; text-transform: uppercase;">
+            ⚠️ BASE STATION CLOCK IS WRONG (before 2026-04-01). Car time injection BLOCKED — set the base station clock below before racing.
+        </div>
+
         <!-- DBC Warning Banner -->
         <div class="error-message" id="dbcWarningBanner" style="display: none; border: 2px solid #ef4444; margin-bottom: 15px; font-weight: 700; color: #fecaca; text-transform: uppercase;">
             ⚠️ WARNING: USING PLACEHOLDER EXAMPLE.DBC! Telemetry is decoded with a fake schema. Raw CAN is saved, but DB will hold incorrect data! — Set DBC_HOST_PATH in deploy/.env and restart the telemetry container to fix.
         </div>
 
-        <!-- ECU / Clock sync banner -->
+        <!-- Clock sync banner -->
         <div class="sync-banner waiting" id="syncBanner">
             <div class="sync-banner-text">
-                <strong id="syncTitle">⏳ Waiting for ECU time sync</strong>
-                <small id="syncDetail">Data is held until a valid clock source is established (ECU RTC, NTP, or manual set)</small>
+                <strong id="syncTitle">⏳ Waiting for clock sync</strong>
+                <small id="syncDetail">Timestamps may be inaccurate until a clock source is established (ECU RTC, NTP, or manual set)</small>
+                <small id="carSyncStatus" style="display:none; color:#4ade80; margin-top:4px; display:block;">Car clock: auto-synced ✓</small>
             </div>
             <div class="time-form" id="timeForm">
                 <input type="datetime-local" id="timeInput" step="1">
                 <button class="btn btn-amber btn-sm" onclick="prefillNow()">Now ↺</button>
-                <button class="btn btn-amber btn-sm" onclick="setTime()">Set RPi Clock</button>
+                <button class="btn btn-amber btn-sm" onclick="setTime()">Set Base Station Clock</button>
             </div>
         </div>
 
@@ -526,9 +532,9 @@
         }
 
         const SOURCE_LABELS = {
-            'ecu_rtc':      { text: '✅ Synced — ECU RTC',        cls: 'synced',  detail: 'Timestamps from ECU DS3231 battery-backed RTC' },
-            'system_clock': { text: '✅ Synced — RPi system clock', cls: 'synced',  detail: 'RPi clock was past 2026-03-22 at startup (NTP or manual set)' },
-            'none':         { text: '⏳ Waiting for ECU time sync', cls: 'waiting', detail: 'Data still flows — timestamps may be inaccurate until a clock source is established. Set clock below or wait for ECU RTC.' },
+            'ecu_rtc':      { text: '✅ Synced — ECU RTC',     cls: 'synced',  detail: 'Timestamps from ECU DS3231 battery-backed RTC' },
+            'system_clock': { text: '✅ Synced — System clock', cls: 'synced',  detail: 'Base station clock is trusted. Car Pi clock is being auto-synced every 30s.' },
+            'none':         { text: '⏳ Waiting for clock sync', cls: 'waiting', detail: 'Timestamps may be inaccurate. Set base station clock below — car Pi will be synced automatically.' },
         };
 
         function updateSyncBanner(synced, source) {
@@ -565,8 +571,8 @@
                 });
                 const json = await res.json();
                 if (res.ok) {
-                    document.getElementById('syncTitle').textContent  = '🕐 Clock set — waiting for data to ungate…';
-                    document.getElementById('syncDetail').textContent = 'RPi clock: ' + json.time;
+                    document.getElementById('syncTitle').textContent  = '🕐 Base clock set — car Pi will sync within 30s…';
+                    document.getElementById('syncDetail').textContent = 'Base station clock: ' + json.time;
                 } else {
                     alert('Failed to set time: ' + json.error);
                 }
@@ -590,6 +596,12 @@
                     dbcWarning.style.display = 'none';
                 }
             }
+
+            const baseClockBad = document.getElementById('baseClockBadBanner');
+            if (baseClockBad) baseClockBad.style.display = stats.base_clock_bad ? 'block' : 'none';
+
+            const carSyncEl = document.getElementById('carSyncStatus');
+            if (carSyncEl) carSyncEl.style.display = stats.car_time_synced ? 'block' : 'none';
 
             if (stats.ecu_synced !== undefined) {
                 updateSyncBanner(stats.ecu_synced, stats.ecu_sync_source || 'none');
