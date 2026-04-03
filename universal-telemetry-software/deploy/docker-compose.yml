@@ -34,6 +34,9 @@ services:
       - /lib/modules:/lib/modules # In case CAN drivers are needed
       - ${DBC_HOST_PATH:-../example.dbc}:/app/active.dbc:ro
       - raw_can_data:/app/raw_can_logs
+      - ../src:/app/src:ro
+      - ../status:/app/status:ro
+      - ../main.py:/app/main.py:ro
     logging:
       driver: "json-file"
       options:

@@ -69,6 +69,9 @@ class TelemetryNode:
         self._car_internal_jump: float | None = None  # Cumulative jump from 1970 to 2026+ internal car time
         self._car_time_synced: bool = False           # True after successful time injection to car Pi
         self._base_clock_bad: bool = False            # True if base clock is before 2026-04-01 (unsafe to inject)
+        self.status_map = {}                          # seq -> status (0: missing, 1: udp, 2: tcp)
+        self.latest_seq = -1
+        self.last_udp_time = 0.0
 
     def publish(self, channel, data):
         redis_utils.safe_publish(self.redis_client, channel, data, logger)
@@ -519,6 +522,21 @@ class TelemetryNode:
                 
                 expected_seq = max(expected_seq, seq + 1)
                 
+                # Update status map for visualization
+                self.last_udp_time = time.time()
+                if seq > self.latest_seq:
+                    if self.latest_seq != -1:
+                        for s in range(self.latest_seq + 1, seq):
+                            self.status_map[s] = 0
+                    self.status_map[seq] = 1
+                    self.latest_seq = seq
+                    # Prune status map to last 3000 sequences
+                    if len(self.status_map) > 3000:
+                        min_seq = self.latest_seq - 2000
+                        self.status_map = {s: v for s, v in self.status_map.items() if s >= min_seq}
+                elif seq in self.status_map and self.status_map[seq] == 0:
+                    self.status_map[seq] = 1 # Out-of-order UDP arrival
+                
                 # Process messages
                 offset = 10
                 msgs_to_publish = []
@@ -639,6 +657,9 @@ class TelemetryNode:
                                     })
                                 self.publish(REDIS_CAN_CHANNEL, json.dumps(msgs))
                                 missing_seqs.remove(seq)
+                                # Update status map for visualization
+                                if seq in self.status_map:
+                                    self.status_map[seq] = 2 # Recovered via TCP
                         
                         writer.close()
                         await writer.wait_closed()
@@ -665,6 +686,8 @@ class TelemetryNode:
                     "dbc_file": os.getenv("DBC_FILE_PATH", "unknown"),
                     "car_time_synced": self._car_time_synced,
                     "base_clock_bad": self._base_clock_bad,
+                    "last_udp_time": self.last_udp_time,
+                    "status_buffer": [self.status_map.get(s, 0) for s in range(max(0, self.latest_seq - 1000), self.latest_seq + 1)] if self.latest_seq != -1 else []
                 }
                 self.publish("system_stats", json.dumps(payload))
                 stats["received"] = 0
