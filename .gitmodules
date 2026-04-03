@@ -1,0 +1,3 @@
+[submodule "secret-dbc"]
+	path = secret-dbc
+	url = https://github.com/Western-Formula-Racing/DBC.git
