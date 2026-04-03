@@ -15,6 +15,8 @@ import os
 import json
 import subprocess
 import logging
+import urllib.request
+import urllib.error
 
 logger = logging.getLogger("StatusServer")
 
@@ -22,7 +24,10 @@ PORT = int(os.getenv("STATUS_PORT", 8080))
 DIRECTORY = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/status"
 # SET_TIME_ENABLED must be explicitly set to "true" to allow the /set-time endpoint.
 # This prevents unauthenticated callers from modifying the host clock.
-SET_TIME_ENABLED = os.getenv("SET_TIME_ENABLED", "false").lower() == "true"
+SET_TIME_ENABLED  = os.getenv("SET_TIME_ENABLED",  "false").lower() == "true"
+SHUTDOWN_ENABLED  = os.getenv("SHUTDOWN_ENABLED",  "false").lower() == "true"
+REMOTE_IP         = os.getenv("REMOTE_IP", "")
+REMOTE_STATUS_PORT = int(os.getenv("STATUS_PORT", 8080))
 
 
 class StatusTCPServer(socketserver.TCPServer):
@@ -53,6 +58,15 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self._json_response(403, {"error": "set-time is disabled (set SET_TIME_ENABLED=true)"})
                 return
             self._handle_set_time()
+        elif self.path == '/shutdown':
+            if not SHUTDOWN_ENABLED:
+                self._json_response(403, {"error": "shutdown is disabled (set SHUTDOWN_ENABLED=true)"})
+                return
+            self._handle_shutdown()
+        elif self.path == '/shutdown-car':
+            self._handle_shutdown_car()
+        elif self.path == '/inject-car-time':
+            self._handle_inject_car_time()
         elif self.path == '/sync-cloud':
             self._handle_sync_cloud()
         else:
@@ -116,6 +130,61 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         except Exception as e:
             logger.error(f"/set-time error: {e}")
+            self._json_response(500, {"error": str(e)})
+
+    def _handle_inject_car_time(self):
+        if not REMOTE_IP:
+            self._json_response(500, {"error": "REMOTE_IP not configured"})
+            return
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            time_str = body.get('time', '').strip()
+            if not time_str:
+                self._json_response(400, {"error": "Missing 'time' field"})
+                return
+            url = f"http://{REMOTE_IP}:{REMOTE_STATUS_PORT}/set-time"
+            payload = json.dumps({"time": time_str}).encode()
+            req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            resp = urllib.request.urlopen(req, timeout=5)
+            result = json.loads(resp.read().decode())
+            logger.info(f"Car Pi clock set to {time_str} via manual injection")
+            self._json_response(200, {"ok": True, "time": result.get("time", time_str)})
+        except urllib.error.HTTPError as e:
+            body = e.read().decode(errors="replace")
+            logger.warning(f"Car rejected time injection ({e.code}): {body}")
+            self._json_response(e.code, {"error": body})
+        except urllib.error.URLError as e:
+            logger.warning(f"Car unreachable for time injection: {e.reason}")
+            self._json_response(503, {"error": f"Car unreachable — is it on? ({e.reason})"})
+        except Exception as e:
+            logger.error(f"/inject-car-time error: {e}")
+            self._json_response(500, {"error": str(e)})
+
+    def _handle_shutdown(self):
+        logger.warning("Shutdown requested via /shutdown — halting system now")
+        self._json_response(200, {"ok": True, "message": "Shutting down..."})
+        subprocess.Popen(["shutdown", "-h", "now"])
+
+    def _handle_shutdown_car(self):
+        if not REMOTE_IP:
+            self._json_response(500, {"error": "REMOTE_IP not configured"})
+            return
+        url = f"http://{REMOTE_IP}:{REMOTE_STATUS_PORT}/shutdown"
+        try:
+            req = urllib.request.Request(url, data=b"", method="POST")
+            urllib.request.urlopen(req, timeout=5)
+            logger.info(f"Shutdown command sent to car at {url}")
+            self._json_response(200, {"ok": True, "message": f"Shutdown sent to {REMOTE_IP}"})
+        except urllib.error.HTTPError as e:
+            body = e.read().decode(errors="replace")
+            logger.warning(f"Car shutdown rejected ({e.code}): {body}")
+            self._json_response(e.code, {"error": body})
+        except urllib.error.URLError as e:
+            logger.warning(f"Car unreachable for shutdown ({url}): {e.reason}")
+            self._json_response(503, {"error": f"Car unreachable: {e.reason}"})
+        except Exception as e:
+            logger.error(f"/shutdown-car error: {e}")
             self._json_response(500, {"error": str(e)})
 
     def _json_response(self, code: int, payload: dict):

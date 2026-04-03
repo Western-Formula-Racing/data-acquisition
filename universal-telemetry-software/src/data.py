@@ -755,6 +755,7 @@ class TelemetryNode:
                     url = f"http://{REMOTE_IP}:{_CAR_STATUS_PORT}/set-time"
                     payload = json.dumps({"time": time_str}).encode()
                     try:
+                        import urllib.error
                         req = urllib.request.Request(
                             url, data=payload,
                             headers={"Content-Type": "application/json"},
@@ -768,9 +769,15 @@ class TelemetryNode:
                         resp.read()
                         self._car_time_synced = True
                         logger.info(f"Car Pi clock set to {time_str} UTC")
+                    except urllib.error.HTTPError as e:
+                        self._car_time_synced = False
+                        logger.warning(f"Car rejected time injection ({e.code}): {e.read().decode(errors='replace')}")
+                    except urllib.error.URLError as e:
+                        self._car_time_synced = False
+                        logger.debug(f"Car unreachable for time injection — car may be off ({url}: {e.reason})")
                     except Exception as e:
                         self._car_time_synced = False
-                        logger.warning(f"Car time injection failed ({url}): {e}")
+                        logger.warning(f"Car time injection error ({url}): {e}")
                 await asyncio.sleep(_CAR_TIME_INJECT_INTERVAL)
 
         tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_csv_logger(), car_time_injector(), utils.heartbeat_coro(self.telemetry_event)]

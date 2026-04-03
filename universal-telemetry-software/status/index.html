@@ -346,7 +346,8 @@
             <div class="time-form" id="timeForm">
                 <input type="datetime-local" id="timeInput" step="1">
                 <button class="btn btn-amber btn-sm" onclick="prefillNow()">Now ↺</button>
-                <button class="btn btn-amber btn-sm" onclick="setTime()">Set Base Station Clock</button>
+                <button class="btn btn-amber btn-sm" onclick="setTime()">Inject Time to Car Pi</button>
+                <span id="setTimeStatus" style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; align-self: center;"></span>
             </div>
         </div>
 
@@ -444,6 +445,11 @@
         <div class="timestamp" id="timestamp">--</div>
 
         <div class="error-message" id="errorMsg" style="display: none;"></div>
+
+        <div style="margin-top: 15px; padding: 10px 0; border-top: 1px solid #222; display: flex; gap: 10px;">
+            <button class="btn btn-amber btn-sm" onclick="shutdownCar()">⏻ Shutdown Car Pi</button>
+            <span id="shutdownStatus" style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #6b7280; align-self: center;"></span>
+        </div>
     </div>
 
     <div class="performance-footer">
@@ -562,22 +568,25 @@
 
         async function setTime() {
             const val = document.getElementById('timeInput').value;
-            if (!val) { alert('Enter a date/time first'); return; }
+            const el = document.getElementById('setTimeStatus');
+            if (!val) { el.textContent = 'Enter a date/time first'; el.style.color = '#fbbf24'; return; }
+            el.textContent = 'Setting…'; el.style.color = '#6b7280';
             try {
-                const res = await fetch('/set-time', {
+                const res = await fetch('/inject-car-time', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ time: val.replace('T', ' ') }),
                 });
                 const json = await res.json();
                 if (res.ok) {
-                    document.getElementById('syncTitle').textContent  = '🕐 Base clock set — car Pi will sync within 30s…';
-                    document.getElementById('syncDetail').textContent = 'Base station clock: ' + json.time;
+                    el.textContent = '✓ Injected'; el.style.color = '#4ade80';
+                    document.getElementById('syncTitle').textContent  = '🕐 Car Pi clock set';
+                    document.getElementById('syncDetail').textContent = 'Car Pi clock: ' + json.time;
                 } else {
-                    alert('Failed to set time: ' + json.error);
+                    el.textContent = '✗ ' + (json.error || 'Failed'); el.style.color = '#ef4444';
                 }
             } catch (e) {
-                alert('Request failed: ' + e);
+                el.textContent = '✗ ' + e; el.style.color = '#ef4444';
             }
         }
 
@@ -790,6 +799,26 @@
             }
             if (loss != null) {
                 document.getElementById('linkLoss').textContent = loss.toFixed(1) + '%';
+            }
+        }
+
+        async function shutdownCar() {
+            if (!confirm('Shut down the Car Pi? This will kill telemetry until it is powered back on.')) return;
+            const el = document.getElementById('shutdownStatus');
+            el.textContent = 'Sending...';
+            try {
+                const res = await fetch('/shutdown-car', { method: 'POST' });
+                const json = await res.json();
+                if (res.ok) {
+                    el.textContent = '✓ Shutdown command sent';
+                    el.style.color = '#4ade80';
+                } else {
+                    el.textContent = '✗ ' + (json.error || 'Failed');
+                    el.style.color = '#ef4444';
+                }
+            } catch (e) {
+                el.textContent = '✗ Request failed: ' + e;
+                el.style.color = '#ef4444';
             }
         }
 
