@@ -8,6 +8,7 @@ import logging
 import can
 import redis.asyncio as aioredis
 from collections import deque
+import csv
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -170,6 +171,7 @@ class TelemetryNode:
                         self.can_event.set()
                     telemetry_msg = CANMessage(self._corrected_time(), can_id, data)
                     await queue.put(telemetry_msg)
+                    car_raw_queue.put_nowait({"time_ms": int(telemetry_msg.timestamp * 1000), "can_id": telemetry_msg.can_id, "data": bytes(telemetry_msg.data)})
                 return  # unreachable, but makes intent clear
 
             # ── Real CAN read loop ────────────────────────────────────────
@@ -194,6 +196,7 @@ class TelemetryNode:
                             self._try_auto_sync()
                         telemetry_msg = CANMessage(self._corrected_time(), msg.arbitration_id, msg.data)
                         await queue.put(telemetry_msg)
+                        car_raw_queue.put_nowait({"time_ms": int(telemetry_msg.timestamp * 1000), "can_id": telemetry_msg.can_id, "data": bytes(telemetry_msg.data)})
                 except Exception as e:
                     consecutive_errors += 1
                     logger.error(f"CAN recv() error #{consecutive_errors}: {e}")
@@ -359,6 +362,57 @@ class TelemetryNode:
         # Throughput listener for link diagnostics burst test
         from src.throughput_listener import throughput_listener_task
 
+        # ── Car-side raw CAN Parquet logger ──────────────────────────────────
+        # Writes directly from can0 — zero UDP loss. Rotates every 5 min so
+        # each completed file has a valid footer even on sudden power loss.
+        car_raw_queue = asyncio.Queue()
+        _car_parquet_schema = pa.schema([
+            ("time_ms", pa.int64()),
+            ("can_id", pa.int64()),
+            ("data", pa.binary()),
+        ])
+        _PARQUET_ROTATE_SECS = 300  # 5 minutes
+
+        async def car_parquet_logger():
+            raw_logs_dir = "/app/raw_can_logs"
+            os.makedirs(raw_logs_dir, exist_ok=True)
+            session_id = os.environ.get("BOOT_SESSION_ID", "default")
+            part = 1
+            writer = None
+            part_start = time.time()
+
+            def _open_part():
+                nonlocal writer, part_start
+                path = os.path.join(raw_logs_dir, f"raw_can_{session_id}_part{part:04d}.parquet")
+                writer = pq.ParquetWriter(path, _car_parquet_schema)
+                part_start = time.time()
+                logger.info(f"Car Parquet: opened {path}")
+
+            try:
+                _open_part()
+                while True:
+                    await asyncio.sleep(1.0)
+                    if time.time() - part_start >= _PARQUET_ROTATE_SECS:
+                        writer.close()
+                        part += 1
+                        _open_part()
+                    if car_raw_queue.empty():
+                        continue
+                    batch = []
+                    while not car_raw_queue.empty() and len(batch) < 10000:
+                        batch.append(car_raw_queue.get_nowait())
+                    table = pa.Table.from_arrays([
+                        pa.array([m["time_ms"] for m in batch], type=pa.int64()),
+                        pa.array([m["can_id"]  for m in batch], type=pa.int64()),
+                        pa.array([m["data"]    for m in batch], type=pa.binary()),
+                    ], schema=_car_parquet_schema)
+                    writer.write_table(table)
+            except Exception as e:
+                logger.error(f"Car Parquet logger error: {e}")
+            finally:
+                if writer is not None:
+                    writer.close()
+
         tasks = [
             can_reader(),
             udp_sender(),
@@ -366,6 +420,7 @@ class TelemetryNode:
             throughput_listener_task(),
             utils.heartbeat_coro(self.telemetry_event),
             inject_heartbeat(),
+            car_parquet_logger(),
         ]
         if ENABLE_UPLINK:
             tasks.append(uplink_receiver())
@@ -380,39 +435,31 @@ class TelemetryNode:
         raw_logs_dir = "/app/raw_can_logs"
         os.makedirs(raw_logs_dir, exist_ok=True)
         session_id = os.environ.get("BOOT_SESSION_ID", "default")
-        parquet_path = os.path.join(raw_logs_dir, f"raw_can_{session_id}.parquet")
+        csv_path = os.path.join(raw_logs_dir, f"raw_can_{session_id}.csv")
         raw_msg_queue = asyncio.Queue()
-        parquet_schema = pa.schema([
-            ("time_ms", pa.int64()),
-            ("can_id", pa.int64()),
-            ("data", pa.binary())
-        ])
+        _csv_is_new = not os.path.exists(csv_path)
 
-        async def raw_parquet_logger():
-            writer = None
+        async def raw_csv_logger():
+            # Append mode — each flush is durable, no footer required.
+            # Safe on sudden power loss; only the current 1s batch is at risk.
             try:
-                while True:
-                    await asyncio.sleep(1.0)
-                    if raw_msg_queue.empty():
-                        continue
-                    batch = []
-                    while not raw_msg_queue.empty() and len(batch) < 10000:
-                        batch.append(raw_msg_queue.get_nowait())
-                    
-                    table = pa.Table.from_arrays([
-                        pa.array([m["time_ms"] for m in batch], type=pa.int64()),
-                        pa.array([m["can_id"] for m in batch], type=pa.int64()),
-                        pa.array([m["data"] for m in batch], type=pa.binary())
-                    ], schema=parquet_schema)
-                    
-                    if writer is None:
-                        writer = pq.ParquetWriter(parquet_path, parquet_schema)
-                    writer.write_table(table)
+                with open(csv_path, "a", newline="") as f:
+                    writer = csv.writer(f)
+                    if _csv_is_new:
+                        writer.writerow(["time_ms", "can_id", "data_hex"])
+                        f.flush()
+                    while True:
+                        await asyncio.sleep(1.0)
+                        if raw_msg_queue.empty():
+                            continue
+                        batch = []
+                        while not raw_msg_queue.empty() and len(batch) < 10000:
+                            batch.append(raw_msg_queue.get_nowait())
+                        for m in batch:
+                            writer.writerow([m["time_ms"], m["can_id"], m["data"].hex()])
+                        f.flush()
             except Exception as e:
-                logger.error(f"Parquet logger error: {e}")
-            finally:
-                if writer is not None:
-                    writer.close()
+                logger.error(f"Base CSV logger error: {e}")
 
         
         # UDP Receiver Task
@@ -726,7 +773,7 @@ class TelemetryNode:
                         logger.warning(f"Car time injection failed ({url}): {e}")
                 await asyncio.sleep(_CAR_TIME_INJECT_INTERVAL)
 
-        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_parquet_logger(), car_time_injector(), utils.heartbeat_coro(self.telemetry_event)]
+        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_csv_logger(), car_time_injector(), utils.heartbeat_coro(self.telemetry_event)]
         if ENABLE_UPLINK:
             tasks.append(uplink_relay())
         await asyncio.gather(*tasks)
