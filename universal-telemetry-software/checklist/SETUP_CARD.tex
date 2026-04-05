@@ -468,6 +468,32 @@ and point their own Pecan instance at the car's WSS endpoint.
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
+\section*{7.5 -- WS RELAY (Laptop Fan-Out)}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\gobox{Optional -- Laptop as base station relay for remote viewers}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  The WS relay lets multiple remote viewers watch live telemetry without being on the LAN.
+  It connects upstream to the base station's WebSocket (port 9080) and fans out to
+  downstream clients via port 9089. \\[1mm]
+  \textbf{Laptop (MacBook / WSL2):} \\
+  \cmd{cd universal-telemetry-software} \\
+  \cmd{export RELAY\_UPSTREAM\_WS=ws://10.71.1.20:9080} \\
+  \cmd{uv run uts-ws-relay} \\[1mm]
+  \textbf{Or enable in docker-compose.prod.yml (base profile):} \\
+  \cmd{ENABLE\_WS\_RELAY=true} \quad (adds ws\_relay as a child process) \\[1mm]
+  \textbf{Port:} \cmd{ws://0.0.0.0:9089} \quad LAN viewers: \cmd{ws://<laptop>:9089} (no token) \\[1mm]
+  \textbf{Cloudflare Tunnel (remote viewers):} \\
+  Map \cmd{wss://ws-relay.example.com} $\rightarrow$ \cmd{http://127.0.0.1:9089} \\
+  Clients connect: \cmd{wss://ws-relay.example.com/?token=<RELAY\_TOKEN>} \\
+  Set \cmd{RELAY\_TOKEN=<secret>} on the laptop to enable token auth. \\[1mm]
+  \textbf{PASS:} remote browsers receive live Pecan telemetry via the relay \\
+  \textit{Note:} cloudflared is NOT required for LAN use -- it is only for the Cloudflare Tunnel path. \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{8 -- ENABLE TX WEBSOCKET (Car Only)}
 % ─────────────────────────────────────────────────────────────────────────────
 
@@ -654,7 +680,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 \vspace{2mm}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{11 -- FAST TROUBLESHOOTING}
+\section*{12 -- FAST TROUBLESHOOTING}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \rowcolors{1}{cardbg}{white}
@@ -676,12 +702,14 @@ and point their own Pecan instance at the car's WSS endpoint.
   PECAN disconnected & WS\_PORT=9080? & Check docker-compose.prod.yml env \\
   PWA WSS fails & Caddy cert trusted? & Visit \cmd{https://<rpi>:9443}, accept warning (\S 7) \\
   GHCR pull fails & Org member + docker login? & Re-run \S 0 GHCR step \\
+  Remote viewers see no data & WS relay running? & Check laptop: \cmd{uv run uts-ws-relay} + \S 7.5 \\
+  Remote viewers 401 Unauthorized & RELAY\_TOKEN set? & Set same token on laptop and viewer URL (\S 7.5) \\
   \bottomrule
 \end{tabularx}
 \vspace{2mm}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{13 -- KEY PORTS}
+\section*{14 -- KEY PORTS}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \rowcolors{1}{tblhd}{white}
@@ -698,6 +726,7 @@ and point their own Pecan instance at the car's WSS endpoint.
   9000 & HTTP & InfluxDB3 API \\
   9080 & WebSocket & PECAN telemetry feed (plain WS) \\
   9078 & WebSocket & PECAN TX CAN write (car only) \\
+  9089 & WebSocket & WS relay downlink (optional, laptop fan-out) \\
   9443 & WSS/HTTPS & Caddy TLS proxy $\rightarrow$ :9080 (both RPis) \\
   3000 & HTTP & PECAN dashboard UI (base only) \\
   \bottomrule
@@ -705,7 +734,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 \vspace{2mm}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{14 -- ENV VAR QUICKREF}
+\section*{15 -- ENV VAR QUICKREF}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \rowcolors{1}{tblhd}{white}
@@ -724,12 +753,16 @@ and point their own Pecan instance at the car's WSS endpoint.
   ENABLE\_VIDEO & false & Video streaming \\
   ENABLE\_AUDIO & false & Audio streaming \\
   ENABLE\_INFLUX\_LOGGING & true & Log telemetry to local InfluxDB3 \\
+  ENABLE\_WS\_RELAY & false & Start WS relay (ws\_relay.py) on port 9089 \\
+  RELAY\_UPSTREAM\_WS & ws://127.0.0.1:9080 & Upstream WS URL for relay \\
+  RELAY\_TOKEN & (none) & Token required for Cloudflare-tunnel clients \\
+  RELAY\_REQUIRE\_TOKEN\_ON\_LAN & false & Require token for LAN clients too \\
   \bottomrule
 \end{tabularx}
 \vspace{2mm}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{15 -- DOCKER COMPOSE FILES}
+\section*{16 -- DOCKER COMPOSE FILES}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \noindent
