@@ -1,4 +1,5 @@
 import { createCanProcessor } from '../utils/canProcessor';
+import { listDBCFiles, fetchAndApplyDBC } from './DbcService';
 
 export type MessageHandler = (data: any) => void;
 
@@ -51,6 +52,7 @@ export class WebSocketService {
   async initialize() {
     this.disconnect();
 
+    // 1. Initialize CAN processor FIRST
     try {
       if (!this.processor) {
         this.processor = await createCanProcessor();
@@ -60,10 +62,33 @@ export class WebSocketService {
       console.error('[WebSocket] Failed to initialize CAN processor:', error);
       return;
     }
+
+    // 2. Load DBC (internal mode only)
+    if (import.meta.env.VITE_INTERNAL) {
+      try {
+        const saved = localStorage.getItem('dbc-selected-file');
+        const listResult = await listDBCFiles();
+        if (listResult.ok && listResult.files && listResult.files.length > 0) {
+          const target =
+            listResult.files.find((f) => f.name === saved) ?? listResult.files[0];
+          const applyResult = await fetchAndApplyDBC(target.name);
+          console.log(
+            '[WebSocket] DBC loaded:',
+            applyResult.message,
+            applyResult.commitSha ?? ''
+          );
+        } else {
+          console.warn('[WebSocket] Could not list DBC files:', listResult.message);
+        }
+      } catch (err) {
+        console.warn('[WebSocket] DBC fetch failed, using cached/default:', err);
+      }
+    }
+
+    // 3. Connect WebSocket
     await this.connect();
   }
 
-  /** Primary URL when not using multi-line `pecan-ws-candidates`. */
   private getPrimaryWsUrl(): string {
     const isSecure = window.location.protocol === 'https:';
     const protocol = isSecure ? 'wss' : 'ws';
@@ -99,10 +124,6 @@ export class WebSocketService {
     return out;
   }
 
-  /**
-   * Saved `pecan-ws-candidates` lines win. Else custom / Vite URL as a single target.
-   * Else default failover: track base (10.71.1.10) then WFR demo.
-   */
   private resolveCandidateUrls(): string[] {
     const isSecure = window.location.protocol === 'https:';
     const protocol = isSecure ? 'wss' : 'ws';
@@ -117,13 +138,18 @@ export class WebSocketService {
         return lines.map((u) => this.normalizeWsUrl(u, protocol));
       }
     }
+
     if (localStorage.getItem('custom-ws-url')?.trim()) {
       return [this.getPrimaryWsUrl()];
     }
+
     if (import.meta.env.VITE_WS_URL) {
       return [this.getPrimaryWsUrl()];
     }
-    return DEFAULT_WS_FAILOVER_URLS.map((u) => this.normalizeWsUrl(u, protocol));
+
+    return DEFAULT_WS_FAILOVER_URLS.map((u) =>
+      this.normalizeWsUrl(u, protocol)
+    );
   }
 
   private orderFailoverCandidates(urls: string[]): string[] {
@@ -134,7 +160,7 @@ export class WebSocketService {
         return [last, ...urls.filter((u) => u !== last)];
       }
     } catch {
-      /* sessionStorage blocked */
+      /* ignore */
     }
     return urls;
   }
@@ -142,6 +168,7 @@ export class WebSocketService {
   private tryConnectUrl(url: string, timeoutMs: number): Promise<WebSocket | null> {
     return new Promise((resolve) => {
       let settled = false;
+
       const done = (sock: WebSocket | null) => {
         if (settled) return;
         settled = true;
@@ -160,9 +187,7 @@ export class WebSocketService {
       const tid = window.setTimeout(() => {
         try {
           sock.close();
-        } catch {
-          /* ignore */
-        }
+        } catch {}
         done(null);
       }, timeoutMs);
 
@@ -184,6 +209,7 @@ export class WebSocketService {
 
   private async connectWithFailover(urls: string[]) {
     let toTry = this.orderFailoverCandidates(urls);
+
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       const lanFirst = toTry.filter((u) => u.startsWith('ws://'));
       const rest = toTry.filter((u) => !u.startsWith('ws://'));
@@ -191,16 +217,19 @@ export class WebSocketService {
     }
 
     console.log('[WebSocket] Failover mode, candidates:', toTry);
+
     for (let i = 0; i < toTry.length; i++) {
       const url = toTry[i];
       console.log(`[WebSocket] Trying (${i + 1}/${toTry.length}): ${url}`);
       const sock = await this.tryConnectUrl(url, CANDIDATE_TIMEOUT_MS);
+
       if (sock) {
         this.ws = sock;
         this.bindSocketHandlers(sock, url);
         return;
       }
     }
+
     console.error('[WebSocket] All candidate URLs failed');
     this.notify('status', {
       connected: false,
@@ -225,9 +254,7 @@ export class WebSocketService {
       console.log('[WebSocket] Connected');
       try {
         sessionStorage.setItem(WS_LAST_OK_KEY, wsUrl);
-      } catch {
-        /* ignore */
-      }
+      } catch {}
       this.reconnectAttempts = 0;
       this.messageCount = 0;
       this.notify('__connect__', {});
@@ -239,6 +266,7 @@ export class WebSocketService {
         if (this.messageCount < 3) {
           console.log(`[WebSocket] Message #${this.messageCount + 1}:`, event.data);
         }
+
         if (
           this.messageCount === 10 ||
           this.messageCount === 100 ||
@@ -252,12 +280,13 @@ export class WebSocketService {
         if (messageData?.type) {
           this.notify(messageData.type, messageData);
         }
+
         this.notify('raw', messageData);
 
         const decoded = this.processor.processWebSocketMessage(messageData);
         if (decoded) {
           if (this.messageCount < 3) {
-            console.log(`[WebSocket] Decoded message(s) #${this.messageCount + 1}:`, decoded);
+            console.log(`[WebSocket] Decoded message(s):`, decoded);
           }
           this.notify('decoded', decoded);
         }
@@ -268,13 +297,11 @@ export class WebSocketService {
       }
     };
 
-    socket.onerror = (error) => {
-      console.error('[WebSocket] Error:', error);
+    socket.onerror = () => {
       this.notify('status', { connected: false, url: wsUrl, error: 'Connection error' });
     };
 
     socket.onclose = (event) => {
-      console.log('[WebSocket] Disconnected');
       this.notify('status', {
         connected: false,
         url: wsUrl,
@@ -294,24 +321,14 @@ export class WebSocketService {
     }
   }
 
-  /**
-   * Uplink: send one CAN frame (see WEBSOCKET_PROTOCOL.md).
-   * @returns true if the message was queued on the socket
-   */
   sendCanMessage(canId: number, data: number[], ref: string): boolean {
     if (!this.isConnected()) return false;
-    console.log(`[WS →] can_send  canId=${canId}  ref=${ref}  data=[${data.join(', ')}]`);
     this.send({ type: 'can_send', ref, canId, data });
     return true;
   }
 
-  /**
-   * Uplink: send up to 20 CAN frames in one round-trip.
-   */
   sendCanBatch(messages: Array<{ canId: number; data: number[] }>, ref: string): boolean {
     if (!this.isConnected()) return false;
-    const summary = messages.map((m) => `${m.canId}:[${m.data.join(',')}]`).join(' | ');
-    console.log(`[WS →] can_send_batch  ref=${ref}  msgs=${messages.length}  ${summary}`);
     this.send({ type: 'can_send_batch', ref, messages });
     return true;
   }
@@ -342,7 +359,6 @@ export class WebSocketService {
   }
 
   public reconnect() {
-    console.log('[WebSocket] Forcing reconnection...');
     this.disconnect();
     this.reconnectAttempts = 0;
     void this.connect();
@@ -353,7 +369,6 @@ export class WebSocketService {
   }
 
   public setSuppressIngestion(suppress: boolean) {
-    console.log(`[WebSocket] Ingestion suppression: ${suppress}`);
     this.suppressIngestion = suppress;
   }
 

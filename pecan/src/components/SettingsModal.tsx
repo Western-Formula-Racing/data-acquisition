@@ -15,6 +15,7 @@ import { getCategoryConfigString, updateCategories } from "../config/categories"
 import { useSerialStatus } from "../lib/useSerialStatus";
 import NotNotGame from "./NotNotGame";
 import { useDataStoreControls } from "../lib/useDataStore";
+import { DbcSelector } from "./DbcSelector";
 
 const RETENTION_STORAGE_KEY = "pecan:retention-window-ms";
 const THEME_STORAGE_KEY = "pecan:theme";
@@ -279,6 +280,9 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                         <NotNotGame onClose={() => setIsGameOpen(false)} />
                     ) : (
                         <>
+                            {/* Team DBC — internal build only */}
+                            {import.meta.env.VITE_INTERNAL && <DbcSelector />}
+
                             {/* DBC Upload Section - compact single row */}
                             <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
                                 <span className="text-sm font-medium">Custom DBC File</span>

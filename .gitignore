@@ -250,3 +250,4 @@ flight-recorder/.env.local
 /pecan/.claude
 /flight-recorder/.claude
 /universal-telemetry-software/deploy/.claude
+/docs/specs

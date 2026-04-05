@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
     parseCanLogLine,
     decodeCanMessage,
     createCanProcessor,
     getDbcMessages,
     loadDBCFromCache,
+    setActiveDbcText,
 } from './canProcessor';
 import { Dbc, Can } from 'candied';
 import exampleDbc from '../assets/example.dbc?raw';
@@ -496,5 +497,20 @@ describe('CAN Processor Unit Tests', () => {
             expect(result?.messageName).toBe('ELCON_LIMITS');
             expect(result?.canId).toBe(0x9806E5F4); // Should return the DBC ID
         });
+    });
+});
+
+describe('setActiveDbcText', () => {
+    afterAll(() => {
+        // Restore module state so later tests are not affected
+        setActiveDbcText(exampleDbc);
+    });
+
+    it('updates the active DBC so the next processor uses it', async () => {
+        const minimalDbc = `VERSION ""\nNS_ :\nBS_:\nBU_:\n`;
+        setActiveDbcText(minimalDbc);
+        const processor = await createCanProcessor();
+        expect(processor).toBeDefined();
+        expect(processor.data.messages.size).toBe(0);
     });
 });

@@ -257,6 +257,12 @@ export function forceCache(force: boolean) {
   usingCache = force;
 }
 
+/** Update the active DBC text used by the next createCanProcessor() call. */
+export function setActiveDbcText(text: string): void {
+  dbcFile = text;
+  usingCache = true;
+}
+
 export async function clearDbcCache() {
   // Clear Cache API if available
   try {

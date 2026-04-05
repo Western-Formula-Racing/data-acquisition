@@ -101,6 +101,7 @@ const LOCALSTORAGE_PRIORITY_KEYS = [
   "dash:desktopPanelOpen",
   "dash:tutorialSeen",
   "dbc-cache-active",
+  "dbc-selected-file",
   "txdash:viewMode",
 ];
 
