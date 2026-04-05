@@ -1,9 +1,8 @@
-// In production the bridge runs in daq-server-components alongside Grafana.
-// Set VITE_GRAFANA_BRIDGE_URL to the tunnel/public URL of the bridge service.
-// Example: https://grafana-bridge.westernformularacing.org/api/grafana
-const GRAFANA_BRIDGE_URL = "https://grafana-proxy.westernformularacing.workers.dev/grafana-bridge/api/grafana";
-  // import.meta.env.VITE_GRAFANA_BRIDGE_URL ||
-  // "http://localhost:3001/api/grafana";
+// Bridge base URL: defaults to the hosted proxy; override for local/staging/self-hosted.
+// Set VITE_GRAFANA_BRIDGE_URL to your bridge (e.g. http://localhost:3001/api/grafana for local).
+const GRAFANA_BRIDGE_URL =
+  import.meta.env.VITE_GRAFANA_BRIDGE_URL ||
+  "https://grafana-proxy.westernformularacing.workers.dev/grafana-bridge/api/grafana";
 
 interface CreateDashboardResponse {
   url: string;

@@ -7,12 +7,14 @@ on:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
       - 'flight-recorder/**'
+      - 'grafana-worker/**'
       - '.github/workflows/telemetry-ci.yml'
   pull_request:
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
       - 'flight-recorder/**'
+      - 'grafana-worker/**'
       - '.github/workflows/telemetry-ci.yml'
 
 jobs:
@@ -22,6 +24,7 @@ jobs:
       telemetry: ${{ steps.filter.outputs.telemetry }}
       pecan: ${{ steps.filter.outputs.pecan }}
       fdr: ${{ steps.filter.outputs.fdr }}
+      grafana_worker: ${{ steps.filter.outputs.grafana_worker }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -34,6 +37,8 @@ jobs:
               - 'pecan/**'
             fdr:
               - 'flight-recorder/**'
+            grafana_worker:
+              - 'grafana-worker/**'
 
   # ── Build images once, share via artifact ───────────────────────────────
   build:
@@ -528,7 +533,7 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-          VITE_GRAFANA_BRIDGE_URL: https://grafana.westernformularacing.org/grafana-bridge/api/grafana
+          VITE_GRAFANA_BRIDGE_URL: https://grafana-proxy.westernformularacing.workers.dev/grafana-bridge/api/grafana
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
@@ -576,8 +581,8 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET_DEV }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID_DEV }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID_DEV }}
-          VITE_GRAFANA_BRIDGE_URL: https://grafana.westernformularacing.org/grafana-bridge/api/grafana
-      
+          VITE_GRAFANA_BRIDGE_URL: https://grafana-proxy.westernformularacing.workers.dev/grafana-bridge/api/grafana
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/pages-action@v1
         with:
@@ -626,3 +631,80 @@ jobs:
           directory: './flight-recorder/dist'
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: ${{ github.ref_name }}
+
+  # ── Deploy pecan-internal to Cloudflare Pages (main branch only) ──────────
+  deploy-pecan-internal-cloudflare:
+    needs: [detect-changes, unit-tests, integration, vcan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: pecan/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./pecan
+        run: npm ci
+
+      - name: Build
+        working-directory: ./pecan
+        run: npm run build
+        env:
+          VITE_INTERNAL: 'true'
+          VITE_GITHUB_DBC_READONLY_TOKEN: ${{ secrets.VITE_GITHUB_DBC_READONLY_TOKEN }}
+          VITE_GRAFANA_BRIDGE_URL: https://grafana-proxy.westernformularacing.workers.dev/grafana-bridge/api/grafana
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: pecan-internal
+          directory: ./pecan/dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+
+  # ── Deploy grafana-worker via Wrangler ───────────────────────────────────
+  deploy-worker:
+    needs: [detect-changes]
+    runs-on: ubuntu-latest
+    if: |
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') &&
+      needs.detect-changes.outputs.grafana_worker == 'true'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
+      - name: Deploy Worker
+        working-directory: ./grafana-worker
+        run: wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}

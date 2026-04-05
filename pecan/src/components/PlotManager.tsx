@@ -329,8 +329,8 @@ function PlotManager({
         </div>
       )}
 
-      {/* Open in Grafana */}
-      {signals.length > 0 && (
+      {/* Open in Grafana — internal build only */}
+      {import.meta.env.VITE_INTERNAL && signals.length > 0 && (
         <div className="mt-2">
           <button
             onClick={handleOpenInGrafana}

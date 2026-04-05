@@ -1,4 +1,5 @@
 import { createCanProcessor } from '../utils/canProcessor';
+import { listDBCFiles, fetchAndApplyDBC } from './DbcService';
 
 export type MessageHandler = (data: any) => void;
 
@@ -35,7 +36,23 @@ export class WebSocketService {
 
   async initialize() {
     this.disconnect();
-    
+
+    if (import.meta.env.VITE_INTERNAL) {
+      try {
+        const saved = localStorage.getItem('dbc-selected-file');
+        const listResult = await listDBCFiles();
+        if (listResult.ok && listResult.files && listResult.files.length > 0) {
+          const target = listResult.files.find(f => f.name === saved) ?? listResult.files[0];
+          const applyResult = await fetchAndApplyDBC(target.name);
+          console.log('[WebSocket] DBC loaded:', applyResult.message, applyResult.commitSha ?? '');
+        } else {
+          console.warn('[WebSocket] Could not list DBC files:', listResult.message);
+        }
+      } catch (err) {
+        console.warn('[WebSocket] DBC fetch failed, using cached/default:', err);
+      }
+    }
+
     try {
       if (!this.processor) {
         this.processor = await createCanProcessor();
