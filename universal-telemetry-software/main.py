@@ -8,6 +8,7 @@ from src.video import run_video
 from src.audio import run_audio
 from src.websocket_bridge import run_websocket_bridge
 from src.websocket_bridge_tx import run_tx_bridge
+from src.ws_relay import run_ws_relay
 from src.status_server import run_status_server
 from src.leds import run_leds
 from src.poe import run_poe
@@ -66,6 +67,11 @@ def start_tx_bridge():
     # OFF by default; set ENABLE_TX_WS=true to enable
     logger.info("Starting TX WebSocket bridge on port 9078 (ENABLE_TX_WS controls actual CAN writes)")
     asyncio.run(run_tx_bridge())
+
+
+def start_ws_relay():
+    logger.info("Starting WebSocket telemetry relay (ENABLE_WS_RELAY)")
+    asyncio.run(run_ws_relay())
 
 def start_status_server():
     # HTTP server for status monitoring page
@@ -163,6 +169,15 @@ if __name__ == "__main__":
     p_tx_websocket.start()
     processes.append(p_tx_websocket)
     logger.info("TX WebSocket bridge started on port 9078 (enable via ENABLE_TX_WS=true for actual CAN writes)")
+
+    if os.getenv("ENABLE_WS_RELAY", "false").lower() == "true":
+        p_ws_relay = multiprocessing.Process(target=start_ws_relay, name="WsRelay")
+        p_ws_relay.start()
+        processes.append(p_ws_relay)
+        logger.info(
+            "WebSocket relay started (RELAY_LISTEN_PORT=%s)",
+            os.getenv("RELAY_LISTEN_PORT", "9089"),
+        )
 
     # 3. Status Server (Base Station Only - for monitoring)
     if role == "base":

@@ -211,6 +211,18 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 | `ENABLE_VIDEO` | `false` | Enable video streaming |
 | `ENABLE_AUDIO` | `false` | Enable audio streaming |
 | `ENABLE_INFLUX_LOGGING` | `false` | Log telemetry to local InfluxDB3 |
+| `ENABLE_WS_RELAY` | `false` | Start optional WebSocket downlink relay (see `WEBSOCKET_PROTOCOL.md`) |
+
+**WebSocket relay (laptop / extra fan-out)** — uses [`uv`](https://docs.astral.sh/uv/) in this directory:
+
+```bash
+cd universal-telemetry-software
+export RELAY_UPSTREAM_WS=ws://127.0.0.1:9080
+export RELAY_TOKEN=your-long-secret   # required for Cloudflare tunnel / loopback clients
+uv run uts-ws-relay
+```
+
+See `WEBSOCKET_PROTOCOL.md` for `RELAY_*` variables, LAN vs token behavior, and Cloudflare Tunnel notes.
 
 ### Ports
 
@@ -221,6 +233,7 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 | 6379 | TCP | Redis (internal) |
 | 8080 | HTTP | Status monitoring page |
 | 9080 | WebSocket | PECAN dashboard feed |
+| 9089 | WebSocket | Optional relay (`uts-ws-relay` / `ENABLE_WS_RELAY`) |
 | 3000 | HTTP | PECAN dashboard UI |
 | 9000 | HTTP | InfluxDB3 (when enabled) |
 
@@ -285,6 +298,7 @@ universal-telemetry-software/
 │   ├── audio.py                # Audio streaming
 │   ├── video.py                # Video streaming
 │   ├── websocket_bridge.py     # Redis -> WebSocket for PECAN
+│   ├── ws_relay.py             # Optional upstream WS -> fan-out relay (laptop / tunnel)
 │   ├── influx_bridge.py        # InfluxDB3 logging
 │   ├── leds.py                 # LED status indicators
 │   ├── link_diagnostics.py     # Radio link health

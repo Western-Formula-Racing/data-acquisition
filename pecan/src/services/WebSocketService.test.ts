@@ -57,9 +57,12 @@ describe("WebSocketService", () => {
     MockWebSocket.instances = [];
     vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
     localStorage.clear();
+    // Avoid multi-URL default failover (10.71… then demo) so tests stay fast unless overridden.
+    localStorage.setItem("pecan-ws-candidates", "wss://ws-demo.westernformularacing.org");
   });
 
   it("connects using custom URL from localStorage", async () => {
+    localStorage.clear();
     localStorage.setItem("custom-ws-url", "my-host:1234");
     const { WebSocketService } = await import("./WebSocketService");
 

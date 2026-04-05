@@ -1,4 +1,8 @@
-import { webSocketService } from "../services/WebSocketService";
+import {
+    webSocketService,
+    PECAN_WS_CANDIDATES_KEY,
+    DEFAULT_WS_FAILOVER_URLS,
+} from "../services/WebSocketService";
 import { forceCache, clearDbcCache } from "../utils/canProcessor";
 import { useState, useEffect } from "react";
 import { Button } from "./Button";
@@ -131,6 +135,12 @@ function CommsSensorPicker() {
 
 function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalProps>) {
     const [customWsUrl, setCustomWsUrl] = useState(() => localStorage.getItem("custom-ws-url") || "");
+    const [wsCandidatesText, setWsCandidatesText] = useState(() => {
+        const saved = localStorage.getItem(PECAN_WS_CANDIDATES_KEY);
+        return saved != null && saved.trim() !== ""
+            ? saved
+            : DEFAULT_WS_FAILOVER_URLS.join("\n");
+    });
     const [perfOverlayEnabled, setPerfOverlayEnabled] = useState(() =>
         localStorage.getItem("perf-overlay-enabled") === "true"
     );
@@ -153,17 +163,27 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
     const [categoryText, setCategoryText] = useState("");
     const [isSavingCategory, setIsSavingCategory] = useState(false);
 
+    // Sync WebSocket fields only when the modal opens — not when session/loadConfig
+    // changes while typing (that was resetting the failover textarea every render).
     useEffect(() => {
-        if (isOpen) {
-            setCategoryText(getCategoryConfigString());
-            setRetentionWindowMsState(getRetentionWindow());
-            if (session?.user) {
-                loadConfig().then(config => {
-                    if (config?.categoryConfig) {
-                        setCategoryText(config.categoryConfig);
-                    }
-                });
-            }
+        if (!isOpen) return;
+        const saved = localStorage.getItem(PECAN_WS_CANDIDATES_KEY);
+        setWsCandidatesText(
+            saved != null && saved.trim() !== "" ? saved : DEFAULT_WS_FAILOVER_URLS.join("\n")
+        );
+        setCustomWsUrl(localStorage.getItem("custom-ws-url") || "");
+    }, [isOpen]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setCategoryText(getCategoryConfigString());
+        setRetentionWindowMsState(getRetentionWindow());
+        if (session?.user) {
+            loadConfig().then((config) => {
+                if (config?.categoryConfig) {
+                    setCategoryText(config.categoryConfig);
+                }
+            });
         }
     }, [isOpen, session, loadConfig]);
 
@@ -221,7 +241,13 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
             className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             onClick={handleBackdropClick}
         >
-            <div className="relative bg-sidebar rounded-xl shadow-2xl border border-gray-600 w-full max-w-2xl h-[80%] md:w-[66%] p-4 md:p-6 flex flex-col animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+            <div
+                className="relative bg-sidebar rounded-xl shadow-2xl border border-gray-600 w-full max-w-2xl h-[80%] md:w-[66%] p-4 md:p-6 flex flex-col animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+            >
                 {/* Close button */}
                 <button
                     onClick={onClose}
@@ -340,6 +366,40 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                         return null;
                                     }
                                 })()}
+                                <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-gray-600/50">
+                                    <span className="text-xs font-medium text-gray-300">Failover URLs (optional)</span>
+                                    <span className="text-xs text-gray-500">
+                                        Default (when you have not saved a list) is track base then WFR demo, one URL
+                                        per line. Two or more lines try each in order (~2.5s timeout). Clear the box and
+                                        apply to fall back to that default at runtime; use Custom WebSocket URL above
+                                        to force a single URL instead.
+                                    </span>
+                                    <textarea
+                                        rows={4}
+                                        placeholder={DEFAULT_WS_FAILOVER_URLS.join("\n")}
+                                        className="bg-zinc-800 text-white px-2 py-1.5 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none font-mono w-full resize-y min-h-[5.5rem]"
+                                        value={wsCandidatesText}
+                                        onChange={(e) => setWsCandidatesText(e.target.value)}
+                                        autoComplete="off"
+                                        spellCheck={false}
+                                    />
+                                    <Button
+                                        onClick={() => {
+                                            const t = wsCandidatesText.trim();
+                                            if (t) {
+                                                localStorage.setItem(PECAN_WS_CANDIDATES_KEY, wsCandidatesText);
+                                            } else {
+                                                localStorage.removeItem(PECAN_WS_CANDIDATES_KEY);
+                                            }
+                                            webSocketService.reconnect();
+                                            onClose();
+                                        }}
+                                        variant="primary"
+                                        className="self-start"
+                                    >
+                                        Apply failover list
+                                    </Button>
+                                </div>
                             </div>
 
                             {/* Performance Overlay Toggle */}

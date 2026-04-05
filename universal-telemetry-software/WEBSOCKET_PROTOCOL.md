@@ -19,6 +19,37 @@ The PECAN frontend auto-selects the URL based on `window.location`:
 - `192.x.x.x` hostnames connect directly to the RPi
 - Everything else connects to the production backend at `wss://ws-demo.westernformularacing.org`
 - Override with `localStorage.setItem('custom-ws-url', 'ws://...')`
+- Optional failover URL list: `localStorage.setItem('pecan-ws-candidates', 'ws://...\\nwss://...')` (one URL per line; Pecan tries in order with a short timeout)
+
+---
+
+## WebSocket relay (optional, laptop / base station)
+
+**Module**: `universal-telemetry-software/src/ws_relay.py`  
+**Default listen**: `ws://0.0.0.0:9089`  
+**Run with uv** (from `universal-telemetry-software/`):
+
+```bash
+export RELAY_UPSTREAM_WS=ws://127.0.0.1:9080   # or your base Pi
+export RELAY_TOKEN=your-long-random-secret     # required for Cloudflare tunnel path
+uv run uts-ws-relay
+# or: uv run python -m src.ws_relay
+```
+
+Or set **`ENABLE_WS_RELAY=true`** so `main.py` starts the relay as a child process (same env vars).
+
+| Variable | Meaning |
+|----------|---------|
+| `RELAY_UPSTREAM_WS` | Upstream WebSocket URL (UTS bridge, default `ws://127.0.0.1:9080`) |
+| `RELAY_LISTEN_HOST` | Bind address (default `0.0.0.0` for LAN + `cloudflared` → `127.0.0.1`) |
+| `RELAY_LISTEN_PORT` | Downstream port (default `9089`) |
+| `RELAY_TOKEN` | Query param `?token=` for clients whose TCP peer is **loopback** (typical **Cloudflare Tunnel** origin). **LAN clients** (RFC1918 / link-local) skip the token unless `RELAY_REQUIRE_TOKEN_ON_LAN=true`. |
+| `RELAY_REQUIRE_TOKEN_ON_LAN` | If `true`, require `?token=` for every client. |
+| `RELAY_UPSTREAM_RECONNECT_MIN` / `RELAY_UPSTREAM_RECONNECT_MAX` | Exponential backoff bounds (seconds) when upstream is down. |
+
+**Downlink-only**: the relay does not forward `can_send` / `can_send_batch` (or other uplink) to the upstream server; it only republishes upstream text frames to all downstream clients. Clients may send `{"type":"ping",...}` and receive `pong`.
+
+**Cloudflare Tunnel**: map `wss://ws-relay.example.com` to `http://127.0.0.1:9089`. Browsers use `wss://ws-relay.example.com/?token=...`. LAN viewers can use `ws://<laptop-LAN>:9089` with no token (default).
 
 ---
 
