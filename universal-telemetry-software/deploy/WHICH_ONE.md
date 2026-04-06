@@ -5,6 +5,13 @@ All Docker Compose files live here. Run every `docker compose` command from the 
 
 ---
 
+## Car RPi — native systemd (no Docker)
+
+The car runs natively, not via Docker. See **[CAR_DEPLOY.md](CAR_DEPLOY.md)** for install,
+update, and troubleshooting instructions.
+
+---
+
 ## docker-compose.yml — Local dev / build
 
 Builds all images from source. Use on either RPi during active development.

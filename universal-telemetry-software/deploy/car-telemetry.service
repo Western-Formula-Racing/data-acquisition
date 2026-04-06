@@ -1,10 +1,8 @@
 # DAQ Telemetry — Car RPi native systemd service
 #
 # Runs the Python telemetry stack directly on the car Pi (no Docker, no Redis).
-# Redis is optional — its only role on the car is serving the local WebSocket
-# bridge so PECAN can connect directly to the car. That's never needed in
-# normal operation. Without Redis the car still reads CAN, sends UDP, logs
-# Parquet, and serves the status page on port 8080.
+# Car reads CAN, sends UDP to base, serves TCP resend buffer, and runs a local
+# WebSocket bridge (port 9080) for direct PECAN connections when hotspotted.
 #
 # Install:
 #   sudo cp car-telemetry.service /etc/systemd/system/
@@ -37,9 +35,8 @@ Environment=SHUTDOWN_ENABLED=true
 Environment=ENABLE_INFLUX_LOGGING=false
 # Set at install time: sed -i "s/GIT_HASH=unknown/GIT_HASH=$(git rev-parse --short HEAD)/" car-telemetry.service
 Environment=GIT_HASH=unknown
-# No REDIS_URL — Redis is not needed on the car. Without it, publishes no-op
-# and the local WebSocket bridge won't serve data, but UDP streaming to the
-# base station is unaffected.
+# REDIS_URL points to localhost — Redis is optional on the car.
+# Without it the WS bridge uses the direct in-process queue instead.
 
 # uv run handles virtualenv creation and dependency sync automatically.
 # Run `uv sync` once during setup (requires internet) to pre-build the venv.
