@@ -9,8 +9,6 @@ import can
 import redis.asyncio as aioredis
 from collections import deque
 import csv
-import pyarrow as pa
-import pyarrow.parquet as pq
 
 from src.config import (
     REMOTE_IP, UDP_PORT, TCP_PORT,
@@ -60,6 +58,7 @@ class TelemetryNode:
         self.can_event = can_event  # multiprocessing.Event signalled on each CAN RX
         self.telemetry_event = telemetry_event  # heartbeat for LED status
         self.redis_client = redis_utils.get_sync_client(REDIS_URL)
+        self.direct_queue: asyncio.Queue | None = None  # set by main.py for car mode (no Redis)
         # ECU clock sync — offset between ECU RTC and local monotonic clock
         self._clock_offset: float | None = None   # epoch_sec - monotonic at last sync
         self._last_ecu_sync: float = 0.0          # monotonic time of last valid ECU 1999
@@ -72,9 +71,17 @@ class TelemetryNode:
         self.status_map = {}                          # seq -> status (0: missing, 1: udp, 2: tcp)
         self.latest_seq = -1
         self.last_udp_time = 0.0
+        from src.version import get_git_hash
+        self._own_git_hash: str = get_git_hash()
+        self._car_git_hash: str | None = None         # None until first successful version check
 
     def publish(self, channel, data):
         redis_utils.safe_publish(self.redis_client, channel, data, logger)
+        if self.direct_queue is not None:
+            try:
+                self.direct_queue.put_nowait(data)
+            except asyncio.QueueFull:
+                pass  # drop under backpressure rather than block the CAN reader
 
     def _handle_ecu_timestamp(self, data: bytes) -> None:
         """Extract epoch_ms from ECU VCU_Timestamp message and update clock offset."""
@@ -174,7 +181,6 @@ class TelemetryNode:
                         self.can_event.set()
                     telemetry_msg = CANMessage(self._corrected_time(), can_id, data)
                     await queue.put(telemetry_msg)
-                    car_raw_queue.put_nowait({"time_ms": int(telemetry_msg.timestamp * 1000), "can_id": telemetry_msg.can_id, "data": bytes(telemetry_msg.data)})
                 return  # unreachable, but makes intent clear
 
             # ── Real CAN read loop ────────────────────────────────────────
@@ -199,7 +205,6 @@ class TelemetryNode:
                             self._try_auto_sync()
                         telemetry_msg = CANMessage(self._corrected_time(), msg.arbitration_id, msg.data)
                         await queue.put(telemetry_msg)
-                        car_raw_queue.put_nowait({"time_ms": int(telemetry_msg.timestamp * 1000), "can_id": telemetry_msg.can_id, "data": bytes(telemetry_msg.data)})
                 except Exception as e:
                     consecutive_errors += 1
                     logger.error(f"CAN recv() error #{consecutive_errors}: {e}")
@@ -365,57 +370,6 @@ class TelemetryNode:
         # Throughput listener for link diagnostics burst test
         from src.throughput_listener import throughput_listener_task
 
-        # ── Car-side raw CAN Parquet logger ──────────────────────────────────
-        # Writes directly from can0 — zero UDP loss. Rotates every 5 min so
-        # each completed file has a valid footer even on sudden power loss.
-        car_raw_queue = asyncio.Queue()
-        _car_parquet_schema = pa.schema([
-            ("time_ms", pa.int64()),
-            ("can_id", pa.int64()),
-            ("data", pa.binary()),
-        ])
-        _PARQUET_ROTATE_SECS = 300  # 5 minutes
-
-        async def car_parquet_logger():
-            raw_logs_dir = "/app/raw_can_logs"
-            os.makedirs(raw_logs_dir, exist_ok=True)
-            session_id = os.environ.get("BOOT_SESSION_ID", "default")
-            part = 1
-            writer = None
-            part_start = time.time()
-
-            def _open_part():
-                nonlocal writer, part_start
-                path = os.path.join(raw_logs_dir, f"raw_can_{session_id}_part{part:04d}.parquet")
-                writer = pq.ParquetWriter(path, _car_parquet_schema)
-                part_start = time.time()
-                logger.info(f"Car Parquet: opened {path}")
-
-            try:
-                _open_part()
-                while True:
-                    await asyncio.sleep(1.0)
-                    if time.time() - part_start >= _PARQUET_ROTATE_SECS:
-                        writer.close()
-                        part += 1
-                        _open_part()
-                    if car_raw_queue.empty():
-                        continue
-                    batch = []
-                    while not car_raw_queue.empty() and len(batch) < 10000:
-                        batch.append(car_raw_queue.get_nowait())
-                    table = pa.Table.from_arrays([
-                        pa.array([m["time_ms"] for m in batch], type=pa.int64()),
-                        pa.array([m["can_id"]  for m in batch], type=pa.int64()),
-                        pa.array([m["data"]    for m in batch], type=pa.binary()),
-                    ], schema=_car_parquet_schema)
-                    writer.write_table(table)
-            except Exception as e:
-                logger.error(f"Car Parquet logger error: {e}")
-            finally:
-                if writer is not None:
-                    writer.close()
-
         tasks = [
             can_reader(),
             udp_sender(),
@@ -423,7 +377,6 @@ class TelemetryNode:
             throughput_listener_task(),
             utils.heartbeat_coro(self.telemetry_event),
             inject_heartbeat(),
-            car_parquet_logger(),
         ]
         if ENABLE_UPLINK:
             tasks.append(uplink_receiver())
@@ -687,7 +640,9 @@ class TelemetryNode:
                     "car_time_synced": self._car_time_synced,
                     "base_clock_bad": self._base_clock_bad,
                     "last_udp_time": self.last_udp_time,
-                    "status_buffer": [self.status_map.get(s, 0) for s in range(max(0, self.latest_seq - 1000), self.latest_seq + 1)] if self.latest_seq != -1 else []
+                    "status_buffer": [self.status_map.get(s, 0) for s in range(max(0, self.latest_seq - 1000), self.latest_seq + 1)] if self.latest_seq != -1 else [],
+                    "own_git_hash": self._own_git_hash,
+                    "car_git_hash": self._car_git_hash
                 }
                 self.publish("system_stats", json.dumps(payload))
                 stats["received"] = 0
@@ -803,7 +758,29 @@ class TelemetryNode:
                         logger.warning(f"Car time injection error ({url}): {e}")
                 await asyncio.sleep(_CAR_TIME_INJECT_INTERVAL)
 
-        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_csv_logger(), car_time_injector(), utils.heartbeat_coro(self.telemetry_event)]
+        async def version_checker():
+            import urllib.request, urllib.error
+            await asyncio.sleep(8.0)  # stagger from time injector
+            while True:
+                url = f"http://{REMOTE_IP}:{_CAR_STATUS_PORT}/version"
+                try:
+                    loop = asyncio.get_running_loop()
+                    resp = await loop.run_in_executor(
+                        None, lambda: urllib.request.urlopen(url, timeout=5)
+                    )
+                    data = json.loads(resp.read().decode())
+                    self._car_git_hash = data.get("git_hash", "unknown")
+                    if self._car_git_hash != self._own_git_hash:
+                        logger.warning(
+                            f"Version mismatch: base={self._own_git_hash} car={self._car_git_hash}"
+                        )
+                except urllib.error.URLError:
+                    pass  # car offline — logged by time injector already
+                except Exception as e:
+                    logger.debug(f"Version check error: {e}")
+                await asyncio.sleep(30.0)
+
+        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_csv_logger(), car_time_injector(), version_checker(), utils.heartbeat_coro(self.telemetry_event)]
         if ENABLE_UPLINK:
             tasks.append(uplink_relay())
         await asyncio.gather(*tasks)

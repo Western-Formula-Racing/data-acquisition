@@ -316,17 +316,12 @@
 \section*{3 -- REMOTE\_IP CONFIG}
 % ─────────────────────────────────────────────────────────────────────────────
 
-\warnbox{Most common misconfiguration. Wrong REMOTE\_IP = no data flow.}
-
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{REMOTE\_IP} is read from \cmd{deploy/.env} (gitignored -- survives \cmd{git reset}). \\[1mm]
-  \textbf{CAR RPi} (\cmd{10.71.1.10}): \cmd{echo "REMOTE\_IP=10.71.1.20" > deploy/.env} \\
-  \textbf{BASE RPi} (\cmd{10.71.1.20}): \cmd{echo "REMOTE\_IP=10.71.1.10" > deploy/.env} \\[1mm]
-  \warnbox{One-time setup per RPi. Do NOT edit \cmd{docker-compose.prod.yml} for this.} \\[1mm]
-  \textit{Future ChargeCart RPi planned at} \cmd{192.168.1.30} -- set \cmd{REMOTE\_IP=10.71.1.20} (base). \\[1mm]
-  Verify: \cmd{cat deploy/.env} \quad Apply: \cmd{docker compose -f docker-compose.prod.yml --profile car down \&\& ... --profile car up -d} \\
-  (use \cmd{--profile base} on the base RPi) \\
+  \cmd{REMOTE\_IP} is now hardcoded in \cmd{docker-compose.prod.yml} -- no \cmd{.env} needed. \\[1mm]
+  \textbf{Car profile} uses \cmd{REMOTE\_IP=10.71.1.20} (sends UDP to base station). \\
+  \textbf{Base profile} uses \cmd{REMOTE\_IP=10.71.1.10} (sends TCP recovery to car Pi). \\[1mm]
+  \textbf{No action required.} If IPs ever change, edit \cmd{docker-compose.prod.yml} directly. \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -344,7 +339,6 @@
   \textbf{Base RPi:} \\
   \cmd{docker compose -f docker-compose.prod.yml --profile base pull} \\
   \cmd{docker compose -f docker-compose.prod.yml --profile base up -d} \\[1mm]
-  \textit{Note:} Set \cmd{REMOTE\_IP} (see \S 3) before this step. \\
   \textit{Plain \cmd{up} (no profile) starts nothing -- profile is required.} \\
 \end{tabular}
 
@@ -353,11 +347,11 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{docker compose -f docker-compose.prod.yml --profile car ps} \quad (or \cmd{--profile base}) \\[1mm]
-  \textbf{Car PASS:} telemetry, redis, caddy running \\
-  \textbf{Base PASS:} telemetry, redis, caddy, influxdb3, grafana, go2rtc, pecan running \\
+  \cmd{docker ps} \\[1mm]
+  \textbf{Car PASS:} daq-telemetry, daq-redis, daq-caddy running \\
+  \textbf{Base PASS:} daq-telemetry, daq-redis, daq-caddy, daq-influxdb3, daq-grafana, daq-go2rtc, daq-pecan running \\
   \textbf{FAIL:} any container Exited or missing \\
-  \textit{Fix:} \cmd{docker compose -f docker-compose.prod.yml logs telemetry} \\
+  \textit{Fix:} \cmd{docker logs daq-telemetry} \\
 \end{tabular}
 
 \vspace{1mm}
@@ -371,6 +365,43 @@
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
+\section*{4.5 -- CAR RPi: NATIVE SYSTEMD (RECOMMENDED)}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\noindent
+\textit{Running telemetry as a native systemd service on the car is more reliable than Docker:
+faster cold boot ($<$3 s), no overlay2 corruption on power loss, automatic process restart.
+No Redis needed -- the core CAN $\to$ UDP path runs entirely in-process.}
+
+\gobox{One-time setup (internet required)}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Install \cmd{uv}: \cmd{curl -LsSf https://astral.sh/uv/install.sh | sh} \\[1mm]
+  Pre-build the Python venv (needs internet -- do this in the pits, not on the grid): \\
+  \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software \&\& uv sync} \\[1mm]
+  Install the service (stamps current git hash into unit file): \\
+  \cmd{sed -i "s/GIT\_HASH=unknown/GIT\_HASH=\$(git rev-parse --short HEAD)/" deploy/car-telemetry.service} \\
+  \cmd{sudo cp deploy/car-telemetry.service /etc/systemd/system/} \\
+  \cmd{sudo systemctl daemon-reload} \\
+  \cmd{sudo systemctl enable car-telemetry} \\
+  \cmd{sudo systemctl start car-telemetry} \\[1mm]
+  \textbf{PASS:} \cmd{systemctl status car-telemetry} shows \cmd{active (running)} \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{Daily ops}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  View logs: \cmd{journalctl -u car-telemetry -f} \\
+  Restart: \cmd{sudo systemctl restart car-telemetry} \\
+  Stop: \cmd{sudo systemctl stop car-telemetry} \\[1mm]
+  \textit{Note: do NOT run} \cmd{--profile car} \textit{on a Pi using native systemd -- two} \\
+  \textit{processes would both try to own the CAN bus and Redis.} \\
+\end{tabular}
+
+% ─────────────────────────────────────────────────────────────────────────────
 \section*{5 -- ROLE AUTO-DETECTION}
 % ─────────────────────────────────────────────────────────────────────────────
 
@@ -378,14 +409,15 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "Auto-detected Role"} \\[1mm]
-  \textbf{CAR:} \cmd{Auto-detected Role: car} -- \cmd{can0} found \\
-  \textbf{BASE:} \cmd{Auto-detected Role: base} -- no \cmd{can0} \\
-  \textit{Override:} set \cmd{ROLE=car} or \cmd{ROLE=base} in docker-compose.prod.yml \\
+  \cmd{docker logs daq-telemetry $\vert$ grep "Role"} \\[1mm]
+  \textbf{CAR:} \cmd{Starting Car Mode...} \\
+  \textbf{BASE:} \cmd{Starting Base Station Mode...} \\[1mm]
+  \textit{Role is now hardcoded via} \cmd{ROLE=car} / \cmd{ROLE=base} \textit{in} \cmd{docker-compose.prod.yml}. \\
+  \textit{The} \cmd{--profile car} \textit{and} \cmd{--profile base} \textit{flags select the correct service.} \\
 \end{tabular}
 
 \vspace{1mm}
-\warnbox{Wrong role = wrong LED pattern + no data on PECAN.}
+\warnbox{Wrong profile = wrong REMOTE\_IP + wrong role. Always use \cmd{--profile car} on car Pi and \cmd{--profile base} on base station.}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section*{6 -- DATA FLOW CHECKS}
@@ -395,7 +427,7 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "UDP"} \\[1mm]
+  \cmd{docker logs daq-telemetry $\vert$ grep "UDP"} \\[1mm]
   \textbf{PASS:} \cmd{Sending UDP packets to 10.71.1.20:5005} \\
   \textbf{FAIL:} silent \quad \textit{Fix:} check REMOTE\_IP + can0 \\
 \end{tabular}
@@ -405,7 +437,7 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "Initial sequence"} \\[1mm]
+  \cmd{docker logs daq-telemetry $\vert$ grep "Initial sequence"} \\[1mm]
   \textbf{PASS:} \cmd{Initial sequence:} + incrementing numbers \\
   \textbf{FAIL:} silent \quad \textit{Fix:} check REMOTE\_IP + ping car \\
 \end{tabular}
@@ -415,7 +447,7 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep -E "CAN Reader$\vert$SIMULATION MODE"} \\[1mm]
+  \cmd{docker logs daq-telemetry $\vert$ grep -E "CAN Reader$\vert$SIMULATION MODE"} \\[1mm]
   \textbf{PASS (real CAN):} \cmd{CAN Reader started on can0} \\
   \textbf{PASS (explicit sim):} \cmd{SIMULATION MODE ACTIVE} banner (\cmd{SIMULATE=true}) \\
   \textbf{FAIL:} \cmd{CAN Bus constructor failed} then \cmd{SIMULATION MODE ACTIVE} -- \cmd{can0} could not open. \\
@@ -503,7 +535,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 \begin{tabular}{p{126mm}}
   Edit \cmd{docker-compose.prod.yml}: set \cmd{ENABLE\_TX\_WS=true} \\
   Apply: \cmd{docker compose -f docker-compose.prod.yml --profile car down \&\& ... --profile car up -d} \\[1mm]
-  Verify: \cmd{... logs telemetry $\vert$ grep "TX WebSocket"} \\
+  Verify: \cmd{docker logs daq-telemetry $\vert$ grep "TX WebSocket"} \\
   Expected: \cmd{TX WebSocket bridge started on port 9078 ... ENABLE\_TX\_WS=true ...} \\
 \end{tabular}
 
@@ -540,7 +572,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "table="} \\[1mm]
+  \cmd{docker logs daq-telemetry $\vert$ grep "table="} \\[1mm]
   \textbf{PASS:} \cmd{table=WFR26\_base} (or \cmd{WFR27\_base} etc.) \\
   \textbf{FAIL:} \cmd{table=WFR26} without \cmd{\_base} suffix -- UTS would overwrite the source-of-truth CSV table \\[1mm]
   \textit{Root cause:} \cmd{INFLUX\_TABLE} in \cmd{docker-compose.prod.yml} must be \cmd{\$\{INFLUX\_SEASON:-WFR26\}\_base} \\
@@ -578,7 +610,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep -E "time sync$\,$\textbar{}trusting RPi"} \\[1mm]
+  \cmd{docker logs daq-telemetry $\vert$ grep -E "time sync$\,$\textbar{}trusting RPi"} \\[1mm]
   \textbf{PASS (ECU RTC):} \cmd{ECU time sync: epoch=1742... offset=+Xs} \\
   \textbf{PASS (system clock):} \cmd{System clock past 2026-03-22, trusting RPi clock} \\
   \textbf{FAIL:} no match -- data is being held. If ECU is on the bus, wait up to 2s for first broadcast. \\
@@ -651,7 +683,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{docker compose -f docker-compose.prod.yml logs telemetry $\vert$ grep "CloudSync"} \\[1mm]
+  \cmd{docker logs daq-telemetry $\vert$ grep "CloudSync"} \\[1mm]
   \textbf{PASS:} \cmd{\text{\checkmark}\ Synced N points to cloud} every 60s \\
   \textbf{FAIL:} \cmd{CLOUD\_INFLUX\_TOKEN not set} \quad \textit{Fix:} see token step above \\
   \textbf{FAIL:} \cmd{\ding{55}\ Cloud unreachable} \quad sync will retry next interval automatically \\[1mm]
@@ -784,7 +816,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 \begin{tabularx}{\linewidth}{|X|X|}
   \hline
   \rowcolor{headbg}
-  \multicolumn{2}{|c|}{\color{white}\textbf{WHEN IN DOUBT -- docker compose -f docker-compose.prod.yml logs telemetry}} \\
+  \multicolumn{2}{|c|}{\color{white}\textbf{WHEN IN DOUBT -- docker logs daq-telemetry}} \\
   \hline
   \rowcolors{1}{cardbg}{white}
   \cmd{grep "UDP"} -- Car sending? & \cmd{grep "Initial sequence"} -- Base receiving? \\

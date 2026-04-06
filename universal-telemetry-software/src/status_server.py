@@ -52,6 +52,13 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
 
+    def do_GET(self):
+        if self.path == '/version':
+            from src.version import get_git_hash
+            self._json_response(200, {"git_hash": get_git_hash()})
+        else:
+            super().do_GET()
+
     def do_POST(self):
         if self.path == '/set-time':
             if not SET_TIME_ENABLED:

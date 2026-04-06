@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     environment:
       - ROLE=auto # auto, car, or base
-      - REMOTE_IP=192.168.1.100 # IP of the other RPi
+      - REMOTE_IP=10.71.1.10 # default; override via deploy/.env for car (10.71.1.20)
       - UDP_PORT=5005
       - TCP_PORT=5006
       - REDIS_URL=redis://localhost:6379/0 # localhost because network_mode: host

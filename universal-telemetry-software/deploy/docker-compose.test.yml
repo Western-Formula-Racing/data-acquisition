@@ -1,7 +1,10 @@
 services:
   # Car simulation (sends CAN data via UDP)
   car:
-    build: ..
+    build:
+      context: ..
+      args:
+        GIT_HASH: ${GIT_HASH:-ci-unknown}
     container_name: daq-car
     privileged: true
     restart: unless-stopped
@@ -43,7 +46,10 @@ services:
 
   # Base station (receives data, serves WebSocket and status page)
   base:
-    build: ..
+    build:
+      context: ..
+      args:
+        GIT_HASH: ${GIT_HASH:-ci-unknown}
     container_name: daq-base
     privileged: true
     restart: unless-stopped

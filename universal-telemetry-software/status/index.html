@@ -374,6 +374,11 @@
             ⚠️ WARNING: USING PLACEHOLDER EXAMPLE.DBC! Telemetry is decoded with a fake schema. Raw CAN is saved, but DB will hold incorrect data! — Set DBC_HOST_PATH in deploy/.env and restart the telemetry container to fix.
         </div>
 
+        <!-- Version mismatch banner -->
+        <div class="error-message" id="versionMismatchBanner" style="display: none; border: 2px solid #f59e0b; margin-bottom: 15px; font-weight: 700; color: #fde68a; text-transform: uppercase;">
+            ⚠️ VERSION MISMATCH — <span id="versionDetail"></span> — Redeploy both sides to the same commit before racing.
+        </div>
+
         <!-- Clock sync banner -->
         <div class="sync-banner waiting" id="syncBanner">
             <div class="sync-banner-text">
@@ -669,6 +674,16 @@
 
             const baseClockBad = document.getElementById('baseClockBadBanner');
             if (baseClockBad) baseClockBad.style.display = stats.base_clock_bad ? 'block' : 'none';
+
+            if (stats.own_git_hash && stats.car_git_hash) {
+                const mismatch = stats.own_git_hash !== stats.car_git_hash;
+                const banner = document.getElementById('versionMismatchBanner');
+                banner.style.display = mismatch ? 'block' : 'none';
+                if (mismatch) {
+                    document.getElementById('versionDetail').textContent =
+                        `base=${stats.own_git_hash} car=${stats.car_git_hash}`;
+                }
+            }
 
             const carSyncEl = document.getElementById('carSyncStatus');
             if (carSyncEl) carSyncEl.style.display = stats.car_time_synced ? 'block' : 'none';

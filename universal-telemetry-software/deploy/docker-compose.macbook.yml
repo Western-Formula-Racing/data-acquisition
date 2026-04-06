@@ -2,7 +2,7 @@
 # Run from universal-telemetry-software/:
 #   docker compose -f deploy/docker-compose.macbook.yml --profile base up -d
 #
-# REMOTE_IP, INFLUX_SEASON, LOCAL_INFLUX_TOKEN set in deploy/.env
+# INFLUX_SEASON, LOCAL_INFLUX_TOKEN, DBC_HOST_PATH set in deploy/.env
 
 services:
   telemetry:
@@ -18,7 +18,7 @@ services:
       - "5006:5006/tcp"
     environment:
       - ROLE=base
-      - REMOTE_IP=${REMOTE_IP}
+      - REMOTE_IP=10.71.1.10  # Car RPi — hardcoded
       - UDP_PORT=5005
       - TCP_PORT=5006
       - REDIS_URL=redis://daq-redis:6379/0

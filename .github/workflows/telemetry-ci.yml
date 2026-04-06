@@ -59,6 +59,8 @@ jobs:
         context: ./universal-telemetry-software
         outputs: type=docker,dest=/tmp/telemetry.tar
         tags: universal-telemetry:test
+        build-args: |
+          GIT_HASH=${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
@@ -155,7 +157,16 @@ jobs:
     - name: Run unit tests
       working-directory: ./universal-telemetry-software
       run: |
-        python -m pytest tests/test_leds.py tests/test_influx_bridge.py tests/test_car_mode.py tests/test_dbc_consistency.py -v
+        python -m pytest \
+          tests/test_leds.py \
+          tests/test_influx_bridge.py \
+          tests/test_car_mode.py \
+          tests/test_dbc_consistency.py \
+          tests/test_ws_relay.py \
+          tests/test_page_lock.py \
+          tests/test_stats_publisher.py \
+          tests/test_status_server.py \
+          -v
 
   # ── Integration tests: full docker-compose stack ─────────────────────────
   integration:
@@ -206,6 +217,8 @@ jobs:
 
     - name: Start integration test environment
       working-directory: ./universal-telemetry-software
+      env:
+        GIT_HASH: ${{ github.sha }}
       run: |
         docker compose -f deploy/docker-compose.test.yml up -d --build
         echo "Waiting for all services (InfluxDB3 needs ~15s)..."
@@ -312,6 +325,8 @@ jobs:
 
     - name: Start vCAN test stack
       working-directory: ./universal-telemetry-software
+      env:
+        GIT_HASH: ${{ github.sha }}
       run: |
         docker compose -f deploy/docker-compose.can-test.yml up -d --build
         echo "Waiting for telemetry container to start CAN reader..."
@@ -418,6 +433,8 @@ jobs:
         push: true
         tags: ${{ steps.meta-telemetry.outputs.tags }}
         labels: ${{ steps.meta-telemetry.outputs.labels }}
+        build-args: |
+          GIT_HASH=${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
@@ -488,7 +505,7 @@ jobs:
         tags: ${{ steps.meta-pecan.outputs.tags }}
         labels: ${{ steps.meta-pecan.outputs.labels }}
         build-args: |
-          VITE_WS_PRESETS=[{"label":"Radio Link","url":"ws://192.168.1.20:9080"}]
+          VITE_WS_PRESETS=[{"label":"Radio Link","url":"ws://10.71.1.20:9080"}]
         cache-from: type=gha
         cache-to: type=gha,mode=max,ignore-error=true
 
