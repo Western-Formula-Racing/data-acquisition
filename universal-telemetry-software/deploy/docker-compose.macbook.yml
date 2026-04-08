@@ -1,9 +1,3 @@
-# MacBook base station — standalone compose (no network_mode: host, no /lib/modules)
-# Run from universal-telemetry-software/:
-#   docker compose -f deploy/docker-compose.macbook.yml --profile base up -d
-#
-# INFLUX_SEASON, LOCAL_INFLUX_TOKEN, DBC_HOST_PATH set in deploy/.env
-
 services:
   telemetry:
     profiles: ["base"]
@@ -28,7 +22,7 @@ services:
       - ENABLE_VIDEO=false
       - ENABLE_AUDIO=false
       - SET_TIME_ENABLED=false
-      - ENABLE_INFLUX_LOGGING=true
+      - ENABLE_INFLUX_LOGGING=false
       - LOCAL_INFLUX_URL=http://daq-influxdb3:8181
       - LOCAL_INFLUX_TOKEN=${LOCAL_INFLUX_TOKEN:-apiv3_local-telemetry-token}
       - LOCAL_INFLUX_ORG=WFR
@@ -126,3 +120,9 @@ volumes:
   influxdb3_data:
   grafana_data:
   raw_can_data:
+
+# MacBook base station — standalone compose (no network_mode: host, no /lib/modules)
+# Run from universal-telemetry-software/:
+#   docker compose -f deploy/docker-compose.macbook.yml --env-file deploy/.env.macbook --profile base up -d --build
+#
+# INFLUX_SEASON, LOCAL_INFLUX_TOKEN, DBC_HOST_PATH set in deploy/.env
