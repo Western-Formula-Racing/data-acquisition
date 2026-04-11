@@ -159,19 +159,28 @@ if __name__ == "__main__":
     audio_event      = multiprocessing.Event()
     video_event      = multiprocessing.Event()
 
-    # 0a. PoE enable & switch monitor
-    p_poe = multiprocessing.Process(target=start_poe, args=(poe_ok_event,), name="PoE")
-    p_poe.start()
-    processes.append(p_poe)
+    off_the_shelf = os.getenv("OFF_THE_SHELF", "true").lower() == "true"
 
-    # 0b. LED controller (always on when hardware is present)
-    p_leds = multiprocessing.Process(
-        target=start_leds,
-        args=(role, poe_ok_event, can_event, telemetry_event, websocket_event, audio_event, video_event),
-        name="LEDs"
-    )
-    p_leds.start()
-    processes.append(p_leds)
+    # 0a. PoE enable & switch monitor (skip on off-the-shelf CAN HAT — no PoE hardware)
+    if not off_the_shelf:
+        p_poe = multiprocessing.Process(target=start_poe, args=(poe_ok_event,), name="PoE")
+        p_poe.start()
+        processes.append(p_poe)
+    else:
+        poe_ok_event.set()  # assume OK when no PoE hardware
+        logger.info("PoE monitor skipped (OFF_THE_SHELF=true)")
+
+    # 0b. LED controller (skip on off-the-shelf CAN HAT — no status LEDs)
+    if not off_the_shelf:
+        p_leds = multiprocessing.Process(
+            target=start_leds,
+            args=(role, poe_ok_event, can_event, telemetry_event, websocket_event, audio_event, video_event),
+            name="LEDs"
+        )
+        p_leds.start()
+        processes.append(p_leds)
+    else:
+        logger.info("LED controller skipped (OFF_THE_SHELF=true)")
 
     # 1. Telemetry + WebSocket Bridge
     if role == "car":

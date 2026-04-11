@@ -4,6 +4,9 @@
 # Car reads CAN, sends UDP to base, serves TCP resend buffer, and runs a local
 # WebSocket bridge (port 9080) for direct PECAN connections when hotspotted.
 #
+# Off-the-shelf CAN HAT mode: set OFF_THE_SHELF=true to disable PoE and LED
+# services that depend on custom hardware (our PoE injection board / status LEDs).
+#
 # Install:
 #   sudo cp car-telemetry.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
@@ -33,6 +36,8 @@ Environment=ENABLE_AUDIO=false
 Environment=SET_TIME_ENABLED=true
 Environment=SHUTDOWN_ENABLED=true
 Environment=ENABLE_INFLUX_LOGGING=false
+# Set OFF_THE_SHELF=false when using our custom PoE injection board + status LEDs
+Environment=OFF_THE_SHELF=true
 # Set at install time: sed -i "s/GIT_HASH=unknown/GIT_HASH=$(git rev-parse --short HEAD)/" car-telemetry.service
 Environment=GIT_HASH=unknown
 # REDIS_URL points to localhost — Redis is optional on the car.
