@@ -247,3 +247,4 @@ CLAUDE.md
 GEMINI.md
 flight-recorder/.env.local
 /.cursor
+*.claude
