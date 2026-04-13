@@ -92,7 +92,7 @@ function ReplayViewer() {
           <input
             id="replay-upload-input"
             type="file"
-            accept=".pecan,.json,.csv,text/csv,application/json"
+            accept=".pecan,.json,.csv,.blf,text/csv,application/json"
             className="hidden"
             onChange={handleFilePick}
             disabled={isParsing}

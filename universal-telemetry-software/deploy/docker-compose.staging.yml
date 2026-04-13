@@ -22,7 +22,7 @@ services:
       - "9080:9080/tcp" # WebSocket for PECAN
     environment:
       - ROLE=auto # auto, car, or base
-      - REMOTE_IP=192.168.1.100 # IP of the other RPi
+      - REMOTE_IP=${REMOTE_IP:-10.71.1.10} # override per machine: car→10.71.1.20, base→10.71.1.10
       - UDP_PORT=5005
       - TCP_PORT=5006
       - REDIS_URL=redis://redis:6379/0
@@ -36,17 +36,19 @@ services:
       - LOCAL_INFLUX_URL=http://influxdb3:8181
       - LOCAL_INFLUX_TOKEN=${LOCAL_INFLUX_TOKEN:-apiv3_local-telemetry-token}
       - LOCAL_INFLUX_ORG=WFR
-      - LOCAL_INFLUX_BUCKET=${INFLUX_SEASON:-WFR26}
+      - LOCAL_INFLUX_BUCKET=WFR26
       - INFLUX_TABLE=${INFLUX_SEASON:-WFR26}_base
-      - DBC_FILE_PATH=/app/example.dbc
+      - DBC_FILE_PATH=/app/active.dbc
       # Cloud sync
       - CLOUD_INFLUX_URL=${CLOUD_INFLUX_URL:-https://influxdb3.westernformularacing.org}
       - CLOUD_INFLUX_TOKEN=${CLOUD_INFLUX_TOKEN:-}
       - CLOUD_INFLUX_ORG=WFR
-      - CLOUD_INFLUX_BUCKET=${INFLUX_SEASON:-WFR26}
+      - CLOUD_INFLUX_BUCKET=WFR26
       - SYNC_INTERVAL_SECONDS=60
     volumes:
       - /lib/modules:/lib/modules
+      - ${DBC_HOST_PATH:-../example.dbc}:/app/active.dbc:ro
+      - raw_can_data:/app/raw_can_logs
     logging:
       driver: "json-file"
       options:
@@ -167,3 +169,4 @@ volumes:
   caddy_data:
   influxdb3_data:
   grafana_data:
+  raw_can_data:

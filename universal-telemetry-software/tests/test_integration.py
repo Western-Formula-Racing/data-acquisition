@@ -381,7 +381,7 @@ class TestPecanDashboard:
                 logger.info(f"✓ Pecan received {len(data_logs)} WebSocket messages")
                 
                 # Check for decoded messages
-                decoded_logs = [msg for msg in console_messages if "Decoded message(s) #" in msg]
+                decoded_logs = [msg for msg in console_messages if "Decoded message(s)" in msg]
                 assert len(decoded_logs) > 0, \
                     "No decoded messages found"
                 logger.info(f"✓ Pecan decoded {len(decoded_logs)} messages")

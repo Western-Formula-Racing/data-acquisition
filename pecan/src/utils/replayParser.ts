@@ -1,3 +1,5 @@
+import pako from "pako";
+
 import type {
   ReplayDirection,
   ReplayFrame,
@@ -538,14 +540,389 @@ export function parseReplayCsv(content: string): ReplayParseResult {
   return { frames, warnings, errors };
 }
 
+/**
+ * BLF (Binary Log Format) is used by TSMaster and Vector tools.
+ * This parses the CAN_MESSAGE objects (type 0x01) from BLF files.
+ * BLF is little-endian. Object structure:
+ *   - object_header (24 bytes): magic, header_size, header_version, object_size, object_type
+ *   - object_data (object_size - header_size bytes)
+ *
+ * TSMaster BLF files may use zlib compression. This function handles both
+ * uncompressed and zlib-compressed BLF files.
+ */
+export function parseTSMasterBlf(buffer: ArrayBuffer, _fileName?: string): ReplayParseResult {
+  const warnings: ReplayValidationWarning[] = [];
+  const errors: ReplayValidationError[] = [];
+  const frames: ReplayFrame[] = [];
+
+  const uint8 = new Uint8Array(buffer);
+  const dataView = new DataView(buffer);
+  const totalBytes = buffer.byteLength;
+
+  if (totalBytes < 28) {
+    return {
+      frames: [],
+      warnings,
+      errors: [{ message: "BLF file too small to be valid." }],
+    };
+  }
+
+  const fileTag = String.fromCharCode(uint8[0], uint8[1], uint8[2], uint8[3]);
+
+  if (fileTag === "LOGG") {
+    // Standard Vector BLF format: sequential LOBJ containers after the LOGG file header.
+    // Each LOG_COMPRESSED container (type 0x0a) holds a zlib stream of LOBJ CAN_MESSAGE
+    // (type 0x01) records, each exactly 48 bytes:
+    //   bytes 0-3:   "LOBJ" signature
+    //   bytes 4-5:   header_size (32)
+    //   bytes 6-7:   header_version (1)
+    //   bytes 8-11:  object_size (48)
+    //   bytes 12-15: object_type (1 = CAN_MESSAGE)
+    //   bytes 16-23: reserved / index
+    //   bytes 24-31: timestamp (uint64 LE, 100 ns ticks)
+    //   bytes 32-33: channel (uint16 LE)
+    //   byte 34:     flags  (bit 0x10 = TX direction)
+    //   byte 35:     DLC
+    //   bytes 36-39: CAN arbitration ID (uint32 LE)
+    //   bytes 40-47: CAN data (8 bytes)
+    //
+    // Blocks may have up to 3 bytes of padding between them; scan 1 byte at a time when
+    // not on an LOBJ/LOGG boundary.
+    let offset = 0;
+    while (offset + 4 <= totalBytes) {
+      const tag = String.fromCharCode(uint8[offset], uint8[offset + 1], uint8[offset + 2], uint8[offset + 3]);
+
+      if (tag === "LOGG") {
+        const headerSize = dataView.getUint32(offset + 4, true);
+        offset += Math.max(headerSize, 4);
+        continue;
+      }
+
+      if (tag !== "LOBJ") {
+        offset += 1;
+        continue;
+      }
+
+      const objSize = dataView.getUint32(offset + 8, true);
+      const objType = dataView.getUint32(offset + 12, true);
+
+      if (objSize < 16 || offset + objSize > totalBytes) {
+        break;
+      }
+
+      if (objType === 0x0a) {
+        // LOG_COMPRESSED: 16-byte LOBJ header + 16-byte metadata + zlib stream
+        const zlibOffset = offset + 32;
+        if (zlibOffset < offset + objSize && uint8[zlibOffset] === 0x78) {
+          try {
+            const zlibData = uint8.slice(zlibOffset, offset + objSize);
+            const decompressed = pako.inflate(zlibData);
+            const decompView = new DataView(decompressed.buffer, decompressed.byteOffset, decompressed.byteLength);
+            const decompLen = decompressed.length;
+
+            for (let i = 0; i + 48 <= decompLen; i += 48) {
+              if (
+                decompressed[i] !== 0x4c ||
+                decompressed[i + 1] !== 0x4f ||
+                decompressed[i + 2] !== 0x42 ||
+                decompressed[i + 3] !== 0x4a ||
+                decompView.getUint32(i + 12, true) !== 0x01
+              ) continue;
+
+              const tsLo = decompView.getUint32(i + 24, true);
+              const tsHi = decompView.getUint32(i + 28, true);
+              const tRelMs = Number(BigInt(tsLo) + (BigInt(tsHi) << 32n)) / 1_000_000;
+
+              const flags = decompressed[i + 34];
+              const direction: ReplayDirection = (flags & 0x10) ? "tx" : "rx";
+              const dlc = Math.min(decompressed[i + 35], 8);
+              const canId = decompView.getUint32(i + 36, true);
+              const isExtended = canId > 0x7ff;
+
+              let dataHex = "";
+              for (let j = 0; j < dlc; j++) {
+                dataHex += decompressed[i + 40 + j].toString(16).padStart(2, "0");
+              }
+
+              const frame: ReplayFrame = {
+                tRelMs,
+                canId: canId & (isExtended ? 0x1fffffff : 0x7ff),
+                isExtended,
+                direction,
+                dlc,
+                dataHex,
+                source: "tsmaster",
+                channel: "CAN",
+              };
+
+              const frameErrors = validateFrame(frame, frames.length + 1);
+              if (frameErrors.length === 0) {
+                frames.push(frame);
+              }
+            }
+          } catch (e) {
+            warnings.push({
+              code: "blf-block-failed",
+              message: `Failed to decompress BLF block at offset ${offset}: ${e instanceof Error ? e.message : String(e)}`,
+            });
+          }
+        }
+      }
+
+      offset += objSize;
+    }
+  } else {
+    // Non-LOGG BLF: try zlib decompression at offset 176 then parse as LOBJ or standard BLF.
+    let dataToParse: Uint8Array = uint8;
+    if (totalBytes > 176 && uint8[176] === 0x78 && uint8[177] === 0xda) {
+      try {
+        const compressed = uint8.slice(176);
+        const decompressed = pako.inflate(compressed);
+        dataToParse = new Uint8Array(decompressed);
+        warnings.push({
+          code: "blf-decompressed",
+          message: "TSMaster BLF file was zlib-compressed. Decompressed successfully.",
+        });
+      } catch (e) {
+        errors.push({
+          message: `Failed to decompress TSMaster BLF file: ${e instanceof Error ? e.message : String(e)}`,
+        });
+        return { frames: [], warnings, errors };
+      }
+    }
+
+    const parseView = new DataView(dataToParse.buffer, dataToParse.byteOffset, dataToParse.byteLength);
+    const parseBytes = dataToParse.length;
+
+    const sigAt0 = String.fromCharCode(
+      dataToParse[0],
+      dataToParse[1],
+      dataToParse[2],
+      dataToParse[3],
+    );
+
+    if (sigAt0 === "LOBJ") {
+      // Decompressed LOBJ 48-byte fixed records
+      const recordSize = 48;
+      const numRecords = Math.floor(parseBytes / recordSize);
+
+      for (let rec = 0; rec < numRecords; rec++) {
+        const base = rec * recordSize;
+
+        if (
+          dataToParse[base] !== 0x4c ||
+          dataToParse[base + 1] !== 0x4f ||
+          dataToParse[base + 2] !== 0x42 ||
+          dataToParse[base + 3] !== 0x4a
+        ) {
+          continue;
+        }
+
+        const tsLo = parseView.getUint32(base + 24, true);
+        const tsHi = parseView.getUint32(base + 28, true);
+        const tRelMs = Number(BigInt(tsLo) + (BigInt(tsHi) << 32n)) / 1_000_000;
+
+        const flags = dataToParse[base + 34];
+        const direction: ReplayDirection = (flags & 0x10) ? "tx" : "rx";
+        const dlc = Math.min(dataToParse[base + 35], 8);
+        const canId = parseView.getUint32(base + 36, true);
+        const isExtended = canId > 0x7ff;
+
+        let dataHex = "";
+        for (let i = 0; i < dlc; i++) {
+          dataHex += dataToParse[base + 40 + i].toString(16).padStart(2, "0");
+        }
+
+        const frame: ReplayFrame = {
+          tRelMs,
+          canId: canId & (isExtended ? 0x1fffffff : 0x7ff),
+          isExtended,
+          direction,
+          dlc,
+          dataHex,
+          source: "tsmaster",
+          channel: "CAN",
+        };
+
+        const frameErrors = validateFrame(frame, frames.length + 1);
+        if (frameErrors.length === 0) {
+          frames.push(frame);
+        }
+      }
+    } else {
+      // Standard BLF format: variable-size objects
+      const signature = String.fromCharCode(
+        dataView.getUint8(4),
+        dataView.getUint8(5),
+        dataView.getUint8(6),
+        dataView.getUint8(7),
+      );
+
+    if (
+      signature !== "BLF\x0a" &&
+      signature !== "BLF\x0d" &&
+      signature !== "BLF " &&
+      sigAt0 !== "LOGG"
+    ) {
+      warnings.push({
+        code: "blf-unexpected-signature",
+        message: `File does not have expected BLF signature. Proceeding with generic parse.`,
+      });
+    }
+
+    // Scan for CAN_MESSAGE objects starting from offset 24
+    // Object header format:
+    // offset +0: object_size (4 bytes)
+    // offset +4: object_header_size (4 bytes)
+    // offset +8: object_version (2 bytes)
+    // offset +10: object_type (2 bytes)
+    // offset +12: object_data_size (4 bytes)
+
+    for (let offset = 24; offset + 24 <= parseBytes; offset += 4) {
+      const objectSize = parseView.getUint32(offset, true);
+      const objectHeaderSize = parseView.getUint32(offset + 4, true);
+      const objectType = parseView.getUint16(offset + 10, true);
+
+      // Validate object
+      if (objectSize < 24 || objectSize > parseBytes - offset) {
+        break;
+      }
+
+      // Skip if header size is unreasonably large
+      if (objectHeaderSize > 1000 || objectHeaderSize < 16) {
+        continue;
+      }
+
+      // CAN_MESSAGE object type = 0x01, CANFD_MESSAGE = 0x32
+      if (objectType === 0x01) {
+        // Parse CAN message data
+        const headerStart = offset + objectHeaderSize;
+        const canDataOffset = headerStart + 8;
+
+        if (canDataOffset + 8 <= offset + objectSize) {
+          const arbId = parseView.getUint32(canDataOffset, true);
+          const flags = parseView.getUint8(canDataOffset + 5);
+          const isExtended = Boolean(flags & 0x01);
+          const directionBit = parseView.getUint8(canDataOffset + 4);
+          const direction: ReplayDirection = directionBit & 0x80 ? "rx" : "tx";
+          const dlc = Math.min(parseView.getUint8(canDataOffset + 6), 8);
+          const dataStart = canDataOffset + 8;
+          let dataHex = "";
+          for (let i = 0; i < dlc; i++) {
+            dataHex += parseView.getUint8(dataStart + i).toString(16).padStart(2, "0");
+          }
+
+          let tRelMs = 0;
+          if (headerStart + 8 <= offset + objectSize) {
+            const timestampNs = parseView.getBigUint64(headerStart, true);
+            tRelMs = Number(timestampNs) / 1_000_000;
+          }
+
+          const frame: ReplayFrame = {
+            tRelMs,
+            canId: arbId & (isExtended ? 0x1fffffff : 0x7ff),
+            isExtended,
+            direction,
+            dlc,
+            dataHex,
+            source: "tsmaster",
+            channel: "CAN",
+          };
+
+          const frameErrors = validateFrame(frame, frames.length + 1);
+          if (frameErrors.length === 0) {
+            frames.push(frame);
+          }
+        }
+      } else if (objectType === 0x32) {
+        // CANFD_MESSAGE
+        const headerStart = offset + objectHeaderSize;
+        const canFdDataOffset = headerStart + 12;
+
+        if (canFdDataOffset + 8 <= offset + objectSize) {
+          const arbId = parseView.getUint32(canFdDataOffset, true);
+          const flags = parseView.getUint8(canFdDataOffset + 5);
+          const isExtended = Boolean(flags & 0x01);
+          const directionBit = parseView.getUint8(canFdDataOffset + 4);
+          const direction: ReplayDirection = directionBit & 0x80 ? "rx" : "tx";
+          const rawDlc = parseView.getUint8(canFdDataOffset + 6);
+          let dlc = rawDlc;
+          if (rawDlc > 15) dlc = [12, 16, 20, 24, 32, 48, 64][rawDlc - 16] ?? 64;
+
+          const dataStart = canFdDataOffset + 8;
+          let dataHex = "";
+          for (let i = 0; i < Math.min(dlc, 64); i++) {
+            dataHex += parseView.getUint8(dataStart + i).toString(16).padStart(2, "0");
+          }
+
+          let tRelMs = 0;
+          if (headerStart + 8 <= offset + objectSize) {
+            const timestampNs = parseView.getBigUint64(headerStart, true);
+            tRelMs = Number(timestampNs) / 1_000_000;
+          }
+
+          const frame: ReplayFrame = {
+            tRelMs,
+            canId: arbId & (isExtended ? 0x1fffffff : 0x7ff),
+            isExtended,
+            direction,
+            dlc,
+            dataHex,
+            source: "tsmaster",
+            channel: "CANFD",
+          };
+
+          const frameErrors = validateFrame(frame, frames.length + 1);
+          if (frameErrors.length === 0) {
+            frames.push(frame);
+          }
+        }
+      }
+
+      // Move to next object
+      if (objectSize < 24) break;
+      offset = offset + objectSize - 24;
+    }
+  }
+  }
+
+  // Sort frames by tRelMs to ensure chronological order
+  frames.sort((a, b) => a.tRelMs - b.tRelMs);
+
+  // Normalize tRelMs to start from 0
+  if (frames.length > 0 && frames[0].tRelMs > 0) {
+    const baseT = frames[0].tRelMs;
+    for (const frame of frames) {
+      frame.tRelMs = Math.max(0, frame.tRelMs - baseT);
+      if (frame.tEpochMs !== undefined) {
+        frame.tEpochMs = frame.tEpochMs - baseT;
+      }
+    }
+  }
+
+  appendFrameCapWarning(frames, warnings);
+  return { frames, warnings, errors };
+}
+
 export async function parseReplayFile(file: File): Promise<ReplayParseResult> {
   const sizeValidation = validateFileSize(file.size);
   if (sizeValidation.errors.length > 0) {
     return { frames: [], warnings: sizeValidation.warnings, errors: sizeValidation.errors };
   }
 
-  const content = await file.text();
   const lower = file.name.toLowerCase();
+
+  // Handle binary formats
+  if (lower.endsWith(".blf")) {
+    const buffer = await file.arrayBuffer();
+    const result = parseTSMasterBlf(buffer, file.name);
+    return {
+      ...result,
+      warnings: [...sizeValidation.warnings, ...result.warnings],
+    };
+  }
+
+  const content = await file.text();
 
   const parsed = lower.endsWith(".pecan") || lower.endsWith(".json")
     ? parsePecanSessionJson(content)

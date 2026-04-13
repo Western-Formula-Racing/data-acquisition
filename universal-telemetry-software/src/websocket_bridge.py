@@ -221,6 +221,20 @@ def _release_client_locks(websocket):
         logger.info(f"Page lock auto-released: {page} (client disconnected)")
 
 
+async def direct_queue_listener(queue: asyncio.Queue):
+    """Broadcast messages from an in-process queue to all WS clients (car mode, no Redis)."""
+    while not shutdown_event.is_set():
+        try:
+            data = await asyncio.wait_for(queue.get(), timeout=1.0)
+        except asyncio.TimeoutError:
+            continue
+        if connected_clients:
+            await asyncio.gather(
+                *[client.send(data) for client in connected_clients],
+                return_exceptions=True,
+            )
+
+
 async def redis_listener():
     """Listens to Redis and broadcasts to all WS clients."""
     try:
@@ -462,12 +476,18 @@ async def ws_handler(websocket):
         if had_locks:
             await _broadcast_page_lock_state()
 
-async def run_websocket_bridge(heartbeat_event=None):
-    """Main entry point for WebSocket bridge."""
+async def run_websocket_bridge(heartbeat_event=None, direct_queue: asyncio.Queue | None = None):
+    """Main entry point for WebSocket bridge.
+
+    When direct_queue is provided (car mode without Redis), messages are read
+    from the queue instead of Redis pub/sub.
+    """
     loop = asyncio.get_running_loop()
     utils.register_shutdown_signals(loop, shutdown_event, "WebSocket bridge")
 
     logger.info(f"Starting WebSocket Bridge on port {WS_PORT}... (role={ROLE})")
+    if direct_queue is not None:
+        logger.info("WebSocket bridge using direct in-process queue (no Redis)")
     if ENABLE_UPLINK:
         if ROLE == "car":
             logger.info("Uplink ENABLED — CAR MODE (direct CAN bus write)")
@@ -481,8 +501,8 @@ async def run_websocket_bridge(heartbeat_event=None):
     async with websockets.serve(ws_handler, "0.0.0.0", WS_PORT):
         logger.info(f"WebSocket server running at ws://0.0.0.0:{WS_PORT}")
 
-        # Run Redis listener and heartbeat until shutdown
-        await asyncio.gather(redis_listener(), utils.heartbeat_coro(heartbeat_event, shutdown_event))
+        listener = direct_queue_listener(direct_queue) if direct_queue is not None else redis_listener()
+        await asyncio.gather(listener, utils.heartbeat_coro(heartbeat_event, shutdown_event))
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

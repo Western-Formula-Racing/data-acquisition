@@ -121,26 +121,24 @@ def sync_once(since: datetime | None = None, dry_run: bool = False) -> bool:
         logger.info("✓ Cloud InfluxDB reachable")
 
     # ── 2. Read from local ─────────────────────────────────────────────────
-    local = InfluxDBClient(
-        url=LOCAL_INFLUX_URL,
-        token=LOCAL_INFLUX_TOKEN or None,
+    import influxdb_client_3
+    import pandas as pd
+    
+    local = influxdb_client_3.InfluxDBClient3(
+        host=LOCAL_INFLUX_URL,
+        token=LOCAL_INFLUX_TOKEN or "",
         org=LOCAL_INFLUX_ORG,
+        database=LOCAL_INFLUX_BUCKET,
     )
-    query_api = local.query_api()
 
-    since_rfc = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+    since_rfc = since.strftime("%Y-%m-%d %H:%M:%S")
 
-    # InfluxDB3 uses Flux for the v1-compat query API.
-    # We query all data from our table since the last sync time.
-    flux = f'''
-from(bucket: "{LOCAL_INFLUX_BUCKET}")
-  |> range(start: {since_rfc})
-  |> filter(fn: (r) => r._measurement == "{INFLUX_TABLE}")
-'''
+    # InfluxDB 3 requires SQL to query
+    sql = f"SELECT * FROM \"{INFLUX_TABLE}\" WHERE time >= '{since_rfc}'"
 
-    logger.info(f"Querying local bucket '{LOCAL_INFLUX_BUCKET}' …")
+    logger.info(f"Querying local bucket '{LOCAL_INFLUX_BUCKET}' with SQL …")
     try:
-        tables = query_api.query(flux, org=LOCAL_INFLUX_ORG)
+        table_pa = local.query(sql)
     except Exception as e:
         logger.error(f"Local query failed: {e}")
         local.close()
@@ -163,72 +161,47 @@ from(bucket: "{LOCAL_INFLUX_BUCKET}")
     # Sort so we can bound them
     sidecars.sort(key=lambda x: x.get("base_timeline_start", 0))
 
-    # Convert to line protocol for re-ingest
-    lines: list[str] = []
-    for table in tables:
-        for record in table.records:
-            # Reconstruct line protocol from the record
-            measurement = record.get_measurement()
-            tags_parts = []
-            field_key = record.get_field()
-            field_val = record.get_value()
-            ts = record.get_time()
-
-            # Extract known tags
-            for tag_key in ("signalName", "messageName", "canId"):
-                tag_val = record.values.get(tag_key)
-                if tag_val is not None:
-                    tags_parts.append(f"{tag_key}={tag_val}")
-
-            tags_str = ",".join(tags_parts)
-            if isinstance(field_val, float):
-                field_str = f"{field_key}={field_val}"
-            elif isinstance(field_val, int):
-                field_str = f"{field_key}={field_val}i"
-            else:
-                field_str = f'{field_key}="{field_val}"'
-
-            if ts:
-                ts_sec = ts.timestamp()
-                correction = 0.0
-                
-                # Find applicable sidecar (within a 12 hour window of its start)
-                for i, sc in enumerate(sidecars):
-                    start = sc.get("base_timeline_start", 0) - 3600 # 1 hour grace period to cover points written before the jump was detected
-                    end_cap = start + 43200 # 12 hours absolute max
-                    
-                    next_start = float('inf')
-                    if i + 1 < len(sidecars):
-                        next_start = sidecars[i+1].get("base_timeline_start", 0) - 3600
-                        
-                    end = min(end_cap, next_start)
-                    
-                    if start <= ts_sec < end:
-                        correction = sc.get("correction_seconds", 0.0)
-                        break
-                        
-                ts_ns = int((ts_sec + correction) * 1e9)
-            else:
-                ts_ns = ""
-                
-            line = f"{measurement},{tags_str} {field_str} {ts_ns}"
-            lines.append(line)
-
-    local.close()
-    total = len(lines)
-    logger.info(f"Found {total} points to sync")
-
-    if total == 0:
+    if table_pa.num_rows == 0:
+        logger.info("Found 0 points to sync.")
         save_last_sync_time(sync_start)
+        local.close()
         return True
+
+    df = table_pa.to_pandas()
+    total = len(df)
+    logger.info(f"Found {total} points to sync")
 
     if dry_run:
         logger.info(f"[DRY RUN] Would push {total} points to cloud")
+        local.close()
         return True
+
+    if "time" in df.columns:
+        # Apply time correction sidecars in a vectorized way
+        ts_sec = df['time'].astype('int64') / 1e9
+        for i, sc in enumerate(sidecars):
+            start = sc.get("base_timeline_start", 0) - 3600
+            end_cap = start + 43200
+            
+            next_start = float('inf')
+            if i + 1 < len(sidecars):
+                next_start = sidecars[i+1].get("base_timeline_start", 0) - 3600
+                
+            end = min(end_cap, next_start)
+            correction = sc.get("correction_seconds", 0.0)
+            
+            if correction != 0.0:
+                mask = (ts_sec >= start) & (ts_sec < end)
+                if mask.any():
+                    df.loc[mask, 'time'] += pd.Timedelta(seconds=correction)
+
+        # Set index to time for the Cloud Writer
+        df.set_index('time', inplace=True)
 
     # ── 3. Write to cloud ──────────────────────────────────────────────────
     if not CLOUD_INFLUX_TOKEN:
         logger.error("CLOUD_INFLUX_TOKEN not set — cannot write to cloud.")
+        local.close()
         return False
 
     cloud = InfluxDBClient(
@@ -236,6 +209,8 @@ from(bucket: "{LOCAL_INFLUX_BUCKET}")
         token=CLOUD_INFLUX_TOKEN,
         org=CLOUD_INFLUX_ORG,
     )
+    
+    # We use batching. Write options configured correctly
     cloud_write = cloud.write_api(
         write_options=WriteOptions(
             batch_size=SYNC_BATCH_SIZE,
@@ -244,30 +219,29 @@ from(bucket: "{LOCAL_INFLUX_BUCKET}")
         )
     )
 
-    written = 0
-    for i in range(0, total, SYNC_BATCH_SIZE):
-        batch = lines[i : i + SYNC_BATCH_SIZE]
-        try:
-            cloud_write.write(
-                bucket=CLOUD_INFLUX_BUCKET,
-                org=CLOUD_INFLUX_ORG,
-                record=batch,
-            )
-            written += len(batch)
-            logger.info(f"  ↑ {written}/{total} points")
-        except Exception as e:
-            logger.error(f"Cloud write error at offset {i}: {e}")
-            break
+    try:
+        cloud_write.write(
+            bucket=CLOUD_INFLUX_BUCKET,
+            org=CLOUD_INFLUX_ORG,
+            record=df,
+            data_frame_measurement_name=INFLUX_TABLE,
+            data_frame_tag_columns=["signalName", "messageName", "canId"]
+        )
+        logger.info(f"✓ Synced {total} points to cloud")
+        written = total
+    except Exception as e:
+        logger.error(f"Cloud write error: {e}")
+        written = 0
 
     cloud_write.close()
     cloud.close()
+    local.close()
 
     if written == total:
         save_last_sync_time(sync_start)
-        logger.info(f"✓ Synced {written} points to cloud")
         return True
     else:
-        logger.warning(f"Partial sync: {written}/{total}")
+        logger.warning(f"Failed sync: wrote {written}/{total}")
         return False
 
 

@@ -27,3 +27,6 @@ coverage
 *.sw?
 dev-dist
 .env
+
+# Test data
+testdata/

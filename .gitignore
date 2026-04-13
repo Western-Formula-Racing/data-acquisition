@@ -239,6 +239,7 @@ test-logs/
 *.dat
 *.code-workspace
 /.claude
+*.claude
 
 # Ignore generated service worker files
 sw.js
@@ -248,4 +249,3 @@ GEMINI.md
 flight-recorder/.env.local
 /.cursor
 /docs/specs
-/pecan/.claude
