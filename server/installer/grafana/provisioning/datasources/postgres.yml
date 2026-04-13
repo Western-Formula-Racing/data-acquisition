@@ -1,0 +1,28 @@
+apiVersion: 1
+
+# Automatically provisioned — no manual setup required.
+# One datasource covers all season tables (wfr25, wfr26, …) inside the "wfr" database.
+
+datasources:
+  - name: TimescaleDB-WFR
+    type: postgres
+    access: proxy
+    url: timescaledb:5432
+    # Top-level database field (required by Grafana to establish the connection)
+    database: wfr
+    user: $POSTGRES_USER
+    jsonData:
+      # jsonData.database is also required by the Grafana PostgreSQL plugin
+      database: wfr
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: true
+      maxOpenConns: 10
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+    secureJsonData:
+      password: $POSTGRES_PASSWORD
+    isDefault: true
+    editable: true
+    uid: timescaledb-wfr
+    version: 1

@@ -1,0 +1,51 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# System deps for scientific Python + Chromium (ARM64 compatible)
+# Chromium is for Kaleido image export (used by Plotly, 3D plot rendering.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        chromium \
+        chromium-sandbox \
+        libx11-6 \
+        libxext6 \
+        libxrender1 \
+        libxtst6 \
+        libxss1 \
+        libnss3 \
+        libatk1.0-0 \
+        libatk-bridge2.0-0 \
+        libcups2 \
+        libdrm2 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxrandr2 \
+        libgbm1 \
+        libasound2 \
+        fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-docker.txt /tmp/requirements-docker.txt
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r /tmp/requirements-docker.txt \
+    && rm -rf /root/.cache/pip
+
+# Tell Kaleido where Chromium lives
+ENV CHROME_PATH=/usr/bin/chromium
+
+# Verify
+RUN python3 - <<EOF
+import plotly.express as px
+fig = px.line(x=[1,2,3], y=[1,4,9])
+fig.write_image("test.png")
+print("PNG export OK")
+EOF
+
+COPY . /app
+
+EXPOSE 8080
+CMD ["python3", "sandbox_server.py"]

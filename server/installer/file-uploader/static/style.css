@@ -1,0 +1,167 @@
+* {
+	font-family: sans-serif;
+}
+
+body {
+	margin: 0;
+}
+
+@media (max-width: 1100px) {
+	.parent {
+		flex-direction: column;
+		gap: 50px;
+	}
+}
+
+.background {
+	background: linear-gradient(#000, rgb(65, 33, 98));
+	width: 100vw;
+	height: 100vh;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	flex-direction: column;
+	/* gap: 30px; */
+}
+
+.parent {
+	display: flex;
+	justify-content: space-evenly;
+	align-items: center;
+	width: 100vw;
+}
+
+.info {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	align-items: center;
+	justify-content: center;
+	color: white;
+}
+
+.info h1,
+h2 {
+	margin: 0;
+}
+.info h1 {
+	margin-top: 15px;
+}
+
+.drop-area {
+	color: white;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	align-items: center;
+	padding: 100px;
+	border: white 2px dashed;
+	border-radius: 40px;
+	background-color: #00000030;
+	transition: all 0.2s ease-in-out;
+}
+
+.drop-area:hover {
+	background-color: #00000050;
+	cursor: pointer;
+}
+
+#file-upload-img {
+	width: 100px;
+	height: 100px;
+}
+
+.progress-bar_parent {
+	border: white solid 2px;
+	border-radius: 20px;
+	width: 75%;
+	height: 40px;
+	margin-top: 40px;
+}
+
+.progress-bar {
+	border-radius: 15px;
+	width: 0%;
+	height: 40px;
+	background: white;
+	color: white;
+	display: flex;
+	align-items: center;
+	transition: all 200ms linear;
+}
+
+#progress-bar_pct {
+	font-size: x-large;
+	margin-left: 10px;
+	color: #000;
+}
+
+#progress-bar_count {
+	margin-top: 5px;
+	font-size: x-large;
+	color: white;
+}
+
+.spinner {
+	animation: rotate 2s linear infinite;
+	z-index: 100;
+	/* margin: -25px 0 0 -25px; */
+	width: 100px;
+	height: 100px;
+}
+
+.spinner .path {
+	stroke: hsl(0, 0%, 100%);
+	stroke-linecap: round;
+	animation: dash 1.5s ease-in-out infinite;
+}
+
+@keyframes rotate {
+	100% {
+		transform: rotate(360deg);
+	}
+}
+
+@keyframes dash {
+	0% {
+		stroke-dasharray: 1, 150;
+		stroke-dashoffset: 0;
+	}
+	50% {
+		stroke-dasharray: 90, 150;
+		stroke-dashoffset: -35;
+	}
+	100% {
+		stroke-dasharray: 90, 150;
+		stroke-dashoffset: -124;
+	}
+}
+
+#season-select_span {
+	font-size: xx-large;
+	font-weight: 600;
+	margin-top: 15px
+}
+
+#season-select {
+	font-size: large;
+	vertical-align: middle;
+	border-radius: 15px;
+	padding: 10px 38px 10px 16px;
+	transition: border-color .1s ease-in-out,box-shadow .1s ease-in-out;
+	border: 3px solid white;
+}
+
+#season-select:hover {
+    border: 3px solid rebeccapurple;
+}
+#season-select:focus {
+	border: 3px solid rebeccapurple;
+    box-shadow: 0 3px 5px 0 rgba(0,0,0,.2);
+    outline: none;
+}
+#season-select:disabled {
+	cursor: not-allowed;
+	background-color: #ffffff95;
+	border: 3px solid rgba(255, 0, 0, 0.509);
+}

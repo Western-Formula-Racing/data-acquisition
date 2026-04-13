@@ -1,0 +1,33 @@
+tunnel: fcc90054-958b-4086-b105-b0417898d206
+credentials-file: C:\Users\haoru\.cloudflared\fcc90054-958b-4086-b105-b0417898d206.json
+
+ingress:
+  - hostname: explore.0001200.xyz
+    service: http://127.0.0.1:8888
+    originRequest:
+      noTLSVerify: true
+      headers:
+        Host: localhost
+
+  - hostname: influxdb3.0001200.xyz
+    service: http://127.0.0.1:9000
+    originRequest:
+      noTLSVerify: true
+      headers:
+        Host: localhost
+
+  - hostname: influxdb3-data.0001200.xyz
+    service: http://127.0.0.1:8181
+    originRequest:
+      noTLSVerify: true
+      headers:
+        Host: localhost
+
+  - hostname: grafana.0001200.xyz
+    service: http://127.0.0.1:8087
+    originRequest:
+      noTLSVerify: true
+      headers:
+        Host: localhost
+
+  - service: http_status:404

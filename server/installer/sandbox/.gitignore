@@ -1,0 +1,16 @@
+generated/
+generated_sandbox_code.py
+*.pyc
+__pycache__/
+.env
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.pdf
+*.csv
+output.*
+
+# Custom prompt engineering (use prompt-guide.txt.example as template)
+prompt-guide.txt
