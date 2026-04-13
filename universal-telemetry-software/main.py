@@ -12,8 +12,7 @@ from src.status_server import run_status_server
 from src.leds import run_leds
 from src.poe import run_poe
 from src.link_diagnostics import run_link_diagnostics
-from src.influx_bridge import run_influx_bridge
-from src.cloud_sync import run_cloud_sync
+from src.timescale_bridge import run_timescale_bridge
 import asyncio
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -77,15 +76,10 @@ def start_link_diagnostics():
     logger.info("Starting link diagnostics service")
     asyncio.run(run_link_diagnostics())
 
-def start_influx_bridge():
-    # Redis → Local InfluxDB3 bridge (decodes CAN and writes to InfluxDB)
-    logger.info("Starting InfluxDB bridge (Redis → local InfluxDB3)")
-    asyncio.run(run_influx_bridge())
-
-def start_cloud_sync():
-    # Local InfluxDB3 → Cloud InfluxDB3 sync
-    logger.info("Starting cloud sync (local → cloud InfluxDB3)")
-    asyncio.run(run_cloud_sync())
+def start_timescale_bridge():
+    # Redis → TimescaleDB bridge (decodes CAN and writes to server TimescaleDB)
+    logger.info("Starting TimescaleDB bridge (Redis → server TimescaleDB)")
+    asyncio.run(run_timescale_bridge())
 
 if __name__ == "__main__":
     logger.info("Universal Telemetry Software Starting...")
@@ -95,7 +89,7 @@ if __name__ == "__main__":
     remote_ip = os.getenv("REMOTE_IP", "127.0.0.1")
     enable_video = os.getenv("ENABLE_VIDEO", "true").lower() == "true"
     enable_audio = os.getenv("ENABLE_AUDIO", "true").lower() == "true"
-    enable_influx = os.getenv("ENABLE_INFLUX_LOGGING", "false").lower() == "true"
+    enable_timescale = os.getenv("ENABLE_TIMESCALE_LOGGING", "false").lower() == "true"
     
     boot_session_id = os.getenv("BOOT_SESSION_ID", str(uuid.uuid4())[:8])
     os.environ["BOOT_SESSION_ID"] = boot_session_id
@@ -178,17 +172,12 @@ if __name__ == "__main__":
         processes.append(p_link_diag)
         logger.info("Link diagnostics service started")
 
-    # 5. InfluxDB Bridge + Cloud Sync (Base Station Only, opt-in)
-    if role == "base" and enable_influx:
-        p_influx = multiprocessing.Process(target=start_influx_bridge, name="InfluxBridge")
-        p_influx.start()
-        processes.append(p_influx)
-        logger.info(f"InfluxDB bridge started (table={os.getenv('INFLUX_TABLE', 'WFR26_base')})")
-
-        # p_cloud = multiprocessing.Process(target=start_cloud_sync, name="CloudSync")
-        # p_cloud.start()
-        # processes.append(p_cloud)
-        logger.info("Automatic cloud sync daemon is disabled; use manual trigger instead.")
+    # 5. TimescaleDB Bridge (Base Station Only, opt-in)
+    if role == "base" and enable_timescale:
+        p_timescale = multiprocessing.Process(target=start_timescale_bridge, name="TimescaleBridge")
+        p_timescale.start()
+        processes.append(p_timescale)
+        logger.info(f"TimescaleDB bridge started (dsn=*, table={os.getenv('TIMESCALE_TABLE', 'wfr26_base')})")
 
     # 5. Video (Optional)
     if enable_video:

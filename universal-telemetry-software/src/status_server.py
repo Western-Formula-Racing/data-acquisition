@@ -53,42 +53,9 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self._json_response(403, {"error": "set-time is disabled (set SET_TIME_ENABLED=true)"})
                 return
             self._handle_set_time()
-        elif self.path == '/sync-cloud':
-            self._handle_sync_cloud()
         else:
             self.send_response(404)
             self.end_headers()
-
-    def _handle_sync_cloud(self):
-        try:
-            length = int(self.headers.get('Content-Length', 0))
-            bucket = "WFR26"
-            if length > 0:
-                body = json.loads(self.rfile.read(length))
-                bucket = body.get('bucket', 'WFR26').strip() or "WFR26"
-                
-            logger.info(f"Manual cloud sync triggered via API (bucket={bucket})")
-            
-            env = os.environ.copy()
-            env["CLOUD_INFLUX_BUCKET"] = bucket
-            
-            # Run the cloud sync manually and capture output
-            # cwd must be the project root so python -m src.cloud_sync resolves correctly
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            result = subprocess.run(
-                ["python", "-m", "src.cloud_sync"],
-                capture_output=True, text=True, timeout=120, cwd=project_root, env=env
-            )
-            if result.returncode != 0:
-                logger.error(f"Cloud sync failed: {result.stderr}")
-                self._json_response(500, {"error": result.stderr.strip() or result.stdout.strip()})
-                return
-            
-            logger.info(f"Cloud sync completed successfully")
-            self._json_response(200, {"ok": True, "output": result.stdout.strip()})
-        except Exception as e:
-            logger.error(f"/sync-cloud error: {e}")
-            self._json_response(500, {"error": str(e)})
 
     def _handle_set_time(self):
         try:

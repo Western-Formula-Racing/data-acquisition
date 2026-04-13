@@ -1,11 +1,7 @@
-# Raspberry Pi 4B override — run InfluxDB3 as native ARM64
+# Raspberry Pi 4B override — timescaledb runs as native ARM64
 #
 # Use this ONLY if you are deploying the base station on an RPi 4B.
-# The RPi 4B uses 4KB memory pages, so it can run the native binary.
+# The RPi 4B uses 4KB memory pages, so it can run the native ARM64 binary.
 #
 # Usage:
 #   docker compose -f docker-compose.prod.yml -f docker-compose.rpi4.yml --profile base up -d
-
-services:
-  influxdb3:
-    platform: linux/arm64

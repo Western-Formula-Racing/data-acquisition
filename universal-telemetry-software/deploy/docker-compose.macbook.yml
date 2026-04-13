@@ -2,7 +2,7 @@
 # Run from universal-telemetry-software/:
 #   docker compose -f deploy/docker-compose.macbook.yml --profile base up -d
 #
-# REMOTE_IP, INFLUX_SEASON, LOCAL_INFLUX_TOKEN set in deploy/.env
+# REMOTE_IP, INFLUX_SEASON, TIMESCALE_DSN set in deploy/.env
 
 services:
   telemetry:
@@ -28,18 +28,10 @@ services:
       - ENABLE_VIDEO=false
       - ENABLE_AUDIO=false
       - SET_TIME_ENABLED=false
-      - ENABLE_INFLUX_LOGGING=true
-      - LOCAL_INFLUX_URL=http://daq-influxdb3:8181
-      - LOCAL_INFLUX_TOKEN=${LOCAL_INFLUX_TOKEN:-apiv3_local-telemetry-token}
-      - LOCAL_INFLUX_ORG=WFR
-      - LOCAL_INFLUX_BUCKET=${INFLUX_SEASON:-WFR26}
-      - INFLUX_TABLE=${INFLUX_SEASON:-WFR26}_base
+      - ENABLE_TIMESCALE_LOGGING=true
+      - POSTGRES_DSN=${TIMESCALE_DSN}
+      - TIMESCALE_TABLE=${INFLUX_SEASON:-WFR26}_base
       - DBC_FILE_PATH=/app/example.dbc
-      - CLOUD_INFLUX_URL=${CLOUD_INFLUX_URL:-https://influxdb3.westernformularacing.org}
-      - CLOUD_INFLUX_TOKEN=${CLOUD_INFLUX_TOKEN:-}
-      - CLOUD_INFLUX_ORG=WFR
-      - CLOUD_INFLUX_BUCKET=${INFLUX_SEASON:-WFR26}
-      - SYNC_INTERVAL_SECONDS=60
     logging:
       driver: "json-file"
       options:
@@ -48,9 +40,6 @@ services:
     depends_on:
       redis:
         condition: service_started
-      influxdb3:
-        condition: service_started
-        required: false
 
   redis:
     profiles: ["base"]
@@ -70,55 +59,5 @@ services:
     depends_on:
       - telemetry
 
-  influxdb3:
-    profiles: ["base"]
-    image: influxdb:3-core
-    container_name: daq-influxdb3
-    command: >
-      influxdb3 serve
-        --node-id influxdb3-local
-        --object-store file
-        --data-dir /var/lib/influxdb3
-        --admin-token-file /influxdb3-admin-token.json
-        --wal-snapshot-size 100
-        --snapshotted-wal-files-to-keep 10
-        --package-manager disabled
-    restart: unless-stopped
-    ports:
-      - "9000:8181"
-    volumes:
-      - influxdb3_data:/var/lib/influxdb3
-      - ../influxdb3-admin-token.json:/influxdb3-admin-token.json:ro
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    healthcheck:
-      test: ["CMD-SHELL", "timeout 1 bash -c 'cat < /dev/null > /dev/tcp/localhost/8181' || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  grafana:
-    profiles: ["base"]
-    image: grafana/grafana
-    container_name: daq-grafana
-    restart: unless-stopped
-    ports:
-      - "8087:3000"   # Grafana UI
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
-      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 100ms
-    volumes:
-      - grafana_data:/var/lib/grafana
-    depends_on:
-      influxdb3:
-        condition: service_healthy
-
 volumes:
   redis_data:
-  influxdb3_data:
-  grafana_data:

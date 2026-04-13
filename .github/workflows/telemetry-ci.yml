@@ -214,7 +214,7 @@ jobs:
 
     - name: Verify containers
       run: |
-        for container in daq-car daq-base daq-car-redis daq-base-redis daq-pecan-test daq-test-influxdb3; do
+        for container in daq-car daq-base daq-car-redis daq-base-redis daq-pecan-test daq-test-timescaledb; do
           if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
             echo "✓ ${container} running"
           else
@@ -240,7 +240,7 @@ jobs:
         docker logs daq-car-redis        > test-logs/car-redis.log 2>&1 || true
         docker logs daq-base-redis       > test-logs/base-redis.log 2>&1 || true
         docker logs daq-pecan-test       > test-logs/pecan.log 2>&1 || true
-        docker logs daq-test-influxdb3   > test-logs/influxdb3.log 2>&1 || true
+        docker logs daq-test-timescaledb > test-logs/timescaledb.log 2>&1 || true
 
     - name: Upload integration test logs
       if: failure()

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
-from typing import List
+import threading
+from typing import Dict, List, Set
 
 import docker
+import psycopg2
+import psycopg2.extras
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +28,18 @@ class DataQueryPayload(BaseModel):
     end: datetime
     limit: int | None = 2000
     no_limit: bool = False
+
+
+class CanFramePayload(BaseModel):
+    time: datetime
+    can_id: int
+    message_name: str
+    signals: Dict[str, float] = {}
+
+
+class CanFramesBatchPayload(BaseModel):
+    season: str  # e.g. "wfr26"
+    frames: List[CanFramePayload] = []
 
 
 settings = get_settings()
@@ -115,12 +130,109 @@ def trigger_scan(background_tasks: BackgroundTasks, season: str | None = None) -
 def query_signal(payload: DataQueryPayload, season: str | None = None) -> dict:
     limit = None if payload.no_limit else (payload.limit or 2000)
     return service.query_signal_series(
-        payload.signal, 
-        payload.start, 
-        payload.end, 
+        payload.signal,
+        payload.start,
+        payload.end,
         limit,
         season=season
     )
+
+
+# ── CAN frames batch ingest (for flight-recorder sync) ─────────────────────────
+
+# Cache of known signal columns per table, thread-safe
+_table_known_signals: Dict[str, Set[str]] = {}
+_signals_lock = threading.Lock()
+
+
+def _ensure_signal_columns(cur, table: str, signal_names: Set[str]) -> None:
+    """Add any signal columns that don't exist yet (IF NOT EXISTS, cached per session)."""
+    with _signals_lock:
+        known = _table_known_signals.setdefault(table, set())
+        new_signals = signal_names - known
+        if not new_signals:
+            return
+        for sig in sorted(new_signals):
+            cur.execute(
+                f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "{sig}" DOUBLE PRECISION'
+            )
+        known.update(new_signals)
+
+
+@app.post("/api/can-frames/batch")
+def ingest_can_frames(payload: CanFramesBatchPayload) -> dict:
+    """
+    Batch ingest CAN frames from flight-recorder.
+
+    Writes to TimescaleDB using the same pattern as timescale_bridge:
+    - Wide format: one row per CAN message, all signals as columns
+    - INSERT ... ON CONFLICT (time, message_name) DO UPDATE for deduplication
+    - Signal columns added lazily via ALTER TABLE ADD COLUMN IF NOT EXISTS
+
+    Request body:
+    {
+        "season": "wfr26",
+        "frames": [
+            {
+                "time": "2026-04-12T10:30:00.000Z",
+                "can_id": 1234,
+                "message_name": "VCU_Front_IMU_1",
+                "signals": { "Accel_X": 0.5, "Accel_Y": 0.1 }
+            }
+        ]
+    }
+    """
+    if not payload.frames:
+        return {"ingested": 0}
+
+    table = f"{payload.season.lower()}_base"
+
+    # Deduplicate within batch: last frame wins for (time, message_name)
+    seen: dict = {}
+    for frame in payload.frames:
+        seen[(frame.time, frame.message_name)] = frame
+    deduped = list(seen.values())
+
+    # Collect all signals
+    batch_signals: Set[str] = set()
+    for frame in deduped:
+        batch_signals.update(frame.signals.keys())
+
+    try:
+        conn = psycopg2.connect(settings.postgres_dsn)
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    # Ensure signal columns exist
+                    _ensure_signal_columns(cur, table, batch_signals)
+
+                    if not batch_signals:
+                        return {"ingested": 0}
+
+                    sig_cols = sorted(batch_signals)
+                    col_sql = ", ".join(f'"{c}"' for c in ["time", "message_name", "can_id"] + sig_cols)
+                    update_sql = ", ".join(f'"{s}" = EXCLUDED."{s}"' for s in sig_cols)
+                    update_sql += ', "can_id" = EXCLUDED."can_id"'
+                    insert_sql = (
+                        f'INSERT INTO {table} ({col_sql}) VALUES %s '
+                        f'ON CONFLICT (time, message_name) DO UPDATE SET {update_sql}'
+                    )
+
+                    values = []
+                    for frame in deduped:
+                        row_tuple = (frame.time, frame.message_name, frame.can_id) + tuple(
+                            frame.signals.get(s) for s in sig_cols
+                        )
+                        values.append(row_tuple)
+
+                    psycopg2.extras.execute_values(cur, insert_sql, values, page_size=5000)
+
+            return {"ingested": len(deduped)}
+        finally:
+            conn.close()
+    except psycopg2.Error as e:
+        logger.error(f"TimescaleDB batch write error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database write failed: {e}")
 
 
 @app.get("/", response_class=HTMLResponse)

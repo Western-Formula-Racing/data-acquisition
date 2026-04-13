@@ -6,17 +6,14 @@ export interface ConnectionTestResult {
   message: string;
 }
 
+export interface SyncConfig {
+  apiEndpoint: string;  // e.g. "https://data.westernformularacing.org"
+  season: string;       // e.g. "wfr26"
+}
+
 export class SyncService {
   private syncing = false;
   private processor: any = null;
-
-  private getEffectiveUrl(url: string): string {
-    // If we've configured a Vite proxy and are running on localhost, use the proxy path
-    if (url.includes('influxdb3.westernformularacing.org') && window.location.hostname === 'localhost') {
-      return '/influx-api';
-    }
-    return url;
-  }
 
   private async getProcessor() {
     if (!this.processor) {
@@ -29,11 +26,12 @@ export class SyncService {
     return this.syncing;
   }
 
-  public async syncToInflux(
-    url: string,
-    token: string,
-    org: string,
-    bucket: string,
+  /**
+   * Sync recorded CAN frames to the server TimescaleDB via REST API.
+   * Replaces the InfluxDB3 Line Protocol upload.
+   */
+  public async syncToServer(
+    config: SyncConfig,
     onProgress?: (processed: number, total: number) => void
   ) {
     if (this.syncing) return;
@@ -50,34 +48,36 @@ export class SyncService {
         const frames = await loggingService.getUnsyncedFrames(batchSize);
         if (frames.length === 0) break;
 
-        const lineProtocolBatch: string[] = [];
+        // Build batch payload for POST /api/can-frames/batch
+        const batchFrames: Array<{
+          time: string;
+          can_id: number;
+          message_name: string;
+          signals: Record<string, number>;
+        }> = [];
 
         for (const frame of frames) {
           const decoded = processor.decode(frame.canId, frame.data, frame.time);
           if (decoded && decoded.signals) {
-            // InfluxDB Line Protocol: measurement,tags fields timestamp(ns)
-            // Wide format: one point per CAN message, all signals as fields
-            const timestampNs = frame.time * 1000000;
-
-            const tags = `messageName=${this.escapeTag(decoded.messageName)},canId=${frame.canId}`;
-            const fields = Object.entries(decoded.signals)
-              .filter(([_, s]) => typeof (s as any).sensorReading === 'number' && isFinite((s as any).sensorReading))
-              .map(([name, s]) => `${this.escapeTag(name)}=${(s as any).sensorReading}`)
-              .join(',');
-            if (fields) {
-              lineProtocolBatch.push(`${bucket},${tags} ${fields} ${timestampNs}`);
+            const signals: Record<string, number> = {};
+            for (const [name, s] of Object.entries(decoded.signals)) {
+              if (typeof (s as any).sensorReading === 'number' && isFinite((s as any).sensorReading)) {
+                signals[name] = (s as any).sensorReading;
+              }
+            }
+            if (Object.keys(signals).length > 0) {
+              batchFrames.push({
+                time: new Date(frame.time * 1000).toISOString(),
+                can_id: frame.canId,
+                message_name: decoded.messageName,
+                signals,
+              });
             }
           }
         }
 
-        if (lineProtocolBatch.length > 0) {
-          await this.uploadToInflux(
-            url,
-            token,
-            org,
-            bucket,
-            lineProtocolBatch
-          );
+        if (batchFrames.length > 0) {
+          await this.uploadBatch(config.apiEndpoint, config.season, batchFrames);
         }
 
         const ids = frames.map(f => f.id!).filter(id => id !== undefined);
@@ -99,70 +99,54 @@ export class SyncService {
   }
 
   public async testConnection(
-    url: string,
-    token: string,
-    bucket: string
+    apiEndpoint: string
   ): Promise<ConnectionTestResult> {
-    const effectiveUrl = this.getEffectiveUrl(url);
     try {
-      const response = await fetch(`${effectiveUrl}/api/v3/query_sql`, {
-        method: 'POST',
+      const response = await fetch(`${apiEndpoint}/api/health`, {
+        method: 'GET',
         credentials: 'omit',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ db: bucket, q: 'SELECT 1' }),
       });
 
       if (response.ok) {
-        return { ok: true, message: `Connected to ${bucket}` };
+        return { ok: true, message: `Connected to ${apiEndpoint}` };
       } else {
         const text = await response.text();
         return { ok: false, message: `${response.status} ${response.statusText}: ${text.slice(0, 120)}` };
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // "Load failed" / "Failed to fetch" means network-level failure (no server, CORS, etc.)
       const isNetworkErr = /load failed|failed to fetch|network/i.test(msg);
       return {
         ok: false,
         message: isNetworkErr
-          ? `Cannot reach ${url} — check URL/network/CORS.`
+          ? `Cannot reach ${apiEndpoint} — check URL/network/CORS.`
           : msg,
       };
     }
   }
 
-  private escapeTag(val: string): string {
-    return val.replace(/ /g, '\\ ').replace(/,/g, '\\,').replace(/=/g, '\\=');
-  }
-
-  private async uploadToInflux(
-    url: string,
-    token: string,
-    org: string,
-    bucket: string,
-    lines: string[]
+  private async uploadBatch(
+    apiEndpoint: string,
+    season: string,
+    frames: Array<{
+      time: string;
+      can_id: number;
+      message_name: string;
+      signals: Record<string, number>;
+    }>
   ) {
-    const effectiveUrl = this.getEffectiveUrl(url);
-    // InfluxDB 3 / InfluxDB 2 write endpoint: /api/v2/write
-    const writeUrl = `${effectiveUrl}/api/v2/write?org=${org}&bucket=${bucket}&precision=ns`;
-    
-    const response = await fetch(writeUrl, {
+    const response = await fetch(`${apiEndpoint}/api/can-frames/batch`, {
       method: 'POST',
       credentials: 'omit',
       headers: {
-        'Authorization': `Token ${token}`,
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Accept': 'application/json'
+        'Content-Type': 'application/json',
       },
-      body: lines.join('\n')
+      body: JSON.stringify({ season, frames }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`InfluxDB write failed: ${response.status} ${response.statusText} - ${errorText}`);
+      throw new Error(`Batch upload failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
   }
 

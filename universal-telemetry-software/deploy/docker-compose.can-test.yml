@@ -42,7 +42,7 @@ services:
       - ENABLE_VIDEO=false
       - ENABLE_AUDIO=false
       - ENABLE_UPLINK=false
-      - ENABLE_INFLUX_LOGGING=false
+      - ENABLE_TIMESCALE_LOGGING=false
     depends_on:
       redis:
         condition: service_healthy
