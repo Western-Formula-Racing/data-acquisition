@@ -6,7 +6,6 @@ Receives requests from Slackbot, generates code using Cohere, and executes in sa
 from __future__ import annotations
 
 import os
-import base64
 from pathlib import Path
 from typing import Dict, Any
 

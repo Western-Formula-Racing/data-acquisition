@@ -382,7 +382,7 @@ def process_events(client: SocketModeClient, req: SocketModeRequest):
                     text=f"❌ <@{user}> An error occurred while processing your command. Please try again later.",
                     thread_ts=locals().get('thread_ts')
                 )
-        except:
+        except Exception:
             # If even error notification fails, just log it
             print("Failed to send error notification to Slack")
 

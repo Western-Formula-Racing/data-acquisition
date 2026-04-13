@@ -15,7 +15,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import md5
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import psycopg2
 import psycopg2.extras

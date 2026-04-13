@@ -126,8 +126,6 @@ def query_signal(payload: DataQueryPayload, season: str | None = None) -> dict:
 @app.get("/", response_class=HTMLResponse)
 def index():
     """Simple status page for debugging."""
-    influx_status = "N/A (TimescaleDB)"
-    influx_color = "gray"
     try:
         service._log_db_connectivity()
         influx_status = "Connected"
