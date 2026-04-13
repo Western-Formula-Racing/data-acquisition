@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # Custom sandbox execution container (with internet access)
+  sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    container_name: sandbox
+    environment:
+      SANDBOX_PORT: 8080
+      SANDBOX_TIMEOUT: 120
+      SANDBOX_MAX_FILE_MB: 20
+      SANDBOX_MAX_FILES: 20
+      # slicks package reads these env vars automatically
+      INFLUX_URL: ${INFLUXDB_URL:-http://influxdb3:8181}
+      INFLUX_TOKEN: ${INFLUXDB_ADMIN_TOKEN}
+      INFLUX_DB: ${INFLUXDB_DATABASE:-telemetry}
+    networks:
+      - datalink
+
+  # Code generator - Cohere integration
+  code-generator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: code-generator
+    ports:
+      - "3030:3030"
+    environment:
+      COHERE_API_KEY: ${COHERE_API_KEY}
+      COHERE_MODEL: ${COHERE_MODEL:-command-r-plus}
+      SANDBOX_URL: "http://sandbox:8080"
+      MAX_RETRIES: ${MAX_RETRIES:-2}
+      CODE_GEN_PORT: 3030
+      # slicks package reads these env vars automatically
+      INFLUX_URL: ${INFLUXDB_URL:-http://influxdb3:8181}
+      INFLUX_TOKEN: ${INFLUXDB_ADMIN_TOKEN}
+      INFLUX_DB: ${INFLUXDB_DATABASE:-telemetry}
+    depends_on:
+      - sandbox
+    volumes:
+      - ./generated:/app/generated
+    networks:
+      - datalink
+
+networks:
+  datalink:
+    external: true

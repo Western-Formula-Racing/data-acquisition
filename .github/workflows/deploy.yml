@@ -1,0 +1,35 @@
+name: Deploy to Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy to ${{ inputs.environment }}
+      run: |
+        echo "Deploying to ${{ inputs.environment }} environment"
+        # Add your deployment commands here
+        # For example:
+        # - SSH to your server
+        # - Pull latest images
+        # - Run docker compose up
+        # - Run health checks

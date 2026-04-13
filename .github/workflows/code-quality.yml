@@ -1,0 +1,48 @@
+name: Code Quality Checks
+
+on:
+  push:
+    branches: [ main, deploy ]
+  pull_request:
+    branches: [ main, deploy ]
+
+jobs:
+  lint-docker:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Hadolint
+      run: |
+        sudo wget -O /usr/local/bin/hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
+        sudo chmod +x /usr/local/bin/hadolint
+
+    - name: Lint Dockerfiles
+      run: |
+        find . -name "Dockerfile" -exec hadolint {} \;
+
+  check-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check for security vulnerabilities in Python dependencies
+      run: |
+        find . -name "requirements.txt" -exec safety check --file {} \; || true
+
+  validate-shell-scripts:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install ShellCheck
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y shellcheck
+
+    - name: Check shell scripts
+      run: |
+        find . -name "*.sh" -exec shellcheck {} \;
