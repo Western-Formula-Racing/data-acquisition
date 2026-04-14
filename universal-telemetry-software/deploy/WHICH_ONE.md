@@ -14,16 +14,11 @@ update, and troubleshooting instructions.
 
 ## docker-compose.yml — General purpose (RPi or MacBook)
 
-Default compose with `network_mode: host` + `privileged`. Works on RPi or MacBook
-for both `car` and `base` roles depending on which `--profile` is active.
+Default compose with `network_mode: host` + `privileged`. Base station only.
 Pulls `:latest` images from GHCR.
 
 ```bash
-# Base station
-docker compose -f deploy/docker-compose.yml --profile base up -d
-
-# Car (only if running Docker on car — not typical)
-docker compose -f deploy/docker-compose.yml --profile car up -d
+docker compose -f deploy/docker-compose.yml up -d
 ```
 
 ---
@@ -35,7 +30,7 @@ TimescaleDB persists to `WFR26test` by default. Use this for development and tes
 with full telemetry recording and local dashboards.
 
 ```bash
-docker compose -f deploy/docker-compose.macbook-base.yml --profile base up -d --build
+docker compose -f deploy/docker-compose.macbook-base.yml up -d --build
 ```
 
 **Access points:**
@@ -51,7 +46,7 @@ Lightweight ephemeral base station for a Pi at the track. No TimescaleDB persist
 data is NOT recorded. Useful for quick diagnostics via Pecan without the full stack.
 
 ```bash
-docker compose -f deploy/docker-compose.rpi-base.yml --profile base up -d
+docker compose -f deploy/docker-compose.rpi-base.yml up -d
 ```
 
 **Access point:** Pecan dashboard at http://\<pi-ip\>:3000
@@ -106,14 +101,10 @@ docker compose -f deploy/docker-compose.can-test.yml up -d --build
 ## docker-compose.jitsi.yml — Jitsi Meet comms addon
 
 Optional self-hosted Jitsi Meet stack for voice/video communication between car and pit.
-Deploy on the base station RPi. The car-side Jitsi client starts only with `--profile car`.
+Deploy on the base station RPi.
 
 ```bash
-# Base station
 docker compose -f deploy/docker-compose.jitsi.yml up -d
-
-# Car RPi (adds the headless Jitsi client)
-docker compose -f deploy/docker-compose.jitsi.yml --profile car up -d
 ```
 
 Jitsi config directories (`jitsi-config/`, `custom-jitsi-config.js`) must exist in

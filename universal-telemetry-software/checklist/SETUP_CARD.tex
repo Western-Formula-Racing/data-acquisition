@@ -334,12 +334,11 @@
 \begin{tabular}{p{126mm}}
   \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software/deploy} \\[1mm]
   \textbf{MacBook (full stack):} \\
-  \cmd{docker compose -f docker-compose.macbook-base.yml --profile base pull} \\
-  \cmd{docker compose -f docker-compose.macbook-base.yml --profile base up -d} \\[1mm]
+  \cmd{docker compose -f docker-compose.macbook-base.yml pull} \\
+  \cmd{docker compose -f docker-compose.macbook-base.yml up -d} \\[1mm]
   \textbf{RPi base (ephemeral):} \\
-  \cmd{docker compose -f docker-compose.rpi-base.yml --profile base pull} \\
-  \cmd{docker compose -f docker-compose.rpi-base.yml --profile base up -d} \\[1mm]
-  \textit{Plain \cmd{up} (no profile) starts nothing -- profile is required.} \\
+  \cmd{docker compose -f docker-compose.rpi-base.yml pull} \\
+  \cmd{docker compose -f docker-compose.rpi-base.yml up -d} \\[1mm]
 \end{tabular}
 
 \vspace{1mm}
@@ -397,12 +396,11 @@ No Redis needed -- the core CAN $\to$ UDP path runs entirely in-process.}
   View logs: \cmd{journalctl -u car-telemetry -f} \\
   Restart: \cmd{sudo systemctl restart car-telemetry} \\
   Stop: \cmd{sudo systemctl stop car-telemetry} \\[1mm]
-  \textit{Note: do NOT run} \cmd{--profile car} \textit{on a Pi using native systemd -- two} \\
-  \textit{processes would both try to own the CAN bus and Redis.} \\
+  \textit{Note: car does not use Docker -- it runs via systemd instead.} \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{5 -- ROLE AUTO-DETECTION}
+\section*{5 -- ROLE}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \gobox{Check Role}
@@ -410,14 +408,9 @@ No Redis needed -- the core CAN $\to$ UDP path runs entirely in-process.}
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{docker logs daq-telemetry $\vert$ grep "Role"} \\[1mm]
-  \textbf{CAR:} \cmd{Starting Car Mode...} \\
   \textbf{BASE:} \cmd{Starting Base Station Mode...} \\[1mm]
-  \textit{Role is hardcoded via} \cmd{ROLE=car} / \cmd{ROLE=base} \textit{in the compose file}. \\
-  \textit{The} \cmd{--profile car} \textit{and} \cmd{--profile base} \textit{flags select the correct service.} \\
+  \textit{Role is hardcoded via} \cmd{ROLE=base} \textit{in the compose file}. \\
 \end{tabular}
-
-\vspace{1mm}
-\warnbox{Wrong profile = wrong REMOTE\_IP + wrong role. Always use \cmd{--profile car} on car Pi and \cmd{--profile base} on base station.}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section*{6 -- DATA FLOW CHECKS}
@@ -514,7 +507,7 @@ and point their own Pecan instance at the car's WSS endpoint.
   \cmd{cd universal-telemetry-software} \\
   \cmd{export RELAY\_UPSTREAM\_WS=ws://10.71.1.20:9080} \\
   \cmd{uv run uts-ws-relay} \\[1mm]
-  \textbf{Or enable in docker-compose.rpi-base.yml (base profile):} \\
+  \textbf{Or enable in docker-compose.rpi-base.yml:} \\
   \cmd{ENABLE\_WS\_RELAY=true} \quad (adds ws\_relay as a child process) \\[1mm]
   \textbf{Port:} \cmd{ws://0.0.0.0:9089} \quad LAN viewers: \cmd{ws://<laptop>:9089} (no token) \\[1mm]
   \textbf{Cloudflare Tunnel (remote viewers):} \\
@@ -526,7 +519,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{8 -- ENABLE TX WEBSOCKET (Car Only)}
+\section*{8 -- ENABLE TX WEBSOCKET}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \warnbox{Disabled by default. Enable only when sending CAN frames from TX page.}
@@ -534,7 +527,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 \noindent
 \begin{tabular}{p{126mm}}
   Edit \cmd{docker-compose.rpi-base.yml}: set \cmd{ENABLE\_TX\_WS=true} \\
-  Apply: \cmd{docker compose -f docker-compose.rpi-base.yml --profile car down \&\& ... --profile car up -d} \\[1mm]
+  Apply: \cmd{docker compose -f docker-compose.rpi-base.yml down \&\& ... up -d} \\[1mm]
   Verify: \cmd{docker logs daq-telemetry $\vert$ grep "TX WebSocket"} \\
   Expected: \cmd{TX WebSocket bridge started on port 9078 ... ENABLE\_TX\_WS=true ...} \\
 \end{tabular}
@@ -766,13 +759,13 @@ and point their own Pecan instance at the car's WSS endpoint.
 \begin{tabularx}{\linewidth}{X}
   \cmd{docker-compose.macbook-base.yml} -- \textbf{MacBook} full stack (TimescaleDB + Grafana) \\
   \cmd{docker-compose.rpi-base.yml} -- \textbf{RPi base} lightweight (ephemeral, no DB) \\
-  \cmd{docker-compose.yml} -- General purpose (RPi or MacBook, \cmd{--profile base} required) \\[1mm]
+  \cmd{docker-compose.yml} -- General purpose (RPi or MacBook) \\[1mm]
   \textbf{MacBook deploy:} \\
-  \cmd{docker compose -f docker-compose.macbook-base.yml --profile base up -d} \\[1mm]
+  \cmd{docker compose -f docker-compose.macbook-base.yml up -d} \\[1mm]
   \textbf{RPi base deploy:} \\
-  \cmd{docker compose -f docker-compose.rpi-base.yml --profile base up -d} \\[1mm]
+  \cmd{docker compose -f docker-compose.rpi-base.yml up -d} \\[1mm]
   \textbf{Restart after config change:} \\
-  \cmd{docker compose -f docker-compose.rpi-base.yml --profile base down \&\& ... up -d} \\
+  \cmd{docker compose -f docker-compose.rpi-base.yml down \&\& ... up -d} \\
 \end{tabularx}
 
 % ─────────────────────────────────────────────────────────────────────────────

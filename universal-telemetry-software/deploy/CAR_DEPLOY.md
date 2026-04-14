@@ -104,10 +104,10 @@ The base station runs via Docker. Use `docker-compose.macbook-base.yml` on a Mac
 cd universal-telemetry-software
 
 # MacBook — full stack
-docker compose -f deploy/docker-compose.macbook-base.yml --profile base up -d
+docker compose -f deploy/docker-compose.macbook-base.yml up -d
 
 # Pi — lightweight
-docker compose -f deploy/docker-compose.rpi-base.yml --profile base up -d
+docker compose -f deploy/docker-compose.rpi-base.yml up -d
 ```
 
 ---

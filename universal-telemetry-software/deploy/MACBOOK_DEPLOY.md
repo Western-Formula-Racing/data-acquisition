@@ -19,7 +19,7 @@ cp deploy/.env.macbook deploy/.env
 Edit `deploy/.env` if needed — defaults should work for local development.
 
 ```bash
-docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook --profile base up -d --build
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook  up -d --build
 ```
 
 Open:
@@ -55,7 +55,7 @@ All configuration is done through `deploy/.env.macbook`. Key variables:
 
 **Restart the stack:**
 ```bash
-docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook --profile base restart
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook  restart
 ```
 
 **View logs:**
@@ -65,20 +65,20 @@ docker compose -f deploy/docker-compose.macbook-base.yml logs -f
 
 **Wipe all data and start fresh:**
 ```bash
-docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook --profile base down -v
-docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook --profile base up -d
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook  down -v
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook  up -d
 ```
 
 **Update to the latest pre-built images:**
 ```bash
-docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook --profile base pull
-docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook --profile base up -d
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook  pull
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook  up -d
 ```
 
 **Rebuild from source:**
 The compose file already builds locally by default (`build: ..`). To force a rebuild:
 ```bash
-docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook --profile base up -d --build
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook  up -d --build
 ```
 
 ## Troubleshooting
@@ -98,7 +98,7 @@ For native Windows Docker Desktop (non-WSL2), the Unix-style volume paths won't 
 ## Teardown
 
 ```bash
-docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook --profile base down -v
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook  down -v
 ```
 
 Adds `-v` to wipe TimescaleDB and Redis data volumes. Omit `-v` to preserve data between runs.

@@ -3,14 +3,13 @@
 # Data is NOT persisted — use macbook-base for permanent TimescaleDB recording.
 #
 # Usage:
-#   docker compose -f deploy/docker-compose.rpi-base.yml --profile base up -d
+#   docker compose -f deploy/docker-compose.rpi-base.yml up -d
 #
 # Access points:
 #   Pecan dashboard: http://<pi-ip>:3000
 
 services:
   telemetry:
-    profiles: ["base"]
     image: ghcr.io/western-formula-racing/daq-radio/universal-telemetry:latest
     container_name: daq-telemetry
     privileged: true
@@ -43,7 +42,6 @@ services:
         condition: service_started
 
   redis:
-    profiles: ["base"]
     image: redis:8.2
     container_name: daq-redis
     restart: unless-stopped
@@ -54,7 +52,6 @@ services:
 
   # TLS terminator — exposes wss://<pi-ip>:9443 → ws://localhost:9080
   caddy:
-    profiles: ["base"]
     image: caddy:alpine
     container_name: daq-caddy
     network_mode: host
@@ -69,7 +66,6 @@ services:
         max-file: "2"
 
   pecan:
-    profiles: ["base"]
     image: ghcr.io/western-formula-racing/daq-radio/pecan:latest
     container_name: daq-pecan
     restart: unless-stopped

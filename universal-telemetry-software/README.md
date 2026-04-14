@@ -175,10 +175,10 @@ Both pull pre-built images from GHCR:
 
 ```bash
 # MacBook full stack
-docker compose -f deploy/docker-compose.macbook-base.yml --profile base up -d
+docker compose -f deploy/docker-compose.macbook-base.yml up -d
 
 # RPi base station (ephemeral, no DB persistence)
-docker compose -f deploy/docker-compose.rpi-base.yml --profile base up -d
+docker compose -f deploy/docker-compose.rpi-base.yml up -d
 ```
 
 Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
