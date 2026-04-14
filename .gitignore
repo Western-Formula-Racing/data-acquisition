@@ -283,3 +283,5 @@ generated-days/
 server/slicks/
 server/docs/superpowers/
 wfr-data
+/.superpowers
+.worktrees/
