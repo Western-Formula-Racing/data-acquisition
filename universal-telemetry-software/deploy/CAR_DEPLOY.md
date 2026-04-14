@@ -97,13 +97,17 @@ in-process queue — no Redis needed.
 
 ## Base station
 
-The base station runs via Docker. See `MACBOOK_DEPLOY.md` for laptops or use the production
-compose file on the base Pi:
+The base station runs via Docker. Use `docker-compose.macbook-base.yml` on a MacBook
+(full stack with TimescaleDB) or `docker-compose.rpi-base.yml` on a Pi (ephemeral, no DB):
 
 ```bash
 cd universal-telemetry-software
-docker compose -f deploy/docker-compose.prod.yml --profile base pull
-docker compose -f deploy/docker-compose.prod.yml --profile base up -d
+
+# MacBook — full stack
+docker compose -f deploy/docker-compose.macbook-base.yml --profile base up -d
+
+# Pi — lightweight
+docker compose -f deploy/docker-compose.rpi-base.yml --profile base up -d
 ```
 
 ---

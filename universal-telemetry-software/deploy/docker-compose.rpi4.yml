@@ -4,4 +4,4 @@
 # The RPi 4B uses 4KB memory pages, so it can run the native ARM64 binary.
 #
 # Usage:
-#   docker compose -f docker-compose.prod.yml -f docker-compose.rpi4.yml --profile base up -d
+#   docker compose -f docker-compose.rpi-base.yml -f docker-compose.rpi4.yml --profile base up -d

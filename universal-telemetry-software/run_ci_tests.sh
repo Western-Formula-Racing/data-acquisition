@@ -64,13 +64,12 @@ fi
 echo -e "\n${YELLOW}Validating compose configs...${NC}"
 docker compose -f deploy/docker-compose.yml config --quiet
 docker compose -f deploy/docker-compose.test.yml config --quiet
-docker compose -f deploy/docker-compose.prod.yml config --quiet
 docker compose -f deploy/docker-compose.can-test.yml config --quiet
 echo -e "${GREEN}✓ All compose configs valid${NC}"
 
 # ── Start test environment ───────────────────────────────────────────────────
 if [ "$NO_BUILD" = false ]; then
-    echo -e "\n${YELLOW}Starting test stack (including InfluxDB3)...${NC}"
+    echo -e "\n${YELLOW}Starting test stack (TimescaleDB)...${NC}"
     docker compose -f deploy/docker-compose.test.yml up -d --build || {
         echo -e "${RED}✗ Failed to start containers${NC}"
         exit 1

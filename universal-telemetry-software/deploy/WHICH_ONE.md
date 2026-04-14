@@ -1,58 +1,72 @@
 # Deploy — Compose File Reference
 
 All Docker Compose files live here. Run every `docker compose` command from the repository root
-(i.e. `daq-radio/universal-telemetry-software/`) so that relative volume paths resolve correctly.
+(i.e. `universal-telemetry-software/`) so that relative volume paths resolve correctly.
 
 ---
 
-## Car RPi — native systemd (no Docker)
+## Car — systemd service (no Docker)
 
-The car runs natively, not via Docker. See **[CAR_DEPLOY.md](CAR_DEPLOY.md)** for install,
+The car runs a Python script via systemd, not Docker. See **[CAR_DEPLOY.md](CAR_DEPLOY.md)** for install,
 update, and troubleshooting instructions.
 
 ---
 
-## docker-compose.yml — Local dev / build
+## docker-compose.yml — General purpose (RPi or MacBook)
 
-Builds all images from source. Use on either RPi during active development.
+Default compose with `network_mode: host` + `privileged`. Works on RPi or MacBook
+for both `car` and `base` roles depending on which `--profile` is active.
+Pulls `:latest` images from GHCR.
 
 ```bash
-docker compose -f deploy/docker-compose.yml up -d
-```
+# Base station
+docker compose -f deploy/docker-compose.yml --profile base up -d
 
-Builds `telemetry` from `../` (the repo root of `universal-telemetry-software`) and `pecan` from
-`../../pecan`. Volume mounts for `go2rtc.yaml` resolve to files
-one level up in `universal-telemetry-software/`.
+# Car (only if running Docker on car — not typical)
+docker compose -f deploy/docker-compose.yml --profile car up -d
+```
 
 ---
 
-## docker-compose.prod.yml — Production
+## docker-compose.macbook-base.yml — MacBook full local stack
 
-Pulls pre-built `:latest` images from GHCR. This is the stack that runs at a race event.
+Full local development stack on MacBook: telemetry + redis + timescaledb + pecan + grafana.
+TimescaleDB persists to `WFR26test` by default. Use this for development and testing
+with full telemetry recording and local dashboards.
 
 ```bash
-docker compose -f deploy/docker-compose.prod.yml pull
-docker compose -f deploy/docker-compose.prod.yml up -d
+docker compose -f deploy/docker-compose.macbook-base.yml --profile base up -d --build
 ```
 
-No local source code is needed — all images are fetched from
-`ghcr.io/western-formula-racing/daq-radio/`. Set `REMOTE_IP` to the IP of the other RPi before
-starting.
+**Access points:**
+- Pecan dashboard: http://localhost:3000
+- Grafana: http://localhost:8087
+- TimescaleDB: `postgresql://wfr:wfr_password@localhost:5432/wfr`
 
 ---
 
-## docker-compose.staging.yml — Staging
+## docker-compose.rpi-base.yml — Raspberry Pi lightweight base
 
-Pulls `:test-latest` images built from non-main branches. Use this to validate a branch build on
-real hardware before merging to main.
+Lightweight ephemeral base station for a Pi at the track. No TimescaleDB persistence —
+data is NOT recorded. Useful for quick diagnostics via Pecan without the full stack.
+
+```bash
+docker compose -f deploy/docker-compose.rpi-base.yml --profile base up -d
+```
+
+**Access point:** Pecan dashboard at http://\<pi-ip\>:3000
+
+---
+
+## docker-compose.staging.yml — Staging (real hardware)
+
+Pulls `:test-latest` images built from non-main branches. Use to validate a branch build
+on real hardware before merging to main. Writes to the server stack's TimescaleDB.
 
 ```bash
 docker compose -f deploy/docker-compose.staging.yml pull
 docker compose -f deploy/docker-compose.staging.yml up -d
 ```
-
-Mirrors the production stack but uses `test-latest` tags so you can smoke-test CI-built images
-before they are promoted to `latest`.
 
 ---
 
@@ -104,10 +118,3 @@ docker compose -f deploy/docker-compose.jitsi.yml --profile car up -d
 
 Jitsi config directories (`jitsi-config/`, `custom-jitsi-config.js`) must exist in
 `universal-telemetry-software/` before starting.
-
----
-
-## docker-compose.rpi4.yml — Raspberry Pi 4/5 ARM64 override
-
-For RPi 4/5, TimescaleDB runs as native ARM64 — no special override needed.
-This override file is kept for reference only.
