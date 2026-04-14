@@ -21,7 +21,7 @@ docker compose -f deploy/docker-compose.yml up -d
 ```
 
 Builds `telemetry` from `../` (the repo root of `universal-telemetry-software`) and `pecan` from
-`../../pecan`. Volume mounts for `go2rtc.yaml` and `influxdb3-admin-token.json` resolve to files
+`../../pecan`. Volume mounts for `go2rtc.yaml` resolve to files
 one level up in `universal-telemetry-software/`.
 
 ---
@@ -58,14 +58,14 @@ before they are promoted to `latest`.
 
 ## docker-compose.test.yml — Integration test stack
 
-Runs car + base containers plus a dedicated test InfluxDB3 instance on a shared bridge network.
+Runs car + base containers plus a dedicated test TimescaleDB instance on a shared bridge network.
 Both the car and base images are built from source. Used by CI and by `run_ci_tests.sh`.
 
 ```bash
 docker compose -f deploy/docker-compose.test.yml up -d --build
 ```
 
-The car runs in `SIMULATE=true` mode; the base writes to `daq-test-influxdb3`. Bring it down with:
+The car runs in `SIMULATE=true` mode; the base writes to `daq-test-timescaledb`. Bring it down with:
 
 ```bash
 docker compose -f deploy/docker-compose.test.yml down -v
@@ -107,24 +107,7 @@ Jitsi config directories (`jitsi-config/`, `custom-jitsi-config.js`) must exist 
 
 ---
 
-## docker-compose.rpi5.yml — Raspberry Pi 5 override
+## docker-compose.rpi4.yml — Raspberry Pi 4/5 ARM64 override
 
-Apply on top of any other compose file when running on an RPi5 to work around the jemalloc 16KB
-page incompatibility. This override forces `influxdb3` (and `test-influxdb3`) to run under QEMU
-amd64 emulation instead of native ARM64.
-
-**One-time setup on the Pi 5:**
-
-```bash
-sudo apt-get install -y qemu-user-static binfmt-support
-```
-
-**Usage — stack on RPi5:**
-
-```bash
-# Production
-docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.rpi5.yml up -d
-
-# Integration tests on RPi5
-docker compose -f deploy/docker-compose.test.yml -f deploy/docker-compose.rpi5.yml up -d --build
-```
+For RPi 4/5, TimescaleDB runs as native ARM64 — no special override needed.
+This override file is kept for reference only.

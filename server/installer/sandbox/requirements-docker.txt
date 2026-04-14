@@ -1,0 +1,57 @@
+# Docker container requirements for sandbox execution environment
+# These are the dependencies needed inside the Docker container
+
+# WFR's own telemetry pipeline (wraps influxdb3-python, pandas, matplotlib)
+slicks>=0.2.0
+
+# Data & visualization (extras beyond what slicks brings in)
+pyarrow
+plotly
+python-dateutil
+kaleido
+
+# Load environment variables from .env files
+python-dotenv
+
+# Machine learning libraries
+scikit-learn
+numpy
+scipy
+
+
+# Core
+pandas
+numpy
+scipy
+python-dateutil
+python-dotenv
+
+# Visualization
+matplotlib
+plotly
+kaleido
+seaborn
+
+# Modeling
+scikit-learn
+statsmodels
+patsy
+
+# Data Formats
+pyarrow
+openpyxl
+requests
+
+# Spatial
+geopandas
+shapely
+pyproj
+
+# Performance
+duckdb
+polars
+
+# Utilities
+tqdm
+rich
+loguru

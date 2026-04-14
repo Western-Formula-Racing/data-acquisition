@@ -44,12 +44,10 @@ const FlightDataRecorder: React.FC = () => {
   });
   const [customWsUrl, setCustomWsUrl] = useState(localStorage.getItem('custom-ws-url') || '');
 
-  // InfluxDB settings
-  const [influxSettings, setInfluxSettings] = useState({
-    url: localStorage.getItem('influx-url') || 'https://influxdb3.westernformularacing.org',
-    token: localStorage.getItem('influx-token') || '',
-    org: localStorage.getItem('influx-org') || 'WFR',
-    bucket: localStorage.getItem('influx-bucket') || 'WFR26_FDR',
+  // Sync settings (TimescaleDB via REST API)
+  const [syncSettings, setSyncSettings] = useState({
+    apiEndpoint: localStorage.getItem('sync-api-endpoint') || 'https://data.westernformularacing.org',
+    season: localStorage.getItem('sync-season') || 'wfr26',
   });
 
   // DBC state
@@ -128,11 +126,8 @@ const FlightDataRecorder: React.FC = () => {
     if (isSyncing) return;
     try {
       setIsSyncing(true);
-      await syncService.syncToInflux(
-        influxSettings.url,
-        influxSettings.token,
-        influxSettings.org,
-        influxSettings.bucket,
+      await syncService.syncToServer(
+        { apiEndpoint: syncSettings.apiEndpoint, season: syncSettings.season },
         (processed, total) => setSyncProgress({ processed, total })
       );
       alert('Sync completed successfully!');
@@ -154,19 +149,15 @@ const FlightDataRecorder: React.FC = () => {
     }
   };
 
-  const updateSetting = (key: string, value: string) => {
-    setInfluxSettings(prev => ({ ...prev, [key]: value }));
-    localStorage.setItem(`influx-${key}`, value);
+  const updateSyncSetting = (key: string, value: string) => {
+    setSyncSettings(prev => ({ ...prev, [key]: value }));
+    localStorage.setItem(`sync-${key}`, value);
   };
 
   const handleTestConnection = async () => {
     setIsTesting(true);
     setConnTest(null);
-    const result = await syncService.testConnection(
-      influxSettings.url,
-      influxSettings.token,
-      influxSettings.bucket
-    );
+    const result = await syncService.testConnection(syncSettings.apiEndpoint);
     setConnTest(result);
     setIsTesting(false);
   };
@@ -383,58 +374,36 @@ const FlightDataRecorder: React.FC = () => {
         <div className="lg:col-span-2 bg-slate-800/50 border border-slate-700 p-6 rounded-2xl shadow-xl flex flex-col">
           <h2 className="text-xl font-black flex items-center gap-2 uppercase tracking-tighter mb-6">
             <CloudUpload className="text-orange-400" />
-            InfluxDB Sync
+            TimescaleDB Sync
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Endpoint URL</label>
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">API Endpoint</label>
                 <input
                   type="text"
-                  value={influxSettings.url}
-                  onChange={(e) => updateSetting('url', e.target.value)}
+                  value={syncSettings.apiEndpoint}
+                  onChange={(e) => updateSyncSetting('apiEndpoint', e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-orange-500 outline-none"
-                  placeholder="http://influx.wfr:8086"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Auth Token</label>
-                <input
-                  type="password"
-                  value={influxSettings.token}
-                  onChange={(e) => updateSetting('token', e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                  placeholder="https://data.westernformularacing.org"
                 />
               </div>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Organization</label>
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Season</label>
                 <input
                   type="text"
-                  value={influxSettings.org}
-                  onChange={(e) => updateSetting('org', e.target.value)}
+                  value={syncSettings.season}
+                  onChange={(e) => updateSyncSetting('season', e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                  placeholder="wfr26"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Bucket</label>
-                <input
-                  type="text"
-                  value={influxSettings.bucket}
-                  onChange={(e) => updateSetting('bucket', e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-orange-500 outline-none"
-                />
-              </div>
-              <div className="space-y-2">
-                <p className="text-[10px] text-amber-400/80 leading-relaxed border border-amber-500/20 rounded-xl px-3 py-2 bg-amber-500/5">
-                  FDR data always goes to <span className="font-mono font-black">WFR26_FDR</span>, not <span className="font-mono">WFR26</span>. Keep the bucket above as-is unless intentionally separating a season.
-                </p>
-                <p className="text-[10px] text-slate-500 leading-relaxed border border-slate-700/60 rounded-xl px-3 py-2 bg-slate-900/60">
-                  Ensure your Auth Token is correct and the endpoint is accessible from this network.
-                </p>
-              </div>
+              <p className="text-[10px] text-slate-500 leading-relaxed border border-slate-700/60 rounded-xl px-3 py-2 bg-slate-900/60">
+                Data will be written to the <code className="text-orange-400">{syncSettings.season}_base</code> table.
+              </p>
             </div>
           </div>
 
@@ -452,7 +421,7 @@ const FlightDataRecorder: React.FC = () => {
             {isSyncing && (
               <div className="mb-4">
                 <div className="flex justify-between text-[10px] font-black text-orange-400 uppercase tracking-widest mb-2">
-                  <span>Uploading to Cloud...</span>
+                  <span>Uploading to Server...</span>
                   <span>{Math.round((syncProgress.processed / syncProgress.total) * 100) || 0}%</span>
                 </div>
                 <div className="w-full h-3 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-700">
@@ -479,7 +448,7 @@ const FlightDataRecorder: React.FC = () => {
                 className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black py-5 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl shadow-orange-900/20 uppercase tracking-widest text-lg"
               >
                 {isSyncing ? <Activity className="animate-spin" size={24} /> : <CloudUpload size={24} />}
-                {isSyncing ? 'Synchronizing...' : 'Upload to InfluxDB'}
+                {isSyncing ? 'Synchronizing...' : 'Upload to Server'}
               </button>
             </div>
           </div>

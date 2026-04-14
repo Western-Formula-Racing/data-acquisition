@@ -1,0 +1,133 @@
+name: Build and Test DAQ System
+
+on:
+  push:
+    branches: [ deploy ]
+  pull_request:
+    branches: [ main, deploy ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  validate-compose:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Prepare environment file for CI
+      run: |
+        if [ ! -f server/installer/.env ]; then
+          cp server/installer/.env.example server/installer/.env
+          echo "Created .env file from .env.example"
+        fi
+
+    - name: Validate docker-compose files
+      run: |
+        cd server/installer
+        docker compose config
+        docker compose -f docker-compose.yml config
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: validate-compose
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        service: [slackbot, lap-detector, file-uploader]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Convert repository name to lowercase
+      run: |
+        echo "IMAGE_NAME_LOWER=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      run: |
+        echo "tags<<EOF" >> $GITHUB_OUTPUT
+        echo "${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}/${{ matrix.service }}:latest" >> $GITHUB_OUTPUT
+        echo "${{ env.REGISTRY }}/${IMAGE_NAME_LOWER}/${{ matrix.service }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./server/installer/${{ matrix.service }}
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: |
+          org.opencontainers.image.title=${{ github.event.repository.name }}
+          org.opencontainers.image.description=WFR DAQ System - ${{ matrix.service }}
+          org.opencontainers.image.url=${{ github.event.repository.html_url }}
+          org.opencontainers.image.source=${{ github.event.repository.html_url }}
+          org.opencontainers.image.version=${{ github.sha }}
+          org.opencontainers.image.created=${{ steps.meta.outputs.created }}
+          org.opencontainers.image.revision=${{ github.sha }}
+
+  test-compose:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Create .env file for testing
+      run: |
+        cd server/installer
+        cp .env.example .env
+
+    - name: Pull pre-built images
+      run: |
+        docker pull timescale/timescaledb:latest-pg16
+        docker pull grafana/grafana
+        docker pull telegraf:1.30
+        docker pull nginx:alpine
+
+    - name: Build test images
+      run: |
+        cd server/installer
+        docker compose build --parallel
+
+    - name: Validate compose configuration
+      run: |
+        cd server/installer
+        docker compose config --quiet
+
+    - name: Test container startup (quick smoke test)
+      run: |
+        cd server/installer
+        # Start core monitoring stack to ensure compose wiring is valid
+        timeout 60s docker compose up timescaledb file-uploader grafana frontend || true
+        # Check if containers started (even if they exit quickly)
+        docker compose ps
+
+  cleanup:
+    runs-on: ubuntu-latest
+    needs: [validate-compose, build-and-push, test-compose]
+    if: always()
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Clean up Docker resources
+      run: |
+        docker system prune -f
+        docker image prune -f

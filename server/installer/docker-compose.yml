@@ -1,0 +1,335 @@
+networks:
+  datalink:
+    driver: bridge
+
+volumes:
+  grafana-storage:
+  timescaledb-data:
+
+services:
+  # ── TimescaleDB (primary time-series store) ─────────────────────────────────
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: timescaledb
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-wfr}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-wfr_password}"
+      POSTGRES_DB: "${POSTGRES_DB:-wfr}"
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+      - ./timescaledb/init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    networks:
+      - datalink
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wfr} -d ${POSTGRES_DB:-wfr}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "8087:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: "admin"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_EMAIL: daq@westernformularacing.com
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_BASIC_ENABLED: "true"
+      # Cloudflare Zero Trust SSO via Auth Proxy
+      # Cloudflare Access injects Cf-Access-Authenticated-User-Email on every authenticated request
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: "Cf-Access-Authenticated-User-Email"
+      GF_AUTH_PROXY_HEADER_PROPERTY: "email"
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+      GF_AUTH_PROXY_SYNC_TTL: "60"
+      GF_AUTH_PROXY_ENABLE_LOGIN_TOKEN: "false"
+      # Auto-assign Editor role when a new user is provisioned via SSO
+      GF_USERS_AUTO_ASSIGN_ORG: "true"
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: "Editor"
+      GF_SERVER_ROOT_URL: "https://grafana.westernformularacing.org"
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 100ms
+      # Passed through so datasource provisioning can expand $POSTGRES_USER / $POSTGRES_PASSWORD
+      POSTGRES_USER: "${POSTGRES_USER:-wfr}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-wfr_password}"
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - datalink
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  slackbot:
+    build: ./slackbot
+    container_name: slackbot
+    restart: unless-stopped
+    # set restart to no if you want to manually control the slackbot
+    environment:
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      SLACK_DEFAULT_CHANNEL: ${SLACK_DEFAULT_CHANNEL:-C0123456789}
+      ENABLE_SLACK: ${ENABLE_SLACK:-false}
+      CODE_GENERATOR_URL: "http://code-generator:3030"
+    volumes:
+      - ./slackbot:/app
+    working_dir: /app
+    command: >
+      sh -c '
+        if [ "$ENABLE_SLACK" = "true" ]; then
+          echo "Slackbot enabled, starting...";
+          python -u slack_bot.py;
+        else
+          echo "Slackbot disabled (ENABLE_SLACK=$ENABLE_SLACK). Exiting.";
+          sleep 5;
+          exit 0;
+        fi
+      '
+    depends_on:
+      - code-generator
+    networks:
+      - datalink
+      - default
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  lap-detector:
+    build: ./lap-detector
+    container_name: lap-detector
+    restart: "no"
+    profiles:
+      - disabled
+    ports:
+      - "8050:8050"
+    working_dir: /app
+    volumes:
+      - ./lap-detector:/app
+    command: python lap-detector.py
+    networks:
+      - datalink
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  file-uploader:
+    build: ./file-uploader
+    container_name: file-uploader
+    ports:
+      - "8084:8084"
+    volumes:
+      - ./file-uploader:/app
+      # Host DBC file → fixed container location
+      - ./${DBC_FILE_PATH:-example.dbc}:/installer/example.dbc:ro
+    restart: unless-stopped
+    networks:
+      - datalink
+    environment:
+      - POSTGRES_DSN=${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}
+      - FILE_UPLOADER_WEBHOOK_URL=${FILE_UPLOADER_WEBHOOK_URL:-}
+      # Fixed container path only
+      - DBC_FILE_PATH=/installer/example.dbc
+      # Optional: PAT with repo read to list/download .dbc from GitHub (never sent to browser)
+      - GITHUB_DBC_TOKEN=${GITHUB_DBC_TOKEN:-}
+      - GITHUB_DBC_REPO=${GITHUB_DBC_REPO:-Western-Formula-Racing/DBC}
+      - GITHUB_DBC_BRANCH=${GITHUB_DBC_BRANCH:-main}
+      # Slack live progress updates (edits message in-place every 10%)
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
+      - SLACK_DEFAULT_CHANNEL=${SLACK_DEFAULT_CHANNEL:-}
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1536M
+
+  data-downloader-api:
+    build:
+      context: ./data-downloader
+      dockerfile: backend/Dockerfile
+    container_name: data-downloader-api
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
+      SEASONS: "${SEASONS:-WFR26:2026}"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data-downloader/data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    networks:
+      - datalink
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+
+  data-downloader-scanner:
+    build:
+      context: ./data-downloader
+      dockerfile: backend/Dockerfile
+    container_name: data-downloader-scanner
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
+      SEASONS: "${SEASONS:-WFR26:2026}"
+      SCAN_DAILY_TIME: "${SCAN_DAILY_TIME}"
+    command: [ "python", "-m", "backend.periodic_worker" ]
+    volumes:
+      - ./data-downloader/data:/app/data
+    restart: unless-stopped
+    networks:
+      - datalink
+    depends_on:
+      data-downloader-api:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  health-monitor:
+    build: ./health-monitor
+    container_name: health-monitor
+    restart: unless-stopped
+    environment:
+      HEALTH_MONITOR_INTERVAL_SECONDS: "${HEALTH_MONITOR_INTERVAL_SECONDS:-60}"
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
+      HEALTH_MONITOR_TIMESCALEDB_CONTAINER: "${HEALTH_MONITOR_TIMESCALEDB_CONTAINER:-timescaledb}"
+      HEALTH_MONITOR_SCANNER_CONTAINER: "${HEALTH_MONITOR_SCANNER_CONTAINER:-data-downloader-scanner}"
+      HEALTH_MONITOR_SCANNER_API_URL: "${HEALTH_MONITOR_SCANNER_API_URL:-http://data-downloader-api:8000}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - datalink
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      data-downloader-api:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  data-downloader-frontend:
+    build:
+      context: ./data-downloader
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+    container_name: data-downloader-frontend
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    networks:
+      - datalink
+    depends_on:
+      data-downloader-api:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # Custom sandbox execution container
+  sandbox:
+    build:
+      context: ./sandbox
+      dockerfile: Dockerfile.sandbox
+    container_name: sandbox
+    restart: unless-stopped
+    environment:
+      SANDBOX_PORT: 8080
+      SANDBOX_TIMEOUT: 120
+      SANDBOX_MAX_FILE_MB: 20
+      SANDBOX_MAX_FILES: 20
+      # TimescaleDB connection for user scripts (follow-up: add psycopg2 boilerplate)
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    networks:
+      - datalink
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+
+  # Grafana bridge - Pecan → Grafana dashboard creation API
+  grafana-bridge:
+    build: ./grafana-bridge
+    container_name: grafana-bridge
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      GRAFANA_INTERNAL_URL: "http://grafana:3000"
+      GRAFANA_EXTERNAL_URL: "https://grafana.westernformularacing.org"
+      GRAFANA_API_TOKEN: "${GRAFANA_API_TOKEN}"
+      GRAFANA_FOLDER_UID: "${GRAFANA_FOLDER_UID:-}"
+      CORS_ORIGIN: "http://localhost:3000,https://pecan.westernformularacing.org,https://pecan-dev.westernformularacing.org"
+      # Season table name for dashboard SQL generation
+      DEFAULT_SEASON_TABLE: "${DEFAULT_SEASON_TABLE:-wfr26}"
+    depends_on:
+      - grafana
+    networks:
+      - datalink
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Code generator - Cohere integration for AI-powered code generation
+  code-generator:
+    build:
+      context: ./sandbox
+      dockerfile: Dockerfile
+    container_name: code-generator
+    restart: unless-stopped
+    environment:
+      COHERE_API_KEY: ${COHERE_API_KEY}
+      COHERE_MODEL: ${COHERE_MODEL:-command-r-plus}
+      SANDBOX_URL: "http://sandbox:8080"
+      MAX_RETRIES: ${MAX_RETRIES:-2}
+      CODE_GEN_PORT: 3030
+      # TimescaleDB connection for code generation context
+      POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
+    depends_on:
+      - sandbox
+      - timescaledb
+    volumes:
+      - ./sandbox/generated:/app/generated
+      - ./sandbox/prompt-guide.txt:/app/prompt-guide.txt
+    networks:
+      - datalink
+    deploy:
+      resources:
+        limits:
+          memory: 512M

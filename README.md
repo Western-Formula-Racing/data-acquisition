@@ -25,19 +25,29 @@ flowchart LR
     HAT["Raspberry Pi CAN HAT"]
     EDGE["Car Raspberry Pi
     (UTS car mode)"]
-    BASE["Base Station Raspberry Pi
+    BASE["Base Station
     (UTS base mode)"]
     REDIS["Redis"]
     DASH["PECAN Dashboard
     (Web UI)"]
-    INFLUX["InfluxDB 3"]
+    TIMESERIES["TimescaleDB
+    (server stack)"]
+    GRAFANA["Grafana
+    (server stack)"]
+    FLIGHTREC["Flight Data Recorder
+    (ad hoc Data Upload)"]
+    DOWNLOADER["Data Downloader
+    (server stack)"]
 
     ECU -->|CAN| HAT
     HAT -->|SPI / CAN| EDGE
     EDGE -->|RF| BASE
     BASE --> REDIS
     REDIS -->|WebSocket| DASH
-    REDIS -->|Stream / Write| INFLUX
+    BASE -->|direct write| TIMESERIES
+    TIMESERIES --> GRAFANA
+    FLIGHTREC -->|batch upload| DOWNLOADER
+    DOWNLOADER --> TIMESERIES
 ```
 
 **Data Flow:**
@@ -45,13 +55,11 @@ flowchart LR
 1. Vehicle CAN bus messages are read by the car-side Universal Telemetry Software on the Raspberry Pi
 2. The car-side UTS packs messages in UDP/TCP for radio or Ethernet transmission
 3. The base-side UTS receives telemetry and publishes it to Redis
-4. Redis-to-WebSocket/InfluxDB bridge broadcasts messages to connected clients and InfluxDB 3
-5. PECAN dashboard visualizes data in real-time through customizable views
+4. Redis-to-WebSocket bridge broadcasts messages to connected clients (PECAN dashboard)
+5. Base-side TimescaleDB bridge writes decoded CAN frames directly to the server stack's TimescaleDB over the network
+6. Grafana visualizes historical data from TimescaleDB; Flight Recorder uploads post-run data via the data downloader API
 
 For the detailed WebSocket message contract between PECAN and UTS, see [`WEBSOCKET_PROTOCOL.md`](./WEBSOCKET_PROTOCOL.md).
-
-InfluxDB 3 is implemented in a separate repository:
-https://github.com/Western-Formula-Racing/daq-server-components
 
 
 
@@ -84,9 +92,9 @@ Complete DAQ telemetry stack that runs on both the car and base station Raspberr
 - Car/base auto-detection (single codebase deployable to both Pis)
 - UDP and TCP telemetry transport with packet recovery
 - Redis publisher, WebSocket bridge, and status HTTP server
-- Optional InfluxDB 3 logging, audio/video streaming, and simulation mode
+- Optional TimescaleDB logging (direct write to server TimescaleDB), audio/video streaming, and simulation mode
 
-**Tech Stack:** Python, Redis, WebSockets, Docker, InfluxDB 3
+**Tech Stack:** Python, Redis, WebSockets, Docker, TimescaleDB
 
 [📖 Detailed Documentation](./universal-telemetry-software/README.md)
 
@@ -103,6 +111,22 @@ Development and testing tools for simulating vehicle telemetry without physical 
 - Sample CAN data files (CSV format)
 - Example DBC (CAN database) file for message definitions
 - Docker Compose setups for isolated testing environments, including a dev/demo server configuration in `car-simulate/persistent-broadcast`
+
+### CAN Adapter Bridges (`/kvaser-bridge`, `/pecan-bridge`)
+
+GUI adapters for Kvaser and PECAN CAN hardware interfaces. Used during bench testing when physical vehicle hardware is unavailable.
+
+### Flight Recorder (`/flight-recorder`)
+
+Post-run telemetry review and ad hoc WiFi upload PWA. Runs on an ESP32 or RPi on the car — captures CAN frames to IndexedDB during a run, then uploads directly to the server's TimescaleDB over WiFi (no SD card pull required). Deployed on Cloudflare Pages.
+
+**Features:**
+- Records CAN frames to IndexedDB during a run
+- WiFi upload from car hardware to server TimescaleDB (ESP32 or RPi WiFi)
+- Post-run review with the same visualization as Pecan
+- Uploads via `POST /api/can-frames/batch` on the data-downloader API
+
+**Live:** https://flight-recorder.pages.dev
 
 ### WebSocket Backend (`/ws-backend`)
 
@@ -121,19 +145,60 @@ Convenience deployment for the PECAN WebSocket broadcast server. The dashboard i
 
 - **Node.js** (v18+) and npm
 - **Python** 3.11+
-- **Redis** server (bundled via Docker Compose in `universal-telemetry-software` for most deployments)
 - **Docker** and Docker Compose (for containerized deployment)
+- A cloned copy of this repository
+
+### Base Station (MacBook / Laptop)
+
+The MacBook base station runs the UTS telemetry stack + Pecan dashboard locally, writing directly to the server's TimescaleDB over the network:
+
+```bash
+cd universal-telemetry-software/
+cp deploy/.env.macbook deploy/.env
+# Edit deploy/.env — set REMOTE_IP (car RPi) and TIMESCALE_DSN (server TimescaleDB)
+docker compose -f deploy/docker-compose.macbook.yml --profile base up -d
+```
+
+Open `http://localhost:3000` for Pecan, `http://localhost:8080` for the status page.
+
+See [`deploy/MACBOOK_DEPLOY.md`](./universal-telemetry-software/deploy/MACBOOK_DEPLOY.md) for full setup details.
+
+### RPi Deployment (Car + Base Station)
+
+Deploy to the car and base station Raspberry Pis:
+
+```bash
+cd universal-telemetry-software/
+cp deploy/.env.macbook deploy/.env
+# Edit deploy/.env with your IPs and credentials
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+UTS auto-detects its role (car vs base) based on CAN bus availability. See the [UTS README](./universal-telemetry-software/README.md) for hardware setup.
+
+### Server Stack (TimescaleDB + Grafana + APIs)
+
+Deploy the server-side stack on a VPS:
+
+```bash
+cd server/installer/
+cp .env.example .env
+# Edit .env — set passwords and domain
+docker compose up -d
+```
+
+Services: TimescaleDB (5432), Grafana (8087), data-downloader API, file-uploader, health-monitor.
 
 ### Development Setup
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/Western-Formula-Racing/daq-radio.git
-   cd daq-radio
+   git clone https://github.com/Western-Formula-Racing/data-acquisition.git
+   cd data-acquisition
    ```
    Documentation lives in component READMEs such as `pecan/README.md` and `universal-telemetry-software/README.md`.
 
-### Manual Setup (Individual Components)
+### Individual Components
 
 #### PECAN Dashboard
 ```bash
@@ -142,11 +207,11 @@ npm install
 npm run dev
 ```
 
-#### Universal Telemetry Software
+#### Universal Telemetry Software (local dev)
 ```bash
-cd universal-telemetry-software
-docker compose up -d
-# See universal-telemetry-software/README.md for full hardware and production setup details.
+cd universal-telemetry-software/
+cp deploy/.env.macbook deploy/.env
+docker compose -f deploy/docker-compose.yml up -d
 ```
 
 #### Car Simulator
@@ -187,19 +252,33 @@ docker compose up -d --build
 
 ### Project Structure
 ```
-daq-radio/
-├── pecan/              # React dashboard application
-│   ├── src/
-│   │   ├── components/ # React components
-│   │   ├── pages/      # Page components
-│   │   ├── services/   # WebSocket and data services
-│   │   └── config/     # Category configuration
-│   └── public/         # Static assets
-├── universal-telemetry-software/  # Car/base telemetry stack (UTS)
-├── flight-recorder/    # React app for post-run data review and upload
-├── car-simulate/       # Testing and simulation tools
-├── ws-backend/         # WebSocket broadcast server deployment
-├── dev-utils/          # Developer utilities and scripts
+data-acquisition/
+├── universal-telemetry-software/  # Car/base telemetry stack (UTS) on RPi
+│   ├── src/           # Python telemetry source
+│   ├── deploy/        # Docker Compose files (prod, staging, macbook, test)
+│   └── status/        # Status page HTML
+├── pecan/             # React live dashboard (GitHub Pages)
+│   └── src/
+│       ├── components/ # React components
+│       ├── pages/      # Page components
+│       └── services/   # WebSocket and data services
+├── flight-recorder/   # React data recording PWA
+├── car-simulate/      # CAN data simulators (CSV playback, WebSocket broadcast)
+├── ws-backend/        # WebSocket broadcast server for PECAN
+├── server/            # VPS server stack (TimescaleDB, Grafana, data APIs)
+│   └── installer/      # Docker Compose stack for server
+│       ├── timescaledb/   # DB init scripts and schema
+│       ├── grafana/        # Dashboards and provisioning
+│       ├── grafana-bridge/ # Pecan → Grafana API bridge
+│       ├── data-downloader/ # FastAPI query builder
+│       ├── file-uploader/  # CSV upload web UI
+│       ├── health-monitor/ # Container health monitoring
+│       ├── sandbox/        # Python execution sandbox
+│       └── slackbot/       # Slack bot
+├── secret-dbc/        # Git submodule: private DBC files (restricted)
+├── kvaser-bridge/     # Kvaser CAN adapter GUI
+├── pecan-bridge/      # PECAN CAN adapter
+└── grafana-worker/    # Cloudflare Workers proxy for Grafana
 ```
 
 ### Technology Stack
@@ -209,6 +288,7 @@ daq-radio/
 - **Build Tools**: Vite
 - **Backend**: Python, asyncio, WebSockets
 - **Message Broker**: Redis
+- **Time-Series DB**: TimescaleDB (PostgreSQL)
 - **Data Format**: CAN bus (DBC files)
 - **Deployment**: Docker, Docker Compose, Nginx
 

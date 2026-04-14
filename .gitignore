@@ -239,7 +239,8 @@ test-logs/
 *.dat
 *.code-workspace
 /.claude
-*.claude
+pecan/.claude/settings.local.json
+universal-telemetry-software/.claude/settings.local.json
 
 # Ignore generated service worker files
 sw.js
@@ -248,4 +249,39 @@ CLAUDE.md
 GEMINI.md
 flight-recorder/.env.local
 /.cursor
-/docs/specs
+*.claude
+
+# ── daq-server-components (server/) ──────────────────────────────────────────
+.idea
+car-to-influx/testing_data/cleaned_can.csv
+
+# server/installer specific
+server/installer/startup-data-loader/data/*
+!server/installer/startup-data-loader/data/README.md
+!server/installer/startup-data-loader/data/2025-01-01-00-00-00.csv
+!server/installer/startup-data-loader/data/2025-01-01-00-07-00.csv
+!server/installer/startup-data-loader/data/2025-01-02-00-05-00.csv
+!server/installer/startup-data-loader/data/2025-01-03-00-13-00.csv
+server/installer/startup-data-loader/can_metrics.out
+server/installer/startup-data-loader/load_data_progress.json
+server/installer/data-downloader/data/scanner_status.json
+server/installer/data-downloader/data/runs.json
+server/installer/data-downloader/data/sensors.json
+server/installer/*.dbc
+!server/installer/example.dbc
+server/installer/slackbot/logs/*
+server/installer/sandbox/prompt-guide.txt
+server/installer/grafana/dashboards/VD-wide.json
+server/installer/grafana/dashboards/Vehicle\ Overview.json
+wfr-telemetry
+server/installer/data-downloader/data
+server/installer/slackbot/*.png
+!server/installer/slackbot/lappy_test_image.png
+server/installer/slackbot/*.jpg
+server/installer/slackbot/*.jpeg
+generated-days/
+server/slicks/
+server/docs/superpowers/
+wfr-data
+/.superpowers
+.worktrees/

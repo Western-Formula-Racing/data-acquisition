@@ -123,15 +123,6 @@ Once `can0` is confirmed working, proceed to deployment.
 - CAN HAT set up (see Hardware Setup above)
 - Network connection between car and base (LAN cable or Ubiquiti radios)
 
-> **Raspberry Pi 5 — QEMU Prerequisites**
->
-> The RPi5 kernel uses 16KB memory pages. InfluxDB3's bundled jemalloc only supports 4KB pages,
-> so the native ARM64 binary crashes at startup. Work around this by running InfluxDB3 under QEMU
-> amd64 emulation via the `docker-compose.rpi5.yml` override.
->
-> Install QEMU once on the Pi 5:
-> ```bash
-> sudo apt-get install -y qemu-user-static binfmt-support
 > ```
 >
 > Then use the rpi5 override whenever starting the stack:
@@ -210,19 +201,7 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 | `SIMULATE` | `false` | Simulate CAN data (no hardware needed) |
 | `ENABLE_VIDEO` | `false` | Enable video streaming |
 | `ENABLE_AUDIO` | `false` | Enable audio streaming |
-| `ENABLE_INFLUX_LOGGING` | `false` | Log telemetry to local InfluxDB3 |
-| `ENABLE_WS_RELAY` | `false` | Start optional WebSocket downlink relay (see `WEBSOCKET_PROTOCOL.md`) |
-
-**WebSocket relay (laptop / extra fan-out)** — uses [`uv`](https://docs.astral.sh/uv/) in this directory:
-
-```bash
-cd universal-telemetry-software
-export RELAY_UPSTREAM_WS=ws://127.0.0.1:9080
-export RELAY_TOKEN=your-long-secret   # required for Cloudflare tunnel / loopback clients
-uv run uts-ws-relay
-```
-
-See `WEBSOCKET_PROTOCOL.md` for `RELAY_*` variables, LAN vs token behavior, and Cloudflare Tunnel notes.
+| `ENABLE_TIMESCALE_LOGGING` | `false` | Log telemetry to server TimescaleDB (direct write) |
 
 ### Ports
 
@@ -233,9 +212,7 @@ See `WEBSOCKET_PROTOCOL.md` for `RELAY_*` variables, LAN vs token behavior, and 
 | 6379 | TCP | Redis (internal) |
 | 8080 | HTTP | Status monitoring page |
 | 9080 | WebSocket | PECAN dashboard feed |
-| 9089 | WebSocket | Optional relay (`uts-ws-relay` / `ENABLE_WS_RELAY`) |
 | 3000 | HTTP | PECAN dashboard UI |
-| 9000 | HTTP | InfluxDB3 (when enabled) |
 
 ---
 
@@ -298,8 +275,7 @@ universal-telemetry-software/
 │   ├── audio.py                # Audio streaming
 │   ├── video.py                # Video streaming
 │   ├── websocket_bridge.py     # Redis -> WebSocket for PECAN
-│   ├── ws_relay.py             # Optional upstream WS -> fan-out relay (laptop / tunnel)
-│   ├── influx_bridge.py        # InfluxDB3 logging
+│   ├── timescale_bridge.py     # TimescaleDB logging (Redis → server TimescaleDB)
 │   ├── leds.py                 # LED status indicators
 │   ├── link_diagnostics.py     # Radio link health
 │   └── poe.py                  # PoE monitor

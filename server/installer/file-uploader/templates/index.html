@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<link
+			rel="stylesheet"
+			href="{{ url_for('static', filename='style.css') }}"
+		/>
+		<script src="{{ url_for('static', filename='index.js') }}?v={{ range(1, 99999) | random }}"></script>
+		<title>WFR Data Uploader</title>
+	</head>
+	<body>
+		<div class="background">
+			<div class="parent">
+				<div class="info">
+					<img src="{{ url_for('static', filename='logo-32_375x.webp' )}}" />
+					<h1>Upload DAQ Data</h1>
+					<h2>(multiple CSVs or .zip of CSVs)</h2>
+					<span id="season-select_span">
+						<label for="season-select">Season:</label>
+						<select name="season" id="season-select">
+							<option value="">Select A Season</option>
+							{% for name in season_names %} {% if current_season == name %}
+							<option value="{{name}}" selected>{{name}}</option>
+							{% else %}
+							<option value="{{name}}">{{name}}</option>
+							{% endif %} {% endfor %}
+						</select>
+					</span>
+					<span id="create-bucket_span" style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+						<input type="text" id="new-bucket-input" placeholder="New season name (e.g. WFR26-test)..." style="padding: 4px 8px; border-radius: 4px; border: 1px solid #555; background: #2a2a2a; color: white; font-size: 0.9em;" />
+						<button id="create-bucket-btn" onclick="createBucket()" style="padding: 4px 12px; border-radius: 4px; border: none; background: #444; color: white; cursor: pointer; font-size: 0.9em;">Add Season</button>
+						<span id="create-bucket-msg" style="font-size: 0.85em; opacity: 0.7;"></span>
+					</span>
+					<span id="dbc-source_span" style="margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+						<label for="dbc-select" style="white-space: nowrap;">Team DBC (GitHub):</label>
+						<select id="dbc-select" name="dbc-select" style="min-width: 220px; max-width: 100%; padding: 4px 8px; border-radius: 4px; border: 1px solid #555; background: #2a2a2a; color: white; font-size: 0.9em;"></select>
+						<span id="dbc-list-hint" style="font-size: 0.85em; opacity: 0.75; flex-basis: 100%;"></span>
+					</span>
+					<span id="dbc-upload_span" style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+						<label for="dbc-input" style="cursor: pointer; white-space: nowrap;">Custom .dbc:</label>
+						<input type="file" accept=".dbc" id="dbc-input" />
+						<span id="dbc-name-label" style="font-size: 0.85em; opacity: 0.7;"></span>
+					</span>
+					<h2 style="margin-top: 15px">
+						File: <span id="file-name-label">{{ file_name }}</span>
+					</h2>
+					<h2>Task: <span id="task-id-label">{{ task_id }}</span></h2>
+				</div>
+				<div>
+					<label for="drop_zone-input" class="drop-area" id="drop_zone">
+						<svg
+							id="file-upload-img"
+							aria-hidden="true"
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 20 16"
+						>
+							<path
+								stroke="currentColor"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"
+							/>
+						</svg>
+						<h3>Click to upload CSV or zip, or drag and drop</h3>
+					</label>
+					<input
+						type="file"
+						accept=".csv,text/csv,.zip,application/zip,application/x-zip-compressed"
+						id="drop_zone-input"
+						multiple
+						style="display: none"
+					/>
+				</div>
+			</div>
+			<div class="progress-bar_parent">
+				<div class="progress-bar" id="progress-bar">
+					<span id="progress-bar_pct"></span>
+				</div>
+			</div>
+			<div id="progress-bar_count">- / - rows</div>
+		</div>
+	</body>
+</html>
