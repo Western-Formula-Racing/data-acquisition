@@ -1,0 +1,108 @@
+# MacBook base station — full local stack with TimescaleDB persistence
+# Use this for development and testing with full telemetry recording.
+# Run from universal-telemetry-software/:
+#   docker compose -f deploy/docker-compose.macbook-base.yml up -d --build
+#
+# Access points:
+#   Pecan dashboard:  http://localhost:3000
+#   Grafana:          http://localhost:8087
+#   TimescaleDB:      postgresql://wfr:wfr_password@localhost:5432/wfr
+
+networks:
+  datalink:
+    driver: bridge
+
+services:
+  telemetry:
+    image: ghcr.io/western-formula-racing/daq-radio/universal-telemetry:latest
+    build: ..   # builds locally; remove to use pre-built GHCR image
+    container_name: daq-telemetry
+    restart: unless-stopped
+    ports:
+      - "9080:9080"   # WebSocket (Pecan connects here)
+      - "8080:8080"   # Status page
+      - "5005:5005/udp"
+      - "5006:5006/tcp"
+    environment:
+      - ROLE=base
+      - REMOTE_IP=${REMOTE_IP:-10.71.1.10}
+      - UDP_PORT=5005
+      - TCP_PORT=5006
+      - REDIS_URL=redis://daq-redis:6379/0
+      - WS_PORT=9080
+      - STATUS_PORT=8080
+      - SIMULATE=false
+      - ENABLE_VIDEO=false
+      - ENABLE_AUDIO=false
+      - SET_TIME_ENABLED=false
+      - ENABLE_TIMESCALE_LOGGING=true
+      - POSTGRES_DSN=postgresql://wfr:wfr_password@timescaledb:5432/wfr
+      - TIMESCALE_TABLE=${TIMESCALE_TABLE:-WFR26test}_base
+      - DBC_FILE_PATH=/app/active.dbc
+    volumes:
+      - ${DBC_HOST_PATH:-./example.dbc}:/app/active.dbc:ro
+      - raw_can_data:/app/raw_can_logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      redis:
+        condition: service_started
+      timescaledb:
+        condition: service_healthy
+    networks:
+      - datalink
+
+  redis:
+    image: redis:8.2
+    container_name: daq-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - datalink
+
+  pecan:
+    image: ghcr.io/western-formula-racing/daq-radio/pecan:latest
+    container_name: daq-pecan
+    restart: unless-stopped
+    ports:
+      - "3000:80"   # Pecan dashboard — open http://localhost:3000
+    depends_on:
+      - telemetry
+    networks:
+      - datalink
+
+  # ── TimescaleDB (local, for received telemetry hot-load) ─────────────────
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: daq-timescaledb
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: wfr
+      POSTGRES_PASSWORD: wfr_password
+      POSTGRES_DB: wfr
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./timescaledb_init_macbook.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    networks:
+      - datalink
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wfr -d wfr"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+
+volumes:
+  redis_data:
+  timescaledb_data:
+  raw_can_data:

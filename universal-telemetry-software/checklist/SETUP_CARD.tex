@@ -159,7 +159,7 @@
   \cmd{gh auth login} \quad (follow prompts -- HTTPS, then Authenticate via browser) \\[1mm]
   \cmd{gh repo clone Western-Formula-Racing/daq-radio \textasciitilde/daq-radio} \\[1mm]
   \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software/deploy} \\[1mm]
-  \textbf{PASS:} \cmd{ls} shows \cmd{docker-compose.prod.yml} \\
+  \textbf{PASS:} \cmd{ls} shows \cmd{docker-compose.rpi-base.yml} \\
   \textbf{FAIL:} auth error \quad \textit{Fix:} re-run \cmd{gh auth login} \\
 \end{tabular}
 
@@ -318,28 +318,27 @@
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{REMOTE\_IP} is now hardcoded in \cmd{docker-compose.prod.yml} -- no \cmd{.env} needed. \\[1mm]
-  \textbf{Car profile} uses \cmd{REMOTE\_IP=10.71.1.20} (sends UDP to base station). \\
-  \textbf{Base profile} uses \cmd{REMOTE\_IP=10.71.1.10} (sends TCP recovery to car Pi). \\[1mm]
-  \textbf{No action required.} If IPs ever change, edit \cmd{docker-compose.prod.yml} directly. \\
+  \cmd{REMOTE\_IP} is set in the \cmd{.env} file -- see \cmd{deploy/.env.macbook} for reference. \\[1mm]
+  \textbf{Car RPi} sends UDP to base: \cmd{REMOTE\_IP=10.71.1.20}. \\
+  \textbf{Base RPi} receives from car: \cmd{REMOTE\_IP=10.71.1.10}. \\[1mm]
+  Set \cmd{REMOTE\_IP} in \cmd{deploy/.env} before starting. \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section*{4 -- PULL \& START SERVICES}
 % ─────────────────────────────────────────────────────────────────────────────
 
-\gobox{Pull Pre-built Images (Prod)}
+\gobox{Pull Pre-built Images}
 
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{cd \textasciitilde/daq-radio/universal-telemetry-software/deploy} \\[1mm]
-  \textbf{Car RPi:} \\
-  \cmd{docker compose -f docker-compose.prod.yml --profile car pull} \\
-  \cmd{docker compose -f docker-compose.prod.yml --profile car up -d} \\[1mm]
-  \textbf{Base RPi:} \\
-  \cmd{docker compose -f docker-compose.prod.yml --profile base pull} \\
-  \cmd{docker compose -f docker-compose.prod.yml --profile base up -d} \\[1mm]
-  \textit{Plain \cmd{up} (no profile) starts nothing -- profile is required.} \\
+  \textbf{MacBook (full stack):} \\
+  \cmd{docker compose -f docker-compose.macbook-base.yml pull} \\
+  \cmd{docker compose -f docker-compose.macbook-base.yml up -d} \\[1mm]
+  \textbf{RPi base (ephemeral):} \\
+  \cmd{docker compose -f docker-compose.rpi-base.yml pull} \\
+  \cmd{docker compose -f docker-compose.rpi-base.yml up -d} \\[1mm]
 \end{tabular}
 
 \vspace{1mm}
@@ -348,8 +347,8 @@
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{docker ps} \\[1mm]
-  \textbf{Car PASS:} daq-telemetry, daq-redis, daq-caddy running \\
-  \textbf{Base PASS:} daq-telemetry, daq-redis, daq-caddy, daq-influxdb3, daq-grafana, daq-go2rtc, daq-pecan running \\
+  \textbf{RPi PASS:} daq-telemetry, daq-redis, daq-caddy, daq-pecan running \\
+  \textbf{MacBook PASS:} daq-telemetry, daq-redis, daq-timescaledb, daq-pecan running \\
   \textbf{FAIL:} any container Exited or missing \\
   \textit{Fix:} \cmd{docker logs daq-telemetry} \\
 \end{tabular}
@@ -361,7 +360,7 @@
 \begin{tabular}{p{126mm}}
   \cmd{redis-cli ping} \\[1mm]
   \textbf{PASS:} \cmd{PONG} \quad \textbf{FAIL:} Connection refused \\
-  \textit{Fix:} \cmd{docker compose -f docker-compose.prod.yml restart redis} \\
+  \textit{Fix:} \cmd{docker compose -f docker-compose.rpi-base.yml restart redis} \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -397,12 +396,11 @@ No Redis needed -- the core CAN $\to$ UDP path runs entirely in-process.}
   View logs: \cmd{journalctl -u car-telemetry -f} \\
   Restart: \cmd{sudo systemctl restart car-telemetry} \\
   Stop: \cmd{sudo systemctl stop car-telemetry} \\[1mm]
-  \textit{Note: do NOT run} \cmd{--profile car} \textit{on a Pi using native systemd -- two} \\
-  \textit{processes would both try to own the CAN bus and Redis.} \\
+  \textit{Note: car does not use Docker -- it runs via systemd instead.} \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{5 -- ROLE AUTO-DETECTION}
+\section*{5 -- ROLE}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \gobox{Check Role}
@@ -410,14 +408,9 @@ No Redis needed -- the core CAN $\to$ UDP path runs entirely in-process.}
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{docker logs daq-telemetry $\vert$ grep "Role"} \\[1mm]
-  \textbf{CAR:} \cmd{Starting Car Mode...} \\
   \textbf{BASE:} \cmd{Starting Base Station Mode...} \\[1mm]
-  \textit{Role is now hardcoded via} \cmd{ROLE=car} / \cmd{ROLE=base} \textit{in} \cmd{docker-compose.prod.yml}. \\
-  \textit{The} \cmd{--profile car} \textit{and} \cmd{--profile base} \textit{flags select the correct service.} \\
+  \textit{Role is hardcoded via} \cmd{ROLE=base} \textit{in the compose file}. \\
 \end{tabular}
-
-\vspace{1mm}
-\warnbox{Wrong profile = wrong REMOTE\_IP + wrong role. Always use \cmd{--profile car} on car Pi and \cmd{--profile base} on base station.}
 
 % ─────────────────────────────────────────────────────────────────────────────
 \section*{6 -- DATA FLOW CHECKS}
@@ -514,7 +507,7 @@ and point their own Pecan instance at the car's WSS endpoint.
   \cmd{cd universal-telemetry-software} \\
   \cmd{export RELAY\_UPSTREAM\_WS=ws://10.71.1.20:9080} \\
   \cmd{uv run uts-ws-relay} \\[1mm]
-  \textbf{Or enable in docker-compose.prod.yml (base profile):} \\
+  \textbf{Or enable in docker-compose.rpi-base.yml:} \\
   \cmd{ENABLE\_WS\_RELAY=true} \quad (adds ws\_relay as a child process) \\[1mm]
   \textbf{Port:} \cmd{ws://0.0.0.0:9089} \quad LAN viewers: \cmd{ws://<laptop>:9089} (no token) \\[1mm]
   \textbf{Cloudflare Tunnel (remote viewers):} \\
@@ -526,58 +519,46 @@ and point their own Pecan instance at the car's WSS endpoint.
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{8 -- ENABLE TX WEBSOCKET (Car Only)}
+\section*{8 -- ENABLE TX WEBSOCKET}
 % ─────────────────────────────────────────────────────────────────────────────
 
 \warnbox{Disabled by default. Enable only when sending CAN frames from TX page.}
 
 \noindent
 \begin{tabular}{p{126mm}}
-  Edit \cmd{docker-compose.prod.yml}: set \cmd{ENABLE\_TX\_WS=true} \\
-  Apply: \cmd{docker compose -f docker-compose.prod.yml --profile car down \&\& ... --profile car up -d} \\[1mm]
+  Edit \cmd{docker-compose.rpi-base.yml}: set \cmd{ENABLE\_TX\_WS=true} \\
+  Apply: \cmd{docker compose -f docker-compose.rpi-base.yml down \&\& ... up -d} \\[1mm]
   Verify: \cmd{docker logs daq-telemetry $\vert$ grep "TX WebSocket"} \\
   Expected: \cmd{TX WebSocket bridge started on port 9078 ... ENABLE\_TX\_WS=true ...} \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{9 -- INFLUX LOGGING (Base Only)}
+\section*{9 -- TIMESCALE LOGGING (MacBook Only)}
 % ─────────────────────────────────────────────────────────────────────────────
 
-\gobox{InfluxDB Health}
+\warnbox{TimescaleDB runs on MacBook only (macbook-base). RPi base is ephemeral -- no local DB.}
+
+\gobox{TimescaleDB Health (MacBook)}
 
 \noindent
 \begin{tabular}{p{126mm}}
-  \cmd{curl http://localhost:9000/health} \\[1mm]
-  \textbf{PASS:} \cmd{\{"status":"ok"\}} \quad \textbf{FAIL:} connection refused -- wait 30s, retry \\
-  Grafana: \cmd{http://10.71.1.20:8087} \quad user: \cmd{admin} \quad pass: \cmd{admin} \\
-  \textit{Token file:} \cmd{influxdb3-admin-token.json} is pre-committed -- no manual setup needed. \\[1mm]
-  \warnbox{RPi 5 (DEFAULT) -- QEMU Setup Required} \\
-  \noindent
-  \begin{tabular}{p{126mm}}
-    InfluxDB 3 defaults to \cmd{linux/amd64} to support RPi 5's 16KB page size. \\
-    You \textbf{must} install QEMU on the Pi 5 before starting: \\
-    \cmd{sudo apt install -y qemu-user-static binfmt-support} \\
-  \end{tabular} \\[1mm]
-  \warnbox{RPi 4B ONLY -- Native ARM64 Override} \\
-  \noindent
-  \begin{tabular}{p{126mm}}
-    To run native ARM64 on an RPi 4B, use the provided override file: \\
-    \cmd{docker compose -f docker-compose.prod.yml -f docker-compose.rpi4.yml \textbackslash} \\
-    \ \ \ \cmd{--profile base up -d} \\
-  \end{tabular} \\
+  TimescaleDB runs on MacBook's \cmd{macbook-base} stack only. \\
+  RPi base (\cmd{rpi-base}) does NOT write to DB -- it relays to MacBook via UDP/TCP. \\[1mm]
+  Connect with \cmd{psql}: \cmd{psql postgresql://wfr:wfr\_password@localhost:5432/wfr} \\
+  Check tables: \cmd{\textbackslash dt} \quad Check data: \cmd{SELECT COUNT(*) FROM wfr26test\_base;} \\
+  Grafana: \cmd{http://localhost:8087} \quad user: \cmd{admin} \quad pass: \cmd{admin} (or as set in \cmd{.env}) \\
 \end{tabular}
 
 \vspace{1mm}
-\checkbox{Verify Write Table -- Base Only}
+\checkbox{Verify Write Table -- MacBook Only}
 
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{docker logs daq-telemetry $\vert$ grep "table="} \\[1mm]
-  \textbf{PASS:} \cmd{table=WFR26\_base} (or \cmd{WFR27\_base} etc.) \\
-  \textbf{FAIL:} \cmd{table=WFR26} without \cmd{\_base} suffix -- UTS would overwrite the source-of-truth CSV table \\[1mm]
-  \textit{Root cause:} \cmd{INFLUX\_TABLE} in \cmd{docker-compose.prod.yml} must be \cmd{\$\{INFLUX\_SEASON:-WFR26\}\_base} \\
+  \textbf{PASS:} \cmd{table=WFR26test\_base} (or as set by \cmd{TIMESCALE\_TABLE}) \\
+  \textbf{FAIL:} \cmd{ENABLE\_TIMESCALE\_LOGGING=true} not set, or TimescaleDB not reachable \\
   \textit{Schema:} wide format -- one row per CAN message, each decoded signal as a column. \\
-  \textit{Separation:} \cmd{WFR26\_base} = live radio telemetry \quad \cmd{WFR26} = uploaded CSV (read-only) \\
+  \textit{Table is created automatically on first write.} \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -587,9 +568,9 @@ and point their own Pecan instance at the car's WSS endpoint.
 \noindent
 \begin{tabular}{p{126mm}}
   \textbf{The car RPi has no NTP -- system clock resets to 1970 on boot without a time source.} \\
-  CAN frames are timestamped on the car RPi before UDP transmission; the base RPi just \\
-  forwards those timestamps into InfluxDB unchanged. Getting the car RPi's clock right \\
-  is therefore the only thing that matters for correct InfluxDB timestamps. \\[1mm]
+  CAN frames are timestamped on the car RPi before UDP transmission; the base/MacBook just \\
+  writes those timestamps into TimescaleDB unchanged. Getting the car RPi's clock right \\
+  is therefore the only thing that matters for correct TimescaleDB timestamps. \\[1mm]
   The ECU has a battery-backed DS3231 RTC and broadcasts the real epoch time on \textbf{CAN ID 1999} \\
   (\cmd{VCU\_Timestamp}) once per second. The car RPi intercepts this and corrects its clock. \\[1mm]
   \textbf{Car data is held (not dropped) until one of three conditions is met:} \\
@@ -636,60 +617,36 @@ and point their own Pecan instance at the car's WSS endpoint.
   \textit{Note:} if you only have SSH and no browser, run on the RPi directly: \\
   \cmd{sudo date -s "2026-03-22 14:35:00"} \\[2mm]
   \textit{Base RPi clock:} the base RPi's system clock does \textbf{not} affect data timestamps -- \\
-  the car already stamped every frame before UDP transmission, so Grafana and InfluxDB \\
+  the car already stamped every frame before UDP transmission, so Grafana and TimescaleDB \\
   will show correct times even if the base is in 1970. \\
-  Nice-to-have: set base clock for clean container logs and accurate cloud sync cursors. \\
+  Nice-to-have: set base clock for clean container logs. \\
   Same method -- \cmd{http://10.71.1.20:8080} or \cmd{http://192.168.20.1:8080} via hotspot. \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
-\section*{10 -- CLOUD SYNC (Base Only)}
+\section*{10 -- TIMESYNCALEDB BRIDGE (Base Only)}
 % ─────────────────────────────────────────────────────────────────────────────
 
+\warnbox{Only for MacBook base (macbook-base). RPi base is ephemeral -- no TimescaleDB bridge.}
+
 \noindent
 \begin{tabular}{p{126mm}}
-  Cloud sync starts automatically with the InfluxDB bridge (base + \cmd{ENABLE\_INFLUX\_LOGGING=true}). \\
-  Every 60s it checks internet reachability, then pushes new rows from local \cmd{WFR26\_base} \\
-  to cloud \cmd{WFR26} at \cmd{influxdb3.westernformularacing.org}. Skips silently if offline. \\[1mm]
-  \textit{Performance:} wide schema = 1 row per CAN message (all signals as columns). \\
-  Previously narrow/tall schema had 1 row per signal -- wide format is 5--10$\times$ fewer rows \\
-  to sync and query. A 30-min test session at 100 msg/s = \textasciitilde180k rows vs. 1M+ previously. \\
+  When \cmd{ENABLE\_TIMESCALE\_LOGGING=true}, the \cmd{TimescaleBridge} process starts automatically. \\
+  It reads decoded CAN frames from Redis and writes them directly to the server stack's \\
+  TimescaleDB over the network (writes to \cmd{POSTGRES\_DSN}). No local InfluxDB. \\[1mm]
+  Wide format: one row per CAN message, all signals as columns. \\
+  Table: \cmd{WFR26test\_base} (MacBook) or as set by \cmd{TIMESCALE\_TABLE}. \\
 \end{tabular}
 
 \vspace{1mm}
-\checkbox{Set CLOUD\_INFLUX\_TOKEN}
+\gobox{Verify Bridge Running}
 
 \noindent
 \begin{tabular}{p{126mm}}
-  Required -- token is empty by default and sync silently no-ops without it. \\[1mm]
-  Edit \cmd{docker-compose.prod.yml}: \\
-  \cmd{- CLOUD\_INFLUX\_TOKEN=<your-token>} \\[1mm]
-  Or export before pulling: \cmd{export CLOUD\_INFLUX\_TOKEN=<token>} \\
-  \textbf{FAIL (silent):} no errors shown, but 0 points ever reach the cloud. \\
-\end{tabular}
-
-\vspace{1mm}
-\gobox{Verify Connectivity}
-
-\noindent
-\begin{tabular}{p{126mm}}
-  \cmd{docker compose -f docker-compose.prod.yml exec telemetry python -m src.cloud\_sync --check-only} \\[1mm]
-  \textbf{PASS:} \cmd{\text{\checkmark}\ Cloud reachable} \\
-  \textbf{FAIL:} \cmd{\ding{55}\ Cloud unreachable} \quad \textit{Fix:} check base RPi internet connection \\
-\end{tabular}
-
-\vspace{1mm}
-\gobox{Verify Sync Running}
-
-\noindent
-\begin{tabular}{p{126mm}}
-  \cmd{docker logs daq-telemetry $\vert$ grep "CloudSync"} \\[1mm]
-  \textbf{PASS:} \cmd{\text{\checkmark}\ Synced N points to cloud} every 60s \\
-  \textbf{FAIL:} \cmd{CLOUD\_INFLUX\_TOKEN not set} \quad \textit{Fix:} see token step above \\
-  \textbf{FAIL:} \cmd{\ding{55}\ Cloud unreachable} \quad sync will retry next interval automatically \\[1mm]
-  Manual one-off sync: \cmd{python -m src.cloud\_sync --last-hours 24} \\
-  Dry run (no write): \cmd{python -m src.cloud\_sync --dry-run} \\
-  State file (tracks cursor): \cmd{/tmp/influx\_cloud\_sync\_state.json} \\
+  \cmd{docker logs daq-telemetry $\vert$ grep "TimescaleBridge"} \\[1mm]
+  \textbf{PASS:} \cmd{TimescaleDB bridge started ... rows written, N errors} \\
+  \textbf{FAIL:} not in logs -- \cmd{ENABLE\_TIMESCALE\_LOGGING=true} not set \\
+  \textbf{FAIL:} connection error -- check \cmd{POSTGRES\_DSN} is reachable \\
 \end{tabular}
 
 % ─────────────────────────────────────────────────────────────────────────────
@@ -725,13 +682,12 @@ and point their own Pecan instance at the car's WSS endpoint.
   Car not sending UDP & Car REMOTE\_IP correct? & Set to \cmd{10.71.1.20} \\
   Ping fails across radio & Radio link up? & Check \S 1 radio status \\
   can0 ERROR & CAN HAT driver loaded? & \cmd{sudo modprobe mcp251xfd} \\
-  TX\_DISABLED & ENABLE\_TX\_WS=true? & Edit docker-compose.prod.yml \\
+  TX\_DISABLED & ENABLE\_TX\_WS=true? & Edit docker-compose.rpi-base.yml \\
   Wrong role on base & can0 on base RPi? & Base should NOT have CAN HAT \\
-  Influx not logging & ENABLE\_INFLUX\_LOGGING=true? & Check docker-compose.prod.yml \\
+  Timescale not logging & MacBook: \cmd{ENABLE\_TIMESCALE\_LOGGING=true}? & RPi has no DB (ephemeral) \\
   Data held, none in PECAN & ECU time synced? & Open :8080, set clock if no ECU on bus (\S 9.5) \\
-  Cloud sync no-op & CLOUD\_INFLUX\_TOKEN set? & See \S 10, token is empty by default \\
   Redis connection error & \cmd{docker compose ps redis} & \cmd{docker compose restart redis} \\
-  PECAN disconnected & WS\_PORT=9080? & Check docker-compose.prod.yml env \\
+  PECAN disconnected & WS\_PORT=9080? & Check compose file env \\
   PWA WSS fails & Caddy cert trusted? & Visit \cmd{https://<rpi>:9443}, accept warning (\S 7) \\
   GHCR pull fails & Org member + docker login? & Re-run \S 0 GHCR step \\
   Remote viewers see no data & WS relay running? & Check laptop: \cmd{uv run uts-ws-relay} + \S 7.5 \\
@@ -752,10 +708,10 @@ and point their own Pecan instance at the car's WSS endpoint.
   \midrule
   5005 & UDP & CAN data streaming (car $\rightarrow$ base) \\
   5006 & TCP & Packet retransmission \\
+  5432 & TCP & TimescaleDB (MacBook only) \\
   6379 & TCP & Redis \\
   8080 & HTTP & Status monitoring page \\
-  8087 & HTTP & Grafana dashboards \\
-  9000 & HTTP & InfluxDB3 API \\
+  8087 & HTTP & Grafana dashboards (MacBook) \\
   9080 & WebSocket & PECAN telemetry feed (plain WS) \\
   9078 & WebSocket & PECAN TX CAN write (car only) \\
   9089 & WebSocket & WS relay downlink (optional, laptop fan-out) \\
@@ -784,7 +740,9 @@ and point their own Pecan instance at the car's WSS endpoint.
   SIMULATE & false & Force CAN simulation (fake IDs 192/256/512/768 at 100\,Hz). Bus() failure triggers sim with warning banner; recv() errors do not. \\
   ENABLE\_VIDEO & false & Video streaming \\
   ENABLE\_AUDIO & false & Audio streaming \\
-  ENABLE\_INFLUX\_LOGGING & true & Log telemetry to local InfluxDB3 \\
+  ENABLE\_TIMESCALE\_LOGGING & false & Log telemetry to TimescaleDB (MacBook only) \\
+  TIMESCALE\_TABLE & WFR26test\_base & Table name for telemetry writes \\
+  POSTGRES\_DSN & (local) & TimescaleDB connection string (MacBook: local; RPi: points to MacBook) \\
   ENABLE\_WS\_RELAY & false & Start WS relay (ws\_relay.py) on port 9089 \\
   RELAY\_UPSTREAM\_WS & ws://127.0.0.1:9080 & Upstream WS URL for relay \\
   RELAY\_TOKEN & (none) & Token required for Cloudflare-tunnel clients \\
@@ -799,13 +757,15 @@ and point their own Pecan instance at the car's WSS endpoint.
 
 \noindent
 \begin{tabularx}{\linewidth}{X}
-  \cmd{docker-compose.prod.yml} -- \textbf{Prod} (pulls GHCR images -- use this on RPi) \\
-  \cmd{docker-compose.yml} -- Dev (builds locally, slow on RPi) \\[1mm]
-  \textbf{Prod deploy -- profile is required (no profile = nothing starts):} \\
-  \cmd{docker compose -f docker-compose.prod.yml --profile car up -d} \quad (car RPi) \\
-  \cmd{docker compose -f docker-compose.prod.yml --profile base up -d} \quad (base RPi) \\[1mm]
+  \cmd{docker-compose.macbook-base.yml} -- \textbf{MacBook} full stack (TimescaleDB + Grafana) \\
+  \cmd{docker-compose.rpi-base.yml} -- \textbf{RPi base} lightweight (ephemeral, no DB) \\
+  \cmd{docker-compose.yml} -- General purpose (RPi or MacBook) \\[1mm]
+  \textbf{MacBook deploy:} \\
+  \cmd{docker compose -f docker-compose.macbook-base.yml up -d} \\[1mm]
+  \textbf{RPi base deploy:} \\
+  \cmd{docker compose -f docker-compose.rpi-base.yml up -d} \\[1mm]
   \textbf{Restart after config change:} \\
-  \cmd{docker compose -f docker-compose.prod.yml --profile car down \&\& ... up -d} \\
+  \cmd{docker compose -f docker-compose.rpi-base.yml down \&\& ... up -d} \\
 \end{tabularx}
 
 % ─────────────────────────────────────────────────────────────────────────────
