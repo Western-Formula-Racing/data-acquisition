@@ -168,7 +168,7 @@ interface CanLogEntry {
   data: number[];
 }
 
-interface MessageInfo {
+export interface MessageInfo {
   messageName: string;
   canId: number;
   dlc: number;
@@ -530,6 +530,17 @@ export function getDbcMessages(dbcData: any): MessageInfo[] {
   });
 
   return messages;
+}
+
+/**
+ * Return all messages + signals from the currently-loaded DBC.
+ * Safe to call before any DBC is explicitly loaded — uses the default
+ * localDbc / exampleDbc fallback that dbcFile is initialized to.
+ */
+export function getLoadedDbcMessages(): MessageInfo[] {
+  const dbc = new Dbc();
+  const data = dbc.load(dbcFile);
+  return getDbcMessages(data);
 }
 
 /**

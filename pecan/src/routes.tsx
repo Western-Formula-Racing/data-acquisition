@@ -14,6 +14,7 @@ const ThrottleMapper = lazy(() => import("./pages/ThrottleMapper"));
 const SensorValidator = lazy(() => import("./pages/SensorValidator"));
 const Trace = lazy(() => import("./pages/Trace"));
 const DataTransmitter = lazy(() => import("./pages/Transmitter"));
+const ConstellationPage = lazy(() => import('./pages/Constellation'));
 
 // Get base path for GitHub Pages deployment
 const basename = import.meta.env.BASE_URL || '/';
@@ -37,6 +38,7 @@ export const router = createBrowserRouter([
       { path: "throttle-mapper", element: <Suspense fallback={<Fallback />}><ThrottleMapper /></Suspense> },
       { path: "sensor-validator", element: <Suspense fallback={<Fallback />}><SensorValidator /></Suspense> },
       { path: "trace", element: <Suspense fallback={<Fallback />}><Trace /></Suspense> },
+      { path: "constellation", element: <Suspense fallback={<Fallback />}><ConstellationPage /></Suspense> },
       { path: "replay-viewer", element: <Suspense fallback={<Fallback />}><Dashboard /></Suspense> },
       { path: "can-transmitter", element: <Suspense fallback={<Fallback />}><DataTransmitter /></Suspense> },
     ],
