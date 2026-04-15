@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { X, Cpu, Zap, BarChart3, Clock, Database, Activity } from 'lucide-react';
 import type { SensorStar } from '../hooks/useConstellationSignals';
 import { TelemetrySparkline } from './TelemetrySparkline';
+import { calculateCorrelation, getCorrelationMeta } from '../utils/statistics';
 
 interface Props {
   selectedNodeIds: string[];
@@ -51,6 +52,24 @@ export const ConstellationSidebar: React.FC<Props> = ({
       
       return { id, current, min, max, avg, history };
     });
+  }, [selectedNodeIds, tick]);
+
+  // Calculate cross-correlations
+  const correlations = useMemo(() => {
+    if (selectedNodeIds.length < 2) return [];
+    const results: { id1: string, id2: string, r: number }[] = [];
+    
+    for (let i = 0; i < selectedNodeIds.length; i++) {
+      for (let j = i + 1; j < selectedNodeIds.length; j++) {
+        const h1 = telemetryHistoryRef.current[selectedNodeIds[i]] || [];
+        const h2 = telemetryHistoryRef.current[selectedNodeIds[j]] || [];
+        const r = calculateCorrelation(h1, h2);
+        if (Math.abs(r) > 0.4) {
+          results.push({ id1: selectedNodeIds[i], id2: selectedNodeIds[j], r });
+        }
+      }
+    }
+    return results.sort((a, b) => Math.abs(b.r) - Math.abs(a.r)).slice(0, 5);
   }, [selectedNodeIds, tick]);
 
   return (
@@ -159,10 +178,53 @@ export const ConstellationSidebar: React.FC<Props> = ({
           </div>
         </section>
 
+        {correlations.length > 0 && (
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest text-slate-400 uppercase">
+              <Zap size={12} className="text-yellow-400" />
+              <span>System Insights</span>
+            </div>
+            <div className="space-y-2">
+              {correlations.map((corr, idx) => {
+                const s1 = sensors.find(s => s.id === corr.id1);
+                const s2 = sensors.find(s => s.id === corr.id2);
+                const meta = getCorrelationMeta(corr.r);
+                return (
+                  <div key={idx} className="p-3 rounded-xl bg-white/5 border border-white/5 flex flex-col gap-2">
+                    <div className="flex justify-between items-center text-[10px] font-mono">
+                      <span className="text-slate-400 truncate max-w-[100px]">{s1?.name}</span>
+                      <span className="text-slate-600">↔</span>
+                      <span className="text-slate-400 truncate max-w-[100px]">{s2?.name}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-300 uppercase tracking-tighter">
+                        {meta.label}
+                      </span>
+                      <span className="text-xs font-bold font-mono" style={{ color: meta.color }}>
+                        {corr.r > 0 ? '+' : ''}{corr.r.toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full transition-all duration-500" 
+                        style={{ 
+                          width: `${Math.abs(corr.r) * 100}%`, 
+                          backgroundColor: meta.color,
+                          boxShadow: `0 0 10px ${meta.color}`
+                        }} 
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         {selectedNodeIds.length > 0 && (
           <section className="space-y-4">
             <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest text-slate-400 uppercase">
-              <Zap size={12} />
+              <Activity size={12} />
               <span>Actions</span>
             </div>
             <button 

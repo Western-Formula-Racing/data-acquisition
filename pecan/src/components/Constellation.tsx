@@ -3,6 +3,7 @@ import { Share2, RefreshCw, Info } from 'lucide-react';
 import type { SensorStar } from '../hooks/useConstellationSignals';
 import { ConstellationSidebar } from './ConstellationSidebar';
 import { dataStore } from '../lib/DataStore';
+import { calculateCorrelation, getCorrelationMeta } from '../utils/statistics';
 
 interface ConstellationCanvasProps {
   sensors: SensorStar[];
@@ -233,7 +234,7 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
       updatedSensors.sort((a, b) => b.zDepth - a.zDepth);
       (canvas as any)._sensorPositions = updatedSensors;
 
-      // 5. Draw Links (Glow Pass)
+      // 5. Draw Links (Correlation Pass)
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       links.forEach(link => {
@@ -241,17 +242,29 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
         const tNode = updatedSensors.find(s => s.id === link.target);
         if (sNode && tNode && !sNode.behindCamera && !tNode.behindCamera) {
           const isSelected = selectedIds.includes(sNode.id) && selectedIds.includes(tNode.id);
-          const alpha = (isSelected ? 0.8 : 0.15) * Math.min(sNode.scale, tNode.scale);
-          ctx.strokeStyle = `rgba(255, 255, 255, ${Math.max(0, alpha)})`;
-          ctx.shadowBlur = isSelected ? 15 : 0;
-          ctx.shadowColor = '#fff';
-          ctx.lineWidth = (isSelected ? 2 : 1) * sNode.scale;
+          
+          // Calculate Correlation
+          const h1 = telemetryHistoryRef.current?.[sNode.id] || [];
+          const h2 = telemetryHistoryRef.current?.[tNode.id] || [];
+          const r = calculateCorrelation(h1, h2);
+          const meta = getCorrelationMeta(r);
+          
+          const alpha = (isSelected ? 0.9 : 0.25) * Math.min(sNode.scale, tNode.scale);
+          const pulse = Math.abs(r) > 0.7 ? 0.8 + Math.sin(time * 0.1) * 0.2 : 1.0;
+          
+          ctx.strokeStyle = isSelected || Math.abs(r) > 0.5 ? meta.color : `rgba(255, 255, 255, ${alpha})`;
+          ctx.globalAlpha = alpha * pulse;
+          ctx.shadowBlur = (isSelected ? 20 : Math.abs(r) > 0.7 ? 10 : 0) * sNode.scale;
+          ctx.shadowColor = meta.color;
+          ctx.lineWidth = (isSelected ? 2.5 : 1) * sNode.scale * (Math.abs(r) > 0.8 ? 1.5 : 1);
+          
           ctx.beginPath();
           ctx.moveTo(sNode.sx, sNode.sy);
           ctx.lineTo(tNode.sx, tNode.sy);
           ctx.stroke();
         }
       });
+      ctx.globalAlpha = 1;
       ctx.restore();
 
       // 6. Draw Sensors
