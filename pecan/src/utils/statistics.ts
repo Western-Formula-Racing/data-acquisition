@@ -31,12 +31,34 @@ export function getCorrelationMeta(r: number) {
   if (absR < 0.3) return { label: 'Neutral', color: '#94a3b8', intensity: 0.1 };
   if (absR < 0.7) return { 
     label: r > 0 ? 'Weak Positive' : 'Weak Negative', 
-    color: r > 0 ? '#10b981' : '#f43f5e', 
+    color: r > 0 ? '#fbbf24' : '#60a5fa', // Yellow for positive, Blue for negative
     intensity: 0.4 
   };
   return { 
     label: r > 0 ? 'Strong Positive' : 'Strong Negative', 
-    color: r > 0 ? '#34d399' : '#ff4b4b', 
+    color: r > 0 ? '#f59e0b' : '#3b82f6', // Bright Yellow/Orange for strong pos, Deep Blue for strong neg
     intensity: 0.9 
   };
+}
+
+/**
+ * Scans a set of sensor histories and identifies pairs with high correlation.
+ */
+export function findStrongCorrelations(
+  histories: Record<string, number[]>, 
+  threshold = 0.85
+): { source: string, target: string, r: number }[] {
+  const ids = Object.keys(histories).filter(id => histories[id].length >= 10);
+  const links: { source: string, target: string, r: number }[] = [];
+  
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const r = calculateCorrelation(histories[ids[i]], histories[ids[j]]);
+      if (Math.abs(r) >= threshold) {
+        links.push({ source: ids[i], target: ids[j], r });
+      }
+    }
+  }
+  
+  return links;
 }

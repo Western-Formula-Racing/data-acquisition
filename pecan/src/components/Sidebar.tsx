@@ -71,7 +71,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 onClose={onClose}
               />
               <SidebarOption
-                option="SKY MAP"
+                option="CONSTELLATION"
                 path="/constellation"
                 onClose={onClose}
               />

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Share2, RefreshCw, Info } from 'lucide-react';
 import type { SensorStar } from '../hooks/useConstellationSignals';
 import { ConstellationSidebar } from './ConstellationSidebar';
 import { dataStore } from '../lib/DataStore';
-import { calculateCorrelation, getCorrelationMeta } from '../utils/statistics';
+import { calculateCorrelation, getCorrelationMeta, findStrongCorrelations } from '../utils/statistics';
+import { Zap, Share2, RefreshCw, Info } from 'lucide-react';
 
 interface ConstellationCanvasProps {
   sensors: SensorStar[];
@@ -31,6 +31,9 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
 
   // UI State (for React)
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [threshold, setThreshold] = useState(0.92);
+  const [isAutoMode, setIsAutoMode] = useState(false);
+  const [disabledCategories, setDisabledCategories] = useState<Set<string>>(new Set());
   const [, setShowSidebar] = useState(false);
 
   // --- GRAPH TRAVERSAL ---
@@ -198,8 +201,10 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
       ctx.restore();
 
       // 4. Pre-calculate sensor positions and live status
-      const updatedSensors = sensors.map(s => {
-        const currentTheta = (s.theta * (Math.PI / 180)) + (time * s.speed);
+      const updatedSensors = sensors
+        .filter(s => !disabledCategories.has(s.category))
+        .map(s => {
+          const currentTheta = (s.theta * (Math.PI / 180)) + (time * s.speed);
         
         // 1. Initial Position on a flat XY plane
         const rx = s.r * Math.cos(currentTheta);
@@ -279,17 +284,20 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
         ctx.globalCompositeOperation = 'lighter';
         ctx.shadowBlur = Math.max(0, (isHovered || isSelected ? 25 : s.isLive ? 12 : 0) * s.scale);
         ctx.shadowColor = color;
-        ctx.fillStyle = color;
-        
+        // Outer Glow
         ctx.beginPath();
         ctx.arc(s.sx, s.sy, size, 0, Math.PI * 2);
         ctx.fill();
         
-        ctx.fillStyle = s.isLive ? '#fff' : '#64748b';
-        ctx.shadowBlur = 0;
+        // Inner Core: Shaded tint of the category color
+        // If live, we use white but with strong additive blending to let category color show
+        // If not live, we use a very dim version of the category color
+        ctx.fillStyle = s.isLive ? '#fff' : s.color;
+        ctx.globalAlpha = s.isLive ? 0.9 : 0.2; 
         ctx.beginPath();
         ctx.arc(s.sx, s.sy, size * 0.4, 0, Math.PI * 2);
         ctx.fill();
+        ctx.globalAlpha = 1;
         ctx.restore();
 
         if (isHovered || isSelected) {
@@ -321,7 +329,7 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
       window.removeEventListener('resize', resize);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [sensors, links, selectedIds]);
+  }, [sensors, links, selectedIds, disabledCategories]);
 
   // --- INTERACTION HANDLERS ---
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -336,7 +344,7 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
 
     if (interactionRef.current.camera.isDraggingCamera) {
       interactionRef.current.camera.pan += dx * 0.005;
-      interactionRef.current.camera.tilt = Math.max(0.2, Math.min(Math.PI / 2.1, interactionRef.current.camera.tilt + dy * 0.005));
+      interactionRef.current.camera.tilt += dy * 0.005;
     }
 
     const positions = (canvasRef.current as any)?._sensorPositions || [];
@@ -396,6 +404,47 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
     interactionRef.current.camera.zoom = Math.max(0.4, Math.min(3.0, interactionRef.current.camera.zoom - delta * 0.001));
   };
 
+  const handleAutoLink = useCallback(() => {
+    if (!telemetryHistoryRef.current) return;
+    
+    // 1. Discover correlations across all signal histories
+    const discovered = findStrongCorrelations(telemetryHistoryRef.current, threshold);
+    
+    // 2. Filter for quality
+    const filtered = discovered.filter(d => {
+      const isCell = d.source.toLowerCase().includes('cell') || 
+                     d.target.toLowerCase().includes('cell');
+      return !isCell;
+    });
+    
+    // 3. Add new unique links
+    const newLinks = filtered.map(d => ({ source: d.source, target: d.target }));
+    
+    setLinks(prev => {
+      const existing = new Set(prev.map(l => `${l.source}-${l.target}`));
+      const toAdd = newLinks.filter(l => !existing.has(`${l.source}-${l.target}`));
+      // If auto-mode, we completely replace links to be reactive to the slider
+      if (isAutoMode) return newLinks;
+      return [...prev, ...toAdd];
+    });
+  }, [threshold, isAutoMode, sensors]);
+
+  // Reactive Auto-Discovery
+  useEffect(() => {
+    if (isAutoMode) {
+      handleAutoLink();
+    }
+  }, [threshold, isAutoMode, handleAutoLink]);
+
+  const toggleCategory = (cat: string) => {
+    setDisabledCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  };
+
   const resetCamera = () => {
     interactionRef.current.camera = {
       tilt: Math.PI / 6,
@@ -430,13 +479,48 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
             </p>
           </div>
           
-          <div className="pointer-events-auto ml-11 flex gap-2">
+          <div className="pointer-events-auto ml-11 flex items-center gap-6">
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => setIsAutoMode(!isAutoMode)}
+                className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-[10px] font-bold tracking-widest uppercase transition-all active:scale-95 group ${isAutoMode ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)]' : 'bg-white/5 border-white/10 text-slate-400'}`}
+              >
+                <Zap size={14} className={isAutoMode ? 'animate-pulse' : ''} />
+                {isAutoMode ? 'Smart Discovery On' : 'Manual Mode'}
+              </button>
+
+              {isAutoMode && (
+                <div className="flex items-center gap-4 px-4 py-2 bg-slate-900/60 backdrop-blur-md border border-white/10 rounded-xl animate-in fade-in slide-in-from-left-2 duration-300">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex justify-between text-[8px] font-bold text-slate-500 uppercase tracking-tighter">
+                      <span>Sensitivity</span>
+                      <span>{(threshold * 100).toFixed(0)}%</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0.5" 
+                      max="0.99" 
+                      step="0.01" 
+                      value={threshold} 
+                      onChange={(e) => setThreshold(parseFloat(e.target.value))}
+                      className="w-32 h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-blue-500"
+                    />
+                  </div>
+                  <div className="h-4 w-px bg-white/10" />
+                  <div className="flex flex-col">
+                    <span className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">Matches</span>
+                    <span className="text-xs font-mono font-bold text-blue-400">{links.length}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+            
             <button 
-              onClick={() => { setLinks([]); setSelectedIds([]); setShowSidebar(false); }}
+              onClick={() => { setLinks([]); setSelectedIds([]); setShowSidebar(false); setIsAutoMode(false); }}
               className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold tracking-widest uppercase transition-all active:scale-95"
             >
               <RefreshCw size={14} className="text-blue-400" />
-              Reset Sky Map
+              Clear Constellation
             </button>
           </div>
         </div>
@@ -450,10 +534,23 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
           <div className="grid grid-cols-2 gap-x-6 gap-y-3">
             {[...new Set(sensors.map(s => s.category))].map(cat => {
               const color = sensors.find(s => s.category === cat)?.color;
+              const isDisabled = disabledCategories.has(cat);
               return (
-                <div key={cat} className="flex items-center gap-3 group">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 12px ${color}` }} />
-                  <span className="text-[11px] font-semibold text-slate-300 group-hover:text-white transition-colors">{cat}</span>
+                <div 
+                  key={cat} 
+                  onClick={() => toggleCategory(cat)}
+                  className={`flex items-center gap-3 group cursor-pointer transition-opacity duration-300 ${isDisabled ? 'opacity-30 hover:opacity-50' : 'opacity-100'}`}
+                >
+                  <div 
+                    className="w-2.5 h-2.5 rounded-full transition-transform group-hover:scale-125" 
+                    style={{ 
+                      backgroundColor: isDisabled ? '#64748b' : color, 
+                      boxShadow: isDisabled ? 'none' : `0 0 12px ${color}` 
+                    }} 
+                  />
+                  <span className={`text-[11px] font-semibold transition-colors ${isDisabled ? 'text-slate-500' : 'text-slate-300 group-hover:text-white'}`}>
+                    {cat}
+                  </span>
                 </div>
               );
             })}

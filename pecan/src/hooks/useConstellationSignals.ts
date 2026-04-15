@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { getLoadedDbcMessages, formatCanId } from '../utils/canProcessor';
-import { CATEGORIES, determineCategory } from '../config/categories';
+import { CATEGORIES, determineCategory, DEFAULT_CATEGORY } from '../config/categories';
 
 export interface SensorStar {
   id: string;       // "${msgID}:${signalName}"
@@ -30,22 +30,6 @@ const TAILWIND_HEX_MAP: Record<string, string> = {
 };
 const DEFAULT_HEX = '#6b7280';
 
-const BASE_RADIUS_PER_CATEGORY: Record<string, number> = {
-  'POWERTRAIN': 80,
-  'DRIVER': 120,
-  'CHASSIS': 160,
-  'BATTERY': 200,
-  'SUSPENSION': 240,
-};
-
-const CATEGORY_TILT_MAP: Record<string, { inc: number, node: number }> = {
-  'POWERTRAIN': { inc: 0, node: 0 },
-  'DRIVER':     { inc: Math.PI / 8, node: 0 },
-  'CHASSIS':    { inc: -Math.PI / 10, node: Math.PI / 4 },
-  'BATTERY':    { inc: Math.PI / 4, node: -Math.PI / 4 },
-  'SUSPENSION': { inc: Math.PI / 6, node: Math.PI / 2 },
-};
-
 function categoryHex(categoryName: string): string {
   const cat = CATEGORIES.find(c => c.name === categoryName);
   if (!cat) return DEFAULT_HEX;
@@ -58,28 +42,81 @@ export function useConstellationSignals(): SensorStar[] {
   }, []);
 
   const sensors = useMemo(() => {
+    // 1. Identify all unique categories and count their signal density
+    const catData: Record<string, { count: number, hash: number }> = {};
+    messages.forEach(msg => {
+      const cat = determineCategory(formatCanId(msg.canId));
+      if (!catData[cat]) catData[cat] = { count: 0, hash: 0 };
+      catData[cat].count += msg.signals.length;
+      catData[cat].hash += msg.canId; // Stable tie-breaker
+    });
+    
+    // Sort categories: 
+    // - POWERTRAIN is usually the central reference (ground plane)
+    // - Others sort by Signal Volume (Dense = Outer)
+    const sortedCategories = Object.keys(catData).sort((a, b) => {
+      if (a === 'POWERTRAIN') return -1;
+      if (b === 'POWERTRAIN') return 1;
+      const countDiff = catData[a].count - catData[b].count;
+      if (countDiff !== 0) return countDiff;
+      return catData[a].hash - catData[b].hash; // Non-alphabetic tie-breaker
+    });
+
+    // Strategy: Ensure 'NO CAT' is never the outermost ring
+    const noCatIndex = sortedCategories.indexOf(DEFAULT_CATEGORY.name);
+    if (noCatIndex === sortedCategories.length - 1 && sortedCategories.length > 1) {
+      // Swap with the second-to-last category
+      const temp = sortedCategories[noCatIndex];
+      sortedCategories[noCatIndex] = sortedCategories[noCatIndex - 1];
+      sortedCategories[noCatIndex - 1] = temp;
+    }
+
+    // 2. Map categories to dynamic spatial parameters (Inclination & Repulsion)
+    const catCount = sortedCategories.length;
+    const catLayoutMap: Record<string, { r: number, inc: number, node: number }> = {};
+    
+    sortedCategories.forEach((cat, i) => {
+      let radius = 100 + (i * 65); // Clearer spacing
+      
+      // If the user wants No-Cat to be distinct, ensure it's at least one ring offset
+      // from the Battery or other dense categories if it's large.
+      // (The sorting + i increment already handles this, but we increase the gap).
+      let inc = 0;
+      let node = 0;
+      
+      if (i > 0) {
+        // Distribute tilts mathematically around the Z-axis (Repulsion)
+        // Variation of inclination between 15 and 45 degrees
+        inc = (Math.PI / 12) + (i * (Math.PI / 30)); 
+        // Rotate the tilt axis around the entire 360 degrees
+        node = (i * (2 * Math.PI)) / (catCount - 1); 
+      }
+      
+      catLayoutMap[cat] = { r: radius, inc, node };
+    });
+
+    // 3. Map messages/signals to the calculated layout
     const all: SensorStar[] = [];
     messages.forEach((msg) => {
       const msgID = formatCanId(msg.canId);
       for (const sig of msg.signals) {
         const catName = determineCategory(msgID);
-        const baseR = BASE_RADIUS_PER_CATEGORY[catName] || 320; 
-        const tilts = CATEGORY_TILT_MAP[catName] || { inc: Math.PI / 12, node: (msg.canId % 5) * 0.5 };
+        const layout = catLayoutMap[catName] || { r: 350, inc: 0.2, node: 0 };
         
         const hash = (msg.canId * 13 + (sig.startBit || 0) * 7);
         const theta = hash % 360;
-        const speed = 0.0003 + (1 / baseR) * 0.04 + (hash % 10) * 0.00005;
+        const speed = 0.0003 + (1 / layout.r) * 0.04 + (hash % 10) * 0.00005;
         
         all.push({
           id: `${msgID}:${sig.signalName}`,
           name: sig.signalName,
           category: catName,
           color: categoryHex(catName),
-          r: baseR,
+          r: layout.r,
           theta: theta,
           speed: speed,
-          inclination: tilts.inc,
-          nodeLong: tilts.node,
+          inclination: layout.inc,
+          nodeLong: layout.node,
           msgID: msgID,
           sigName: sig.signalName
         });
