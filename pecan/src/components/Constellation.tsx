@@ -20,9 +20,12 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
     hoveredId: null as string | null,
     dragStartId: null as string | null,
     mousePos: { x: 0, y: 0 },
-    lastClickTime: 0,
-    cameraOffset: { x: 0, y: 0 },
-    isDragging: false
+    camera: {
+      tilt: Math.PI / 4.5, // 40 degrees
+      pan: 0,
+      zoom: 1.0,
+      isDraggingCamera: false,
+    }
   });
 
   // UI State (for React)
@@ -130,42 +133,68 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
       const cx = width / 2;
       const cy = height / 2;
 
-      // 3D Parameters
-      const tilt = Math.PI / 4.5;
-      const depth = 800;
+      // 3D Parameters (Dynamic)
+      const { tilt, pan, zoom } = interactionRef.current.camera;
+      const depth = 800 * zoom;
 
       // 1. Background Clear
       ctx.fillStyle = '#020617';
       ctx.fillRect(0, 0, width, height);
+
+      // 2. Dynamic Grid Layer (Draw in-loop for smooth movement)
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+      ctx.lineWidth = 1;
+      for (let r = 100; r <= 800; r += 120) {
+        ctx.beginPath();
+        for (let a = 0; a <= Math.PI * 2; a += 0.2) {
+          const wx = Math.cos(a) * r;
+          const wy = Math.sin(a) * r;
+          const wz = 0;
+
+          // Rotation (Pan around Y, Tilt around X)
+          const x1 = wx * Math.cos(pan) - wy * Math.sin(pan);
+          const y1 = wx * Math.sin(pan) + wy * Math.cos(pan);
+          const y2 = y1 * Math.cos(tilt) - wz * Math.sin(tilt);
+          const z2 = y1 * Math.sin(tilt) + wz * Math.cos(tilt);
+          
+          const scale = depth / (depth + z2);
+          const px = cx + x1 * scale;
+          const py = cy + y2 * scale;
+          
+          if (a === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
       
-      // 2. Background Stars (Distant 3D field)
+      // 3. Background Stars (Distant 3D field)
       ctx.save();
       const bgAngle = time * 0.00005;
       bgStarsRef.current.forEach(star => {
         const angle = Math.atan2(star.y, star.x) + bgAngle;
         const dist = Math.sqrt(star.x*star.x + star.y*star.y);
-        const x = Math.cos(angle) * dist;
-        const y = Math.sin(angle) * dist;
-        const z = -200; // Distant plane
+        const wx = Math.cos(angle) * dist;
+        const wy = Math.sin(angle) * dist;
+        const wz = -400; // Deep space
 
-        const yRot = y * Math.cos(tilt) - z * Math.sin(tilt);
-        const zRot = y * Math.sin(tilt) + z * Math.cos(tilt);
-        const scale = depth / (depth + zRot);
+        const x1 = wx * Math.cos(pan) - wy * Math.sin(pan);
+        const y1 = wx * Math.sin(pan) + wy * Math.cos(pan);
+        const y2 = y1 * Math.cos(tilt) - wz * Math.sin(tilt);
+        const z2 = y1 * Math.sin(tilt) + wz * Math.cos(tilt);
         
-        const px = cx + x * scale;
-        const py = cy + yRot * scale;
+        const scale = depth / (depth + z2);
+        if (scale <= 0) return;
+
+        const px = cx + x1 * scale;
+        const py = cy + y2 * scale;
         
-        ctx.fillStyle = `rgba(255, 255, 255, ${star.alpha * scale * (0.6 + Math.sin(time*0.01 + dist)*0.4)})`;
+        ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, star.alpha * scale) * (0.6 + Math.sin(time*0.01 + dist)*0.4)})`;
         ctx.beginPath();
-        ctx.arc(px, py, star.size * scale, 0, Math.PI * 2);
+        ctx.arc(px, py, Math.max(0.1, star.size * scale), 0, Math.PI * 2);
         ctx.fill();
       });
       ctx.restore();
-
-      // 3. Static Grid Layer
-      if (offscreenCanvasRef.current) {
-        ctx.drawImage(offscreenCanvasRef.current, 0, 0);
-      }
 
       // 4. Pre-calculate sensor positions and live status
       const updatedSensors = sensors.map(s => {
@@ -176,18 +205,21 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
         const wy = s.r * Math.sin(currentTheta);
         const wz = s.z;
 
-        // 3D Projection
-        const yRot = wy * Math.cos(tilt) - wz * Math.sin(tilt);
-        const zRot = wy * Math.sin(tilt) + wz * Math.cos(tilt);
-        const scale = depth / (depth + zRot);
+        // Interactive Rotation
+        const x1 = wx * Math.cos(pan) - wy * Math.sin(pan);
+        const y1 = wx * Math.sin(pan) + wy * Math.cos(pan);
+        const y2 = y1 * Math.cos(tilt) - wz * Math.sin(tilt);
+        const z2 = y1 * Math.sin(tilt) + wz * Math.cos(tilt);
+
+        const scale = depth / (depth + z2);
         
-        const sx = cx + wx * scale;
-        const sy = cy + yRot * scale;
+        const sx = cx + x1 * scale;
+        const sy = cy + y2 * scale;
         
         const latest = dataStore.getLatest(s.msgID);
         const isLive = latest && !!latest.data[s.sigName];
         
-        return { ...s, sx, sy, scale, zDepth: zRot, isLive };
+        return { ...s, sx, sy, scale, zDepth: z2, isLive, behindCamera: scale <= 0 };
       });
       // Sort by depth for correct painter's order
       updatedSensors.sort((a, b) => b.zDepth - a.zDepth);
@@ -199,10 +231,10 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
       links.forEach(link => {
         const sNode = updatedSensors.find(s => s.id === link.source);
         const tNode = updatedSensors.find(s => s.id === link.target);
-        if (sNode && tNode) {
+        if (sNode && tNode && !sNode.behindCamera && !tNode.behindCamera) {
           const isSelected = selectedIds.includes(sNode.id) && selectedIds.includes(tNode.id);
           const alpha = (isSelected ? 0.8 : 0.15) * Math.min(sNode.scale, tNode.scale);
-          ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+          ctx.strokeStyle = `rgba(255, 255, 255, ${Math.max(0, alpha)})`;
           ctx.shadowBlur = isSelected ? 15 : 0;
           ctx.shadowColor = '#fff';
           ctx.lineWidth = (isSelected ? 2 : 1) * sNode.scale;
@@ -216,14 +248,15 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
 
       // 6. Draw Sensors
       updatedSensors.forEach(s => {
+        if (s.behindCamera) return;
         const isHovered = interactionRef.current.hoveredId === s.id;
         const isSelected = selectedIds.includes(s.id);
         const color = s.isLive ? s.color : '#334155';
-        const size = (isHovered ? 7 : isSelected ? 5 : 4) * s.scale;
+        const size = Math.max(0, (isHovered ? 7 : isSelected ? 5 : 4) * s.scale);
         
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
-        ctx.shadowBlur = (isHovered || isSelected ? 25 : s.isLive ? 12 : 0) * s.scale;
+        ctx.shadowBlur = Math.max(0, (isHovered || isSelected ? 25 : s.isLive ? 12 : 0) * s.scale);
         ctx.shadowColor = color;
         ctx.fillStyle = color;
         
@@ -240,7 +273,7 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
 
         if (isHovered || isSelected) {
           ctx.fillStyle = '#fff';
-          ctx.font = `${Math.round(12 * s.scale)}px "Inter", sans-serif`;
+          ctx.font = `${Math.round(Math.max(1, 12 * s.scale))}px "Inter", sans-serif`;
           ctx.fillText(s.name, s.sx + 14 * s.scale, s.sy - 8 * s.scale);
         }
       });
@@ -275,7 +308,15 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
     if (!rect) return;
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+    
+    const dx = x - interactionRef.current.mousePos.x;
+    const dy = y - interactionRef.current.mousePos.y;
     interactionRef.current.mousePos = { x, y };
+
+    if (interactionRef.current.camera.isDraggingCamera) {
+      interactionRef.current.camera.pan += dx * 0.005;
+      interactionRef.current.camera.tilt = Math.max(0.2, Math.min(Math.PI / 2.1, interactionRef.current.camera.tilt + dy * 0.005));
+    }
 
     const positions = (canvasRef.current as any)?._sensorPositions || [];
     let hitId = null;
@@ -292,12 +333,17 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
     
     if (interactionRef.current.hoveredId !== hitId) {
       interactionRef.current.hoveredId = hitId;
-      document.body.style.cursor = hitId ? 'pointer' : 'default';
+      document.body.style.cursor = hitId ? 'pointer' : interactionRef.current.camera.isDraggingCamera ? 'grabbing' : 'default';
     }
   };
 
   const handleMouseDown = () => {
-    interactionRef.current.dragStartId = interactionRef.current.hoveredId;
+    if (interactionRef.current.hoveredId) {
+      interactionRef.current.dragStartId = interactionRef.current.hoveredId;
+    } else {
+      interactionRef.current.camera.isDraggingCamera = true;
+      document.body.style.cursor = 'grabbing';
+    }
   };
 
   const handleMouseUp = () => {
@@ -314,11 +360,28 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
     } else if (dragStartId && dragStartId === hoveredId) {
       setSelectedIds(getConstellation(dragStartId, links));
       setShowSidebar(true);
-    } else if (!hoveredId) {
+    } else if (!hoveredId && !interactionRef.current.camera.isDraggingCamera) {
       setSelectedIds([]);
       setShowSidebar(false);
     }
+    
     interactionRef.current.dragStartId = null;
+    interactionRef.current.camera.isDraggingCamera = false;
+    document.body.style.cursor = hoveredId ? 'pointer' : 'default';
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    const delta = e.deltaY;
+    interactionRef.current.camera.zoom = Math.max(0.4, Math.min(3.0, interactionRef.current.camera.zoom - delta * 0.001));
+  };
+
+  const resetCamera = () => {
+    interactionRef.current.camera = {
+      tilt: Math.PI / 4.5,
+      pan: 0,
+      zoom: 1.0,
+      isDraggingCamera: false
+    };
   };
 
   return (
@@ -329,6 +392,8 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
+        onWheel={handleWheel}
+        onDoubleClick={resetCamera}
       />
 
       {/* Header Overlay */}
