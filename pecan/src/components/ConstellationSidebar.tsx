@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { X, Cpu, Zap, BarChart3, Clock, Database, Activity } from 'lucide-react';
 import type { SensorStar } from '../hooks/useConstellationSignals';
+import { TelemetrySparkline } from './TelemetrySparkline';
 
 interface Props {
   selectedNodeIds: string[];
@@ -20,6 +21,16 @@ export const ConstellationSidebar: React.FC<Props> = ({
   onExport,
 }) => {
   const isSelected = selectedNodeIds.length > 0;
+  const [tick, setTick] = useState(0);
+
+  // 10Hz Ticker to force re-renders for Ref-based data updates
+  useEffect(() => {
+    if (!isSelected) return;
+    const interval = setInterval(() => {
+      setTick(t => t + 1);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [isSelected]);
 
   // Find metadata for the primary selected node (the first one)
   const primaryNode = useMemo(() => {
@@ -27,6 +38,7 @@ export const ConstellationSidebar: React.FC<Props> = ({
     return sensors.find(s => s.id === selectedNodeIds[0]);
   }, [selectedNodeIds, sensors]);
 
+  // Read fresh stats from Refs on every tick
   const stats = useMemo(() => {
     if (selectedNodeIds.length === 0) return null;
     
@@ -37,9 +49,9 @@ export const ConstellationSidebar: React.FC<Props> = ({
       const max = history.length > 0 ? Math.max(...history) : current;
       const avg = history.length > 0 ? history.reduce((a, b) => a + b, 0) / history.length : current;
       
-      return { id, current, min, max, avg };
+      return { id, current, min, max, avg, history };
     });
-  }, [selectedNodeIds, sensorValuesRef.current]);
+  }, [selectedNodeIds, tick]);
 
   return (
     <div 
@@ -106,10 +118,25 @@ export const ConstellationSidebar: React.FC<Props> = ({
               return (
                 <div key={stat.id} className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-4 transition-all hover:bg-white/10 group">
                   <div className="flex justify-between items-start">
-                    <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors">{sensor?.name || stat.id}</span>
-                    <span className="text-xl font-mono font-bold" style={{ color: sensor?.color }}>
-                      {stat.current.toFixed(2)}
-                    </span>
+                    <div className="space-y-1">
+                      <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors block">
+                        {sensor?.name || stat.id}
+                      </span>
+                      <div className="h-10 flex items-end">
+                        <TelemetrySparkline 
+                          data={stat.history} 
+                          color={sensor?.color} 
+                          width={140} 
+                          height={30} 
+                        />
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xl font-mono font-bold block" style={{ color: sensor?.color }}>
+                        {stat.current.toFixed(2)}
+                      </span>
+                      <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">LIVE VALUE</span>
+                    </div>
                   </div>
                   
                   <div className="grid grid-cols-3 gap-2">
