@@ -10,7 +10,8 @@ export interface SensorStar {
   r: number;        // orbital radius in pixels
   theta: number;    // initial angle in degrees
   speed: number;    // radians/frame
-  z: number;        // Z-height for 3D layering
+  inclination: number; // orbital tilt in radians
+  nodeLong: number;    // tilt orientation in radians
   msgID: string;    // for fast lookup in render loop
   sigName: string;  // for fast lookup in render loop
 }
@@ -37,12 +38,12 @@ const BASE_RADIUS_PER_CATEGORY: Record<string, number> = {
   'SUSPENSION': 240,
 };
 
-const CATEGORY_Z_MAP: Record<string, number> = {
-  'POWERTRAIN': 40,
-  'DRIVER': 20,
-  'CHASSIS': 0,
-  'BATTERY': -20,
-  'SUSPENSION': -40,
+const CATEGORY_TILT_MAP: Record<string, { inc: number, node: number }> = {
+  'POWERTRAIN': { inc: 0, node: 0 },
+  'DRIVER':     { inc: Math.PI / 8, node: 0 },
+  'CHASSIS':    { inc: -Math.PI / 10, node: Math.PI / 4 },
+  'BATTERY':    { inc: Math.PI / 4, node: -Math.PI / 4 },
+  'SUSPENSION': { inc: Math.PI / 6, node: Math.PI / 2 },
 };
 
 function categoryHex(categoryName: string): string {
@@ -52,27 +53,21 @@ function categoryHex(categoryName: string): string {
 }
 
 export function useConstellationSignals(): SensorStar[] {
-  // 1. Memoize DBC parsing - only re-runs if DBC changes
   const messages = useMemo(() => {
     return getLoadedDbcMessages();
   }, []);
 
-  // 2. Memoize sensor layout - only re-runs if messages change
   const sensors = useMemo(() => {
     const all: SensorStar[] = [];
     messages.forEach((msg) => {
       const msgID = formatCanId(msg.canId);
       for (const sig of msg.signals) {
         const catName = determineCategory(msgID);
-        // Fallback radius if category is not mapped (MISC outer rim)
         const baseR = BASE_RADIUS_PER_CATEGORY[catName] || 320; 
-        const baseZ = CATEGORY_Z_MAP[catName] || -60;
+        const tilts = CATEGORY_TILT_MAP[catName] || { inc: Math.PI / 12, node: (msg.canId % 5) * 0.5 };
         
-        // Distribution within category orbits
         const hash = (msg.canId * 13 + (sig.startBit || 0) * 7);
         const theta = hash % 360;
-        
-        // Speed variation based on orbit (inner orbits slightly faster)
         const speed = 0.0003 + (1 / baseR) * 0.04 + (hash % 10) * 0.00005;
         
         all.push({
@@ -83,7 +78,8 @@ export function useConstellationSignals(): SensorStar[] {
           r: baseR,
           theta: theta,
           speed: speed,
-          z: baseZ + (hash % 15), // Subtle jitter for depth
+          inclination: tilts.inc,
+          nodeLong: tilts.node,
           msgID: msgID,
           sigName: sig.signalName
         });

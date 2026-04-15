@@ -21,7 +21,7 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
     dragStartId: null as string | null,
     mousePos: { x: 0, y: 0 },
     camera: {
-      tilt: Math.PI / 4.5, // 40 degrees
+      tilt: Math.PI / 6,   // 30 degrees (more neutral to see inclined planes)
       pan: 0,
       zoom: 1.0,
       isDraggingCamera: false,
@@ -200,12 +200,20 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
       const updatedSensors = sensors.map(s => {
         const currentTheta = (s.theta * (Math.PI / 180)) + (time * s.speed);
         
-        // World Space
-        const wx = s.r * Math.cos(currentTheta);
-        const wy = s.r * Math.sin(currentTheta);
-        const wz = s.z;
+        // 1. Initial Position on a flat XY plane
+        const rx = s.r * Math.cos(currentTheta);
+        const ry = s.r * Math.sin(currentTheta);
+        
+        // 2. Apply Orbital Inclination (Tilt around X axis)
+        const ly = ry * Math.cos(s.inclination);
+        const lz = ry * Math.sin(s.inclination);
+        
+        // 3. Apply Node Longitude (Rotate the whole inclined disk around Z axis)
+        const wx = rx * Math.cos(s.nodeLong) - ly * Math.sin(s.nodeLong);
+        const wy = rx * Math.sin(s.nodeLong) + ly * Math.cos(s.nodeLong);
+        const wz = lz;
 
-        // Interactive Rotation
+        // 4. Apply Interactive Camera Rotation (Pan around Y, Tilt around X)
         const x1 = wx * Math.cos(pan) - wy * Math.sin(pan);
         const y1 = wx * Math.sin(pan) + wy * Math.cos(pan);
         const y2 = y1 * Math.cos(tilt) - wz * Math.sin(tilt);
@@ -377,7 +385,7 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
 
   const resetCamera = () => {
     interactionRef.current.camera = {
-      tilt: Math.PI / 4.5,
+      tilt: Math.PI / 6,
       pan: 0,
       zoom: 1.0,
       isDraggingCamera: false
