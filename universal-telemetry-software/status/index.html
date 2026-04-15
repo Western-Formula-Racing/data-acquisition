@@ -57,6 +57,62 @@
             text-transform: uppercase;
         }
 
+        .remote-ip-banner {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 10px 20px;
+            margin-bottom: 15px;
+            background: #0a0a0a;
+            border: 2px solid #222;
+            border-radius: 4px;
+            transition: border-color 0.3s;
+        }
+
+        .remote-ip-banner.alive {
+            border-color: #4ade80;
+        }
+
+        .remote-ip-banner.dead {
+            border-color: #ef4444;
+        }
+
+        .remote-ip-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: #8e8eab;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .remote-ip-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #4ade80;
+            letter-spacing: 2px;
+            transition: color 0.3s;
+        }
+
+        .remote-ip-value.dead {
+            color: #ef4444;
+        }
+
+        .remote-ip-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4ade80;
+            box-shadow: 0 0 8px rgba(74, 222, 128, 0.6);
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+
+        .remote-ip-indicator.dead {
+            background: #ef4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+        }
+
         .status-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -342,10 +398,16 @@
             <p class="subtitle">REAL-TIME CONNECTION MONITOR</p>
         </header>
 
+        <div class="remote-ip-banner">
+            <span class="remote-ip-label">📡 Target Car:</span>
+            <span class="remote-ip-value" id="remoteIp">--</span>
+            <div class="remote-ip-indicator" id="remoteIpIndicator"></div>
+        </div>
+
         <div class="pipeline-flow">
             <div class="pipe-node">
                 <div class="pipe-dot" id="pipeDot_car"></div>
-                <span class="pipe-label">CAR</span>
+                <span class="pipe-label" id="pipeLabelCar">CAR</span>
             </div>
             <div class="pipe-sep" id="pipeSep_car">──▶</div>
             <div class="pipe-node">
@@ -516,7 +578,7 @@
     <script>
         const REDIS_WS_URL = 'ws://' + window.location.hostname + ':9080';
         const STATS_TIMEOUT = 5000;
-        const CAR_TIMEOUT = 500; // Fast detection: 0.5s
+        const CAR_TIMEOUT = 3000; // Stats come every 1s; heartbeat every 2s — give breathing room
 
         let ws = null;
         let wsConnected = false;
@@ -654,8 +716,10 @@
 
             if (last_udp_time) {
                 lastUdpPacketTime = last_udp_time * 1000;
-                lastCarDataTime = Date.now();
-            } else if ((received || 0) > 0 || (messages || 0) > 0) {
+            }
+
+            // car_alive: true only when base station is receiving actual UDP data from car
+            if (stats.car_alive) {
                 lastCarDataTime = Date.now();
             }
 
@@ -670,6 +734,31 @@
                 } else {
                     dbcWarning.style.display = 'none';
                 }
+            }
+
+            if (stats.remote_ip) {
+                document.getElementById('remoteIp').textContent = stats.remote_ip;
+                const pipeLabel = document.getElementById('pipeLabelCar');
+                if (pipeLabel) pipeLabel.textContent = stats.remote_ip;
+            }
+
+            // Update remote IP banner color based on car alive status
+            const banner = document.querySelector('.remote-ip-banner');
+            const ipValue = document.getElementById('remoteIp');
+            const ipDot = document.getElementById('remoteIpIndicator');
+            const carAlive = stats.car_alive;
+
+            if (banner) {
+                banner.classList.toggle('alive', !!carAlive);
+                banner.classList.toggle('dead', !carAlive);
+            }
+            if (ipValue) {
+                ipValue.classList.toggle('alive', !!carAlive);
+                ipValue.classList.toggle('dead', !carAlive);
+            }
+            if (ipDot) {
+                ipDot.classList.toggle('alive', !!carAlive);
+                ipDot.classList.toggle('dead', !carAlive);
             }
 
             const baseClockBad = document.getElementById('baseClockBadBanner');
@@ -860,12 +949,12 @@
             document.getElementById('timestamp').textContent =
                 'Last updated: ' + new Date().toLocaleTimeString();
 
-            // Range warning
+            // Range warning — only when car is not alive and timeout expired
             const connCard = document.querySelector('.card');
             const now = Date.now();
-            const isOutOfRange = lastCarDataTime && (now - lastCarDataTime > CAR_TIMEOUT);
-            
-            if (isOutOfRange) {
+            const carAlive = lastCarDataTime && (now - lastCarDataTime <= CAR_TIMEOUT);
+
+            if (!carAlive) {
                 connCard.classList.add('out-of-range');
                 document.getElementById('connStatus').textContent = 'OUT OF RANGE';
                 document.getElementById('connStatus').style.color = '#ef4444';

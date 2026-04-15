@@ -640,9 +640,11 @@ class TelemetryNode:
                     "car_time_synced": self._car_time_synced,
                     "base_clock_bad": self._base_clock_bad,
                     "last_udp_time": self.last_udp_time,
+                    "car_alive": (time.time() - self.last_udp_time) < 5 if self.last_udp_time else False,
                     "status_buffer": [self.status_map.get(s, 0) for s in range(max(0, self.latest_seq - 1000), self.latest_seq + 1)] if self.latest_seq != -1 else [],
                     "own_git_hash": self._own_git_hash,
-                    "car_git_hash": self._car_git_hash
+                    "car_git_hash": self._car_git_hash,
+                    "remote_ip": os.getenv("REMOTE_IP", "unknown"),
                 }
                 self.publish("system_stats", json.dumps(payload))
                 stats["received"] = 0
