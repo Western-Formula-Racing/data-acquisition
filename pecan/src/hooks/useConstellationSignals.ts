@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { getLoadedDbcMessages, type MessageInfo, formatCanId } from '../utils/canProcessor';
-import { dataStore } from '../lib/DataStore';
+import { useMemo } from 'react';
+import { getLoadedDbcMessages, formatCanId } from '../utils/canProcessor';
 import { CATEGORIES, determineCategory } from '../config/categories';
 
 export interface SensorStar {
@@ -11,7 +10,9 @@ export interface SensorStar {
   r: number;        // orbital radius in pixels
   theta: number;    // initial angle in degrees
   speed: number;    // radians/frame
-  isLive: boolean;  // false = dim grey
+  z: number;        // Z-height for 3D layering
+  msgID: string;    // for fast lookup in render loop
+  sigName: string;  // for fast lookup in render loop
 }
 
 const TAILWIND_HEX_MAP: Record<string, string> = {
@@ -22,37 +23,27 @@ const TAILWIND_HEX_MAP: Record<string, string> = {
   'bg-blue-600':   '#2563eb',
   'bg-red-500':    '#ef4444',
   'bg-blue-500':   '#3b82f6',
+  'bg-cyan-500':   '#06b6d4',
+  'bg-emerald-500':'#10b981',
+  'bg-orange-500': '#f97316',
 };
 const DEFAULT_HEX = '#6b7280';
 
-const MAX_PER_CATEGORY = 8;   // max stars per category to avoid crowding
-const RINGS_PER_CATEGORY = 3;  // spread within category across 3 radial bands
-
-// djb2 hash — stable per string, for speed variation only
-function djb2(str: string): number {
-  let hash = 5381;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash) + str.charCodeAt(i);
-    hash = hash & hash;
-  }
-  return Math.abs(hash);
-}
-
-// Sort key: group by category, then alphabetical within category for stable round-robin
-function signalSortKey(msgID: string, sigName: string): string {
-  const cat = determineCategory(msgID);
-  return `${cat}\x00${sigName}\x00${msgID}`;
-}
-
 const BASE_RADIUS_PER_CATEGORY: Record<string, number> = {
-  'VCU': 70,
-  'BMS': 100,
-  'INV': 130,
-  'SENSORS': 160,
-  'COOLING': 190,
-  'ACCU': 220,
+  'POWERTRAIN': 80,
+  'DRIVER': 120,
+  'CHASSIS': 160,
+  'BATTERY': 200,
+  'SUSPENSION': 240,
 };
-const DEFAULT_BASE_RADIUS = 250;
+
+const CATEGORY_Z_MAP: Record<string, number> = {
+  'POWERTRAIN': 40,
+  'DRIVER': 20,
+  'CHASSIS': 0,
+  'BATTERY': -20,
+  'SUSPENSION': -40,
+};
 
 function categoryHex(categoryName: string): string {
   const cat = CATEGORIES.find(c => c.name === categoryName);
@@ -60,100 +51,46 @@ function categoryHex(categoryName: string): string {
   return TAILWIND_HEX_MAP[cat.color] ?? DEFAULT_HEX;
 }
 
-function computeSensors(messages: MessageInfo[], liveKeys: Set<string>): SensorStar[] {
-  const sectorSize = 360 / (CATEGORIES.length || 1);
-
-  // Collect all signals with their category
-  const all: { id: string; name: string; catName: string; catIndex: number }[] = [];
-  for (const msg of messages) {
-    const msgID = formatCanId(msg.canId);
-    for (const sig of msg.signals) {
-      all.push({
-        id: `${msgID}:${sig.signalName}`,
-        name: sig.signalName,
-        catName: determineCategory(msgID),
-        catIndex: CATEGORIES.findIndex(c => c.name === determineCategory(msgID)),
-      });
-    }
-  }
-
-  // Sort for stable round-robin assignment
-  all.sort((a, b) => a.id.localeCompare(b.id));
-
-  // Group by category
-  const byCategory = new Map<string, typeof all>();
-  for (const s of all) {
-    if (!byCategory.has(s.catName)) byCategory.set(s.catName, []);
-    byCategory.get(s.catName)!.push(s);
-  }
-
-  // Cap per category
-  const sensors: SensorStar[] = [];
-  for (const [catName, catSigs] of byCategory) {
-    const capped = catSigs.slice(0, MAX_PER_CATEGORY);
-    const catIndex = CATEGORIES.findIndex(c => c.name === catName);
-    const sectorStart = catIndex * sectorSize;
-    const baseRadius = BASE_RADIUS_PER_CATEGORY[catName] ?? DEFAULT_BASE_RADIUS;
-
-    capped.forEach((sig, idx) => {
-      // Evenly divide sector arc among signals in this category (10% margin at edges)
-      const fraction = (idx + 0.5) / capped.length;        // 0.5 … ~1
-      const theta = sectorStart + 5 + fraction * (sectorSize - 10);
-
-      // Cycle through 3 radial rings within the category band
-      const ring = idx % RINGS_PER_CATEGORY;
-      const r = baseRadius + ring * 35 + 15;
-
-      // Small speed variation using hash (purely visual — phase-based orbit)
-      const hash = djb2(sig.id);
-      const speed = 0.0006 + (hash % 5) * 0.0001;
-
-      sensors.push({
-        id: sig.id,
-        name: sig.name,
-        category: sig.catName,
-        color: categoryHex(sig.catName),
-        r,
-        theta,
-        speed,
-        isLive: liveKeys.has(sig.id),
-      });
-    });
-  }
-
-  return sensors;
-}
-
 export function useConstellationSignals(): SensorStar[] {
-  const [liveKeys, setLiveKeys] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    const keys = new Set<string>();
-    const allLatest = dataStore.getAllLatest();
-    allLatest.forEach((sample) => {
-      for (const sigName in sample.data) {
-        keys.add(`${sample.msgID}:${sigName}`);
-      }
-    });
-    setLiveKeys(keys);
-
-    const unsub = dataStore.subscribe(() => {
-      const newKeys = new Set<string>();
-      const updated = dataStore.getAllLatest();
-      updated.forEach((sample) => {
-        for (const sigName in sample.data) {
-          newKeys.add(`${sample.msgID}:${sigName}`);
-        }
-      });
-      setLiveKeys(newKeys);
-    });
-    return unsub;
+  // 1. Memoize DBC parsing - only re-runs if DBC changes
+  const messages = useMemo(() => {
+    return getLoadedDbcMessages();
   }, []);
 
+  // 2. Memoize sensor layout - only re-runs if messages change
   const sensors = useMemo(() => {
-    const messages = getLoadedDbcMessages();
-    return computeSensors(messages, liveKeys);
-  }, [liveKeys]);
+    const all: SensorStar[] = [];
+    messages.forEach((msg) => {
+      const msgID = formatCanId(msg.canId);
+      for (const sig of msg.signals) {
+        const catName = determineCategory(msgID);
+        // Fallback radius if category is not mapped (MISC outer rim)
+        const baseR = BASE_RADIUS_PER_CATEGORY[catName] || 320; 
+        const baseZ = CATEGORY_Z_MAP[catName] || -60;
+        
+        // Distribution within category orbits
+        const hash = (msg.canId * 13 + (sig.startBit || 0) * 7);
+        const theta = hash % 360;
+        
+        // Speed variation based on orbit (inner orbits slightly faster)
+        const speed = 0.0003 + (1 / baseR) * 0.04 + (hash % 10) * 0.00005;
+        
+        all.push({
+          id: `${msgID}:${sig.signalName}`,
+          name: sig.signalName,
+          category: catName,
+          color: categoryHex(catName),
+          r: baseR,
+          theta: theta,
+          speed: speed,
+          z: baseZ + (hash % 15), // Subtle jitter for depth
+          msgID: msgID,
+          sigName: sig.signalName
+        });
+      }
+    });
+    return all;
+  }, [messages]);
 
   return sensors;
 }

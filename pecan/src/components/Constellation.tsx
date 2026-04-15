@@ -1,10 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Share2, Activity, Info, X, Zap, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Share2, RefreshCw, Info } from 'lucide-react';
 import type { SensorStar } from '../hooks/useConstellationSignals';
-
-const SENSOR_CATEGORIES = {
-  NO_CAT: { color: '#6b7280', label: 'No Category' },
-};
+import { ConstellationSidebar } from './ConstellationSidebar';
+import { dataStore } from '../lib/DataStore';
 
 interface ConstellationCanvasProps {
   sensors: SensorStar[];
@@ -14,24 +12,32 @@ interface ConstellationCanvasProps {
 }
 
 export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetryHistoryRef, onExport }: ConstellationCanvasProps) {
-  const canvasRef = useRef(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  
+  // Interaction State (internal to engine via Refs to avoid re-renders)
+  const interactionRef = useRef({
+    hoveredId: null as string | null,
+    dragStartId: null as string | null,
+    mousePos: { x: 0, y: 0 },
+    lastClickTime: 0,
+    cameraOffset: { x: 0, y: 0 },
+    isDragging: false
+  });
 
-  // State
-  const [links, setLinks] = useState([]);
-  const [hoveredSensor, setHoveredSensor] = useState(null);
-  const [dragStartSensor, setDragStartSensor] = useState(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [selectedConstellation, setSelectedConstellation] = useState([]);
+  // UI State (for React)
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [, setShowSidebar] = useState(false);
 
   // --- GRAPH TRAVERSAL ---
-  // Find all sensors connected to the given one (to form a Constellation)
-  const getConstellation = (startId, currentLinks) => {
-    if (!startId) return [];
-    const visited = new Set();
-    const queue = [startId];
+  const [links, setLinks] = useState<{source: string, target: string}[]>([]);
 
+  const getConstellation = useCallback((startId: string, currentLinks: {source: string, target: string}[]) => {
+    if (!startId) return [];
+    const visited = new Set<string>();
+    const queue = [startId];
     while (queue.length > 0) {
-      const curr = queue.shift();
+      const curr = queue.shift()!;
       if (!visited.has(curr)) {
         visited.add(curr);
         currentLinks.forEach(link => {
@@ -41,365 +47,350 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
       }
     }
     return Array.from(visited);
-  };
+  }, []);
 
-  // --- CANVAS RENDER LOOP ---
+  // --- RENDER ENGINE ---
+  const timeRef = useRef(0);
+  const bgStarsRef = useRef<{x: number, y: number, size: number, alpha: number}[]>([]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    let animationFrameId;
-    let time = 0;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) return;
 
-    // Resize handler
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
-    window.addEventListener('resize', resize);
-    resize();
+    let animationFrameId: number;
 
-    // Background stars
-    const bgStars = Array.from({ length: 150 }).map(() => ({
-      x: Math.random() * 2000 - 1000,
-      y: Math.random() * 2000 - 1000,
-      size: Math.random() * 1.5,
-      alpha: Math.random()
-    }));
-
-    const render = () => {
-      time += 1;
+    // Offscreen rendering for STATIC grid elements only
+    const setupOffscreen = () => {
+      offscreenCanvasRef.current = document.createElement('canvas');
+      offscreenCanvasRef.current.width = canvas.width;
+      offscreenCanvasRef.current.height = canvas.height;
+      const osCtx = offscreenCanvasRef.current.getContext('2d')!;
+      
       const width = canvas.width;
       const height = canvas.height;
       const cx = width / 2;
       const cy = height / 2;
 
-      // Clear
-      ctx.fillStyle = '#050914'; // Deep space
-      ctx.fillRect(0, 0, width, height);
+      // 3D Tilt Parameters (match the render loop)
+      const tilt = Math.PI / 4.5; // ~40 degrees
+      const depth = 800;
 
-      // Draw Dome Grid (Isometric projection)
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
-      ctx.lineWidth = 1;
-      for (let i = 1; i <= 4; i++) {
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, i * 100, i * 50, 0, 0, Math.PI * 2);
-        ctx.stroke();
+      // Draw Tilted Grid (Concentric Circles projected in 3D)
+      osCtx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+      osCtx.lineWidth = 1;
+      
+      for (let r = 100; r <= 800; r += 120) {
+        osCtx.beginPath();
+        for (let a = 0; a <= Math.PI * 2; a += 0.1) {
+          const x = Math.cos(a) * r;
+          const y = Math.sin(a) * r;
+          const z = 0;
+
+          // Projection
+          const yRot = y * Math.cos(tilt) - z * Math.sin(tilt);
+          const zRot = y * Math.sin(tilt) + z * Math.cos(tilt);
+          const scale = depth / (depth + zRot);
+          
+          const px = cx + x * scale;
+          const py = cy + yRot * scale;
+          
+          if (a === 0) osCtx.moveTo(px, py);
+          else osCtx.lineTo(px, py);
+        }
+        osCtx.closePath();
+        osCtx.stroke();
       }
 
-      // Draw background stars
-      bgStars.forEach(star => {
-        // Very slow counter-rotation for background
-        const angle = Math.atan2(star.y, star.x) + time * 0.00002;
-        const dist = Math.sqrt(star.x*star.x + star.y*star.y);
-        const px = cx + Math.cos(angle) * dist;
-        const py = cy + Math.sin(angle) * dist * 0.5;
+      // Initialize background stars
+      if (bgStarsRef.current.length === 0) {
+        bgStarsRef.current = Array.from({ length: 300 }).map(() => ({
+          x: (Math.random() - 0.5) * 3000,
+          y: (Math.random() - 0.5) * 3000,
+          size: Math.random() * 1.5,
+          alpha: 0.1 + Math.random() * 0.4
+        }));
+      }
+    };
 
-        ctx.fillStyle = `rgba(255, 255, 255, ${star.alpha * (0.5 + Math.sin(time*0.005 + dist)*0.5)})`;
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      setupOffscreen();
+    };
+    window.addEventListener('resize', resize);
+    resize();
+
+    const render = () => {
+      timeRef.current += 1;
+      const time = timeRef.current;
+      const width = canvas.width;
+      const height = canvas.height;
+      const cx = width / 2;
+      const cy = height / 2;
+
+      // 3D Parameters
+      const tilt = Math.PI / 4.5;
+      const depth = 800;
+
+      // 1. Background Clear
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(0, 0, width, height);
+      
+      // 2. Background Stars (Distant 3D field)
+      ctx.save();
+      const bgAngle = time * 0.00005;
+      bgStarsRef.current.forEach(star => {
+        const angle = Math.atan2(star.y, star.x) + bgAngle;
+        const dist = Math.sqrt(star.x*star.x + star.y*star.y);
+        const x = Math.cos(angle) * dist;
+        const y = Math.sin(angle) * dist;
+        const z = -200; // Distant plane
+
+        const yRot = y * Math.cos(tilt) - z * Math.sin(tilt);
+        const zRot = y * Math.sin(tilt) + z * Math.cos(tilt);
+        const scale = depth / (depth + zRot);
+        
+        const px = cx + x * scale;
+        const py = cy + yRot * scale;
+        
+        ctx.fillStyle = `rgba(255, 255, 255, ${star.alpha * scale * (0.6 + Math.sin(time*0.01 + dist)*0.4)})`;
         ctx.beginPath();
-        ctx.arc(px, py, star.size, 0, Math.PI * 2);
+        ctx.arc(px, py, star.size * scale, 0, Math.PI * 2);
         ctx.fill();
       });
+      ctx.restore();
 
-      // Use pre-computed theta directly (degrees → radians inside render)
-      // Use bounded phase so orbits don't drift over time
+      // 3. Static Grid Layer
+      if (offscreenCanvasRef.current) {
+        ctx.drawImage(offscreenCanvasRef.current, 0, 0);
+      }
+
+      // 4. Pre-calculate sensor positions and live status
       const updatedSensors = sensors.map(s => {
-        const phase = (time * s.speed) % (Math.PI * 2);
-        const currentTheta = (s.theta * (Math.PI / 180)) + phase;
-        const sx = cx + s.r * 2 * Math.cos(currentTheta);
-        const sy = cy + s.r * 1 * Math.sin(currentTheta);
-        return { ...s, sx, sy };
-      });
+        const currentTheta = (s.theta * (Math.PI / 180)) + (time * s.speed);
+        
+        // World Space
+        const wx = s.r * Math.cos(currentTheta);
+        const wy = s.r * Math.sin(currentTheta);
+        const wz = s.z;
 
-      // Draw Links (Constellations)
-      ctx.lineWidth = 2;
+        // 3D Projection
+        const yRot = wy * Math.cos(tilt) - wz * Math.sin(tilt);
+        const zRot = wy * Math.sin(tilt) + wz * Math.cos(tilt);
+        const scale = depth / (depth + zRot);
+        
+        const sx = cx + wx * scale;
+        const sy = cy + yRot * scale;
+        
+        const latest = dataStore.getLatest(s.msgID);
+        const isLive = latest && !!latest.data[s.sigName];
+        
+        return { ...s, sx, sy, scale, zDepth: zRot, isLive };
+      });
+      // Sort by depth for correct painter's order
+      updatedSensors.sort((a, b) => b.zDepth - a.zDepth);
+      (canvas as any)._sensorPositions = updatedSensors;
+
+      // 5. Draw Links (Glow Pass)
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
       links.forEach(link => {
-        const source = updatedSensors.find(s => s.id === link.source);
-        const target = updatedSensors.find(s => s.id === link.target);
-        if (source && target) {
-          const isSelected = selectedConstellation.includes(source.id) && selectedConstellation.includes(target.id);
-          ctx.strokeStyle = isSelected ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.2)';
-          if (isSelected) {
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = '#ffffff';
-          }
+        const sNode = updatedSensors.find(s => s.id === link.source);
+        const tNode = updatedSensors.find(s => s.id === link.target);
+        if (sNode && tNode) {
+          const isSelected = selectedIds.includes(sNode.id) && selectedIds.includes(tNode.id);
+          const alpha = (isSelected ? 0.8 : 0.15) * Math.min(sNode.scale, tNode.scale);
+          ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+          ctx.shadowBlur = isSelected ? 15 : 0;
+          ctx.shadowColor = '#fff';
+          ctx.lineWidth = (isSelected ? 2 : 1) * sNode.scale;
           ctx.beginPath();
-          ctx.moveTo(source.sx, source.sy);
-          ctx.lineTo(target.sx, target.sy);
+          ctx.moveTo(sNode.sx, sNode.sy);
+          ctx.lineTo(tNode.sx, tNode.sy);
           ctx.stroke();
-          ctx.shadowBlur = 0; // reset
+        }
+      });
+      ctx.restore();
+
+      // 6. Draw Sensors
+      updatedSensors.forEach(s => {
+        const isHovered = interactionRef.current.hoveredId === s.id;
+        const isSelected = selectedIds.includes(s.id);
+        const color = s.isLive ? s.color : '#334155';
+        const size = (isHovered ? 7 : isSelected ? 5 : 4) * s.scale;
+        
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.shadowBlur = (isHovered || isSelected ? 25 : s.isLive ? 12 : 0) * s.scale;
+        ctx.shadowColor = color;
+        ctx.fillStyle = color;
+        
+        ctx.beginPath();
+        ctx.arc(s.sx, s.sy, size, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.fillStyle = s.isLive ? '#fff' : '#64748b';
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(s.sx, s.sy, size * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        if (isHovered || isSelected) {
+          ctx.fillStyle = '#fff';
+          ctx.font = `${Math.round(12 * s.scale)}px "Inter", sans-serif`;
+          ctx.fillText(s.name, s.sx + 14 * s.scale, s.sy - 8 * s.scale);
         }
       });
 
-      // Draw dragging line
-      if (dragStartSensor) {
-        const source = updatedSensors.find(s => s.id === dragStartSensor);
-        if (source) {
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      // 7. Drag Line
+      if (interactionRef.current.dragStartId) {
+        const sNode = updatedSensors.find(s => s.id === interactionRef.current.dragStartId);
+        if (sNode) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
           ctx.setLineDash([5, 5]);
           ctx.beginPath();
-          ctx.moveTo(source.sx, source.sy);
-          ctx.lineTo(mousePos.x, mousePos.y);
+          ctx.moveTo(sNode.sx, sNode.sy);
+          ctx.lineTo(interactionRef.current.mousePos.x, interactionRef.current.mousePos.y);
           ctx.stroke();
           ctx.setLineDash([]);
         }
       }
 
-      // Draw Sensors (Stars)
-      updatedSensors.forEach(s => {
-        const isHovered = hoveredSensor === s.id;
-        const isSelected = selectedConstellation.includes(s.id);
-        const color = s.isLive ? s.color : '#6b7280'; // grey if not live
-
-        // Glow effect
-        ctx.shadowBlur = isHovered || isSelected ? 20 : 10;
-        ctx.shadowColor = color;
-        ctx.fillStyle = color;
-
-        ctx.beginPath();
-        ctx.arc(s.sx, s.sy, isHovered ? 6 : 4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        // Label
-        if ((isHovered || isSelected) && s.isLive) {
-          ctx.fillStyle = '#fff';
-          ctx.font = '12px "Inter", sans-serif';
-          ctx.fillText(s.name, s.sx + 10, s.sy - 10);
-
-          if (isSelected) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.font = '10px "Inter", sans-serif';
-            ctx.fillText(s.category.toUpperCase(), s.sx + 10, s.sy + 4);
-          }
-        }
-      });
-
-      // Save updated screen coordinates for hit detection
-      // We mutate a ref or re-use the calculated positions in interaction handlers
-      // For simplicity in React without causing re-renders, we'll attach it to the window or a ref.
-      canvas._sensorPositions = updatedSensors;
-
       animationFrameId = requestAnimationFrame(render);
     };
 
     render();
-
     return () => {
       window.removeEventListener('resize', resize);
       cancelAnimationFrame(animationFrameId);
     };
-  }, [sensors, links, hoveredSensor, dragStartSensor, mousePos, selectedConstellation]);
+  }, [sensors, links, selectedIds]);
 
-
-  // --- INTERACTION HANDLING ---
-  const getSensorAtPos = (x, y) => {
-    const positions = canvasRef.current._sensorPositions || [];
-    for (let s of positions) {
-      const dx = s.sx - x;
-      const dy = s.sy - y;
-      if (Math.sqrt(dx*dx + dy*dy) < 15) return s.id; // 15px hit radius
-    }
-    return null;
-  };
-
-  const handleMouseMove = (e) => {
-    const rect = canvasRef.current.getBoundingClientRect();
+  // --- INTERACTION HANDLERS ---
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    setMousePos({ x, y });
+    interactionRef.current.mousePos = { x, y };
 
-    const hitId = getSensorAtPos(x, y);
-    if (hitId !== hoveredSensor) {
-      setHoveredSensor(hitId);
+    const positions = (canvasRef.current as any)?._sensorPositions || [];
+    let hitId = null;
+    // Iterate in REVERSE to check front-most nodes first (closest to camera)
+    for (let i = positions.length - 1; i >= 0; i--) {
+      const s = positions[i];
+      // Adjust hit-radius by scale so small distant stars are harder/fairer to hit
+      const hitRadius = 18 * s.scale;
+      if (Math.hypot(s.sx - x, s.sy - y) < hitRadius) {
+        hitId = s.id;
+        break;
+      }
+    }
+    
+    if (interactionRef.current.hoveredId !== hitId) {
+      interactionRef.current.hoveredId = hitId;
       document.body.style.cursor = hitId ? 'pointer' : 'default';
     }
   };
 
-  const handleMouseDown = (e) => {
-    if (hoveredSensor) {
-      setDragStartSensor(hoveredSensor);
-    } else {
-      // Clicked empty space
-      setSelectedConstellation([]);
-    }
+  const handleMouseDown = () => {
+    interactionRef.current.dragStartId = interactionRef.current.hoveredId;
   };
 
-  const handleMouseUp = (e) => {
-    if (dragStartSensor && hoveredSensor && dragStartSensor !== hoveredSensor) {
-      // Create a link
-      const newLink = { source: dragStartSensor, target: hoveredSensor };
-
-      // Check if link already exists
-      const exists = links.some(l =>
-        (l.source === newLink.source && l.target === newLink.target) ||
-        (l.source === newLink.target && l.target === newLink.source)
-      );
-
+  const handleMouseUp = () => {
+    const { dragStartId, hoveredId } = interactionRef.current;
+    
+    if (dragStartId && hoveredId && dragStartId !== hoveredId) {
+      const exists = links.some(l => (l.source === dragStartId && l.target === hoveredId) || (l.source === hoveredId && l.target === dragStartId));
       if (!exists) {
-        const updatedLinks = [...links, newLink];
-        setLinks(updatedLinks);
-        // Automatically select the newly formed constellation
-        setSelectedConstellation(getConstellation(dragStartSensor, updatedLinks));
+        const newLinks = [...links, { source: dragStartId, target: hoveredId }];
+        setLinks(newLinks);
+        setSelectedIds(getConstellation(dragStartId, newLinks));
+        setShowSidebar(true);
       }
-    } else if (dragStartSensor && dragStartSensor === hoveredSensor) {
-      // Just a click on a sensor
-      setSelectedConstellation(getConstellation(dragStartSensor, links));
+    } else if (dragStartId && dragStartId === hoveredId) {
+      setSelectedIds(getConstellation(dragStartId, links));
+      setShowSidebar(true);
+    } else if (!hoveredId) {
+      setSelectedIds([]);
+      setShowSidebar(false);
     }
-    setDragStartSensor(null);
+    interactionRef.current.dragStartId = null;
   };
-
-  const clearConstellations = () => {
-    setLinks([]);
-    setSelectedConstellation([]);
-  };
-
 
   return (
     <div className="relative w-full h-screen bg-slate-950 overflow-hidden font-sans text-white select-none">
-
-      {/* 3D Canvas Background */}
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 z-0"
+        className="absolute inset-0 z-0 bg-[#020617]"
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
       />
 
-      {/* TOP UI - Title & Legend */}
-      <div className="absolute top-0 left-0 right-0 p-6 z-10 pointer-events-none flex justify-between items-start">
-        <div>
-          <h1 className="text-2xl font-bold tracking-widest flex items-center gap-3">
-            <Share2 className="text-blue-400" />
-            ORBITAL TELEMETRY
-          </h1>
-          <p className="text-slate-400 text-sm mt-1 tracking-wide uppercase">Timescale DB Sensor Visualizer</p>
-          <div className="mt-4 pointer-events-auto flex flex-col gap-2">
-            <button
-              onClick={clearConstellations}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md text-xs transition-colors"
+      {/* Header Overlay */}
+      <div className="absolute top-0 left-0 right-0 p-8 z-10 pointer-events-none flex justify-between items-start">
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-black tracking-tighter flex items-center gap-3 italic">
+              <Share2 className="text-blue-500" strokeWidth={3} />
+              CONSTELLATION <span className="text-blue-500/50 not-italic">V2</span>
+            </h1>
+            <p className="text-slate-500 text-[10px] font-bold tracking-widest uppercase ml-11">
+              Western Formula Racing • Data Acquisition
+            </p>
+          </div>
+          
+          <div className="pointer-events-auto ml-11 flex gap-2">
+            <button 
+              onClick={() => { setLinks([]); setSelectedIds([]); setShowSidebar(false); }}
+              className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold tracking-widest uppercase transition-all active:scale-95"
             >
-              <RefreshCw size={14} /> Reset Sky Map
-            </button>
-            <button
-              onClick={() => onExport(selectedConstellation)}
-              disabled={selectedConstellation.length === 0}
-              className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-md text-xs transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <Zap size={14} /> Export to TimescaleDB
+              <RefreshCw size={14} className="text-blue-400" />
+              Reset Sky Map
             </button>
           </div>
         </div>
 
-        <div className="bg-slate-900/60 backdrop-blur-md border border-slate-700 p-4 rounded-xl pointer-events-auto">
-          <h3 className="text-xs text-slate-400 font-semibold mb-3 tracking-wider uppercase">Systems Map</h3>
-          <div className="space-y-2">
-            {Object.entries(SENSOR_CATEGORIES).map(([key, info]) => (
-              <div key={key} className="flex items-center gap-3 text-sm">
-                <div className="w-3 h-3 rounded-full shadow-lg" style={{ backgroundColor: info.color, boxShadow: `0 0 8px ${info.color}` }}></div>
-                <span className="text-slate-300">{info.label}</span>
-              </div>
-            ))}
+        {/* Legend */}
+        <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 p-5 rounded-2xl pointer-events-auto shadow-2xl">
+          <div className="flex items-center gap-2 mb-4">
+            <Info size={14} className="text-slate-400" />
+            <h3 className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">System Categories</h3>
           </div>
-          <div className="mt-4 pt-4 border-t border-slate-700/50 text-xs text-slate-500 max-w-[200px]">
-            <p>Drag between stars to link sensors into a Constellation. Click a constellation to view live telemetry.</p>
-          </div>
-        </div>
-      </div>
-
-      {/* BOTTOM UI - Active Constellation Telemetry Chart */}
-      <div
-        className={`absolute bottom-0 left-0 right-0 z-20 transition-transform duration-500 ease-out ${selectedConstellation.length > 0 ? 'translate-y-0' : 'translate-y-full'}`}
-      >
-        <div className="mx-auto max-w-6xl mb-6 bg-slate-900/80 backdrop-blur-xl border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[280px]">
-
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-3 border-b border-slate-700/50 bg-slate-800/50">
-            <div className="flex items-center gap-3">
-              <Activity className="text-green-400 animate-pulse" size={18} />
-              <h2 className="font-semibold text-sm tracking-wide uppercase">Active Constellation Feed</h2>
-              <span className="px-2 py-0.5 rounded-full bg-slate-700 text-xs text-slate-300 ml-2">
-                {selectedConstellation.length} Nodes Linked
-              </span>
-            </div>
-            <button onClick={() => setSelectedConstellation([])} className="text-slate-400 hover:text-white transition-colors">
-              <X size={20} />
-            </button>
-          </div>
-
-          {/* Charts Area */}
-          <div className="flex-1 p-6 flex gap-6 overflow-x-auto">
-            {selectedConstellation.map(sensorId => {
-              const sensor = sensors.find(s => s.id === sensorId);
-              const color = sensor?.color || '#6b7280';
-
-              // Extract series for this chart
-              const series = telemetryHistoryRef.current[sensorId] || [];
-              const latest = series.length > 0 ? series[series.length - 1] : 0;
-              const max = Math.max(...series, 1);
-              const min = Math.min(...series, 0);
-              const range = max - min === 0 ? 1 : max - min;
-
-              // Generate SVG path
-              const pts = series.map((val, i) => {
-                const x = (i / 49) * 200; // 200px width
-                const y = 80 - ((val - min) / range) * 80; // 80px height
-                return `${x},${y}`;
-              }).join(' L ');
-              const path = series.length > 0 ? `M ${pts}` : '';
-
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+            {[...new Set(sensors.map(s => s.category))].map(cat => {
+              const color = sensors.find(s => s.category === cat)?.color;
               return (
-                <div key={sensorId} className="flex-shrink-0 w-[240px] bg-slate-800/40 rounded-xl p-4 border border-slate-700/40 relative">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <h4 className="text-xs text-slate-400 truncate">{sensor?.name ?? sensorId}</h4>
-                      <div className="text-xl font-mono font-bold mt-1" style={{ color }}>
-                        {latest.toFixed(1)}
-                      </div>
-                    </div>
-                    <div className="w-2 h-2 rounded-full mt-1" style={{ backgroundColor: color, boxShadow: `0 0 5px ${color}` }}></div>
-                  </div>
-
-                  {/* SVG Sparkline */}
-                  <div className="mt-4 h-[80px] w-full border-b border-slate-700/50 relative">
-                    <svg width="100%" height="100%" viewBox="0 0 200 80" preserveAspectRatio="none">
-                      <path
-                        d={path}
-                        fill="none"
-                        stroke={color}
-                        strokeWidth="2"
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
-                        className="transition-all duration-75"
-                      />
-                      {/* Gradient fill */}
-                      {series.length > 0 && (
-                        <path
-                          d={`${path} L 200,80 L 0,80 Z`}
-                          fill={`url(#gradient-${sensorId})`}
-                          stroke="none"
-                        />
-                      )}
-                      <defs>
-                        <linearGradient id={`gradient-${sensorId}`} x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={color} stopOpacity="0.3" />
-                          <stop offset="100%" stopColor={color} stopOpacity="0" />
-                        </linearGradient>
-                      </defs>
-                    </svg>
-                  </div>
+                <div key={cat} className="flex items-center gap-3 group">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 12px ${color}` }} />
+                  <span className="text-[11px] font-semibold text-slate-300 group-hover:text-white transition-colors">{cat}</span>
                 </div>
               );
             })}
-            {selectedConstellation.length === 0 && (
-              <div className="w-full h-full flex flex-col items-center justify-center text-slate-500">
-                <Info size={32} className="mb-2 opacity-50" />
-                <p>No constellation selected. Click a linked group in the sky map.</p>
-              </div>
-            )}
           </div>
         </div>
       </div>
+
+      {/* Dynamic Data Interaction (Sidebar) */}
+      <ConstellationSidebar
+        selectedNodeIds={selectedIds}
+        sensors={sensors}
+        sensorValuesRef={sensorValuesRef}
+        telemetryHistoryRef={telemetryHistoryRef}
+        onClose={() => { setShowSidebar(false); setSelectedIds([]); }}
+        onExport={onExport}
+      />
+      
+      {/* Help Interaction Prompt */}
+      {!selectedIds.length && (
+        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 px-6 py-3 bg-white/5 backdrop-blur-md border border-white/10 rounded-full text-xs text-slate-400 font-medium tracking-wide animate-bounce">
+          Drag between stars to link systems • Click to inspect
+        </div>
+      )}
     </div>
   );
 }
