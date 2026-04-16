@@ -89,7 +89,7 @@ cd /home/ubuntu/projects/daq-server-components/installer
 docker compose up -d
 ```
 
-Wait ~30 seconds for InfluxDB to become healthy, then verify:
+Wait ~30 seconds for TimescaleDB to become healthy, then verify:
 
 ```bash
 docker ps --format 'table {{.Names}}\t{{.Status}}'
@@ -98,12 +98,12 @@ docker ps --format 'table {{.Names}}\t{{.Status}}'
 Expected running containers:
 | Container | Notes |
 |---|---|
-| influxdb3 | Should show `(healthy)` |
-| influxdb3-explorer | InfluxDB UI |
+| timescaledb | Should show `(healthy)` |
+| timescaledb-explorer | TimescaleDB UI |
 | grafana | Dashboard |
 | grafana-bridge | Grafana API bridge |
 | file-uploader | |
-| data-downloader-api | Waits for influxdb3 healthy |
+| data-downloader-api | Waits for timescaledb healthy |
 | data-downloader-scanner | |
 | data-downloader-frontend | |
 | health-monitor | |
@@ -157,7 +157,7 @@ Memory limits are now set in `docker-compose.yml`. Key limits:
 
 | Service | Limit |
 |---|---|
-| influxdb3 | 4096M |
+| timescaledb | 4096M |
 | file-uploader | 1536M |
 | data-downloader-api | 1024M |
 | sandbox | 1024M |
@@ -185,8 +185,8 @@ crontab -l  # shows: 0 4 * * * docker compose restart
 
 | Service | Port |
 |---|---|
-| InfluxDB | 9000 |
-| InfluxDB Explorer | 8888 |
+| TimescaleDB | 9000 |
+| TimescaleDB Explorer | 8888 |
 | Grafana | 8087 (also via Cloudflare tunnel) |
 | Grafana Bridge | 3001 |
 | File Uploader | 8084 |

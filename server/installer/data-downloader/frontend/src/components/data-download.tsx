@@ -288,7 +288,7 @@ export function DataDownload({ runs, sensors, season, externalSelection }: Props
     <div>
       <h2>Data Downloader</h2>
       <p className="subtitle">
-        Choose a run window and sensor to pull raw readings directly from InfluxDB3 via SQL.
+        Choose a run window and sensor to pull raw readings directly from TimescaleDB via SQL.
       </p>
 
       <div className="data-download-grid">

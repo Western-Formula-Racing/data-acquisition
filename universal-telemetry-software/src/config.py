@@ -29,8 +29,8 @@ ENABLE_UPLINK = os.getenv("ENABLE_UPLINK", "false").lower() == "true"
 # Direct write to server TimescaleDB over the network (Option A — no local DB on RPi).
 # Format: postgresql://user:password@host:port/dbname
 POSTGRES_DSN       = os.getenv("POSTGRES_DSN", "postgresql://wfr:password@localhost:5432/wfr")
-# Season table name (e.g. wfr26_base). Derived from INFLUX_SEASON env var for convenience.
-TIMESCALE_TABLE    = os.getenv("TIMESCALE_TABLE", f"{os.getenv('INFLUX_SEASON', 'wfr26').lower()}")
+# Season table name (e.g. wfr26_base). Derived from TIMESCALE_SEASON env var for convenience.
+TIMESCALE_TABLE    = os.getenv("TIMESCALE_TABLE", f"{os.getenv('TIMESCALE_SEASON', 'wfr26').lower()}")
 # Batching
 TIMESCALE_BATCH_SIZE     = int(os.getenv("TIMESCALE_BATCH_SIZE", "5000"))
 TIMESCALE_FLUSH_INTERVAL = int(os.getenv("TIMESCALE_FLUSH_INTERVAL_MS", "1000"))

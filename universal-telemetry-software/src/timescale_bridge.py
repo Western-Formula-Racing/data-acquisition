@@ -26,7 +26,7 @@ import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 import redis.asyncio as redis
-import slicks
+import cantools
 
 from src.config import (
     REDIS_URL,
@@ -62,8 +62,8 @@ class TimescaleBridge:
         self.table = TIMESCALE_TABLE.lower()  # Postgres names are lowercase
 
         # Load DBC for CAN decoding
-        resolved_dbc = slicks.resolve_dbc_path()
-        self.db = slicks.load_dbc(resolved_dbc)
+        resolved_dbc = os.getenv("DBC_FILE_PATH", "/app/example.dbc")
+        self.db = cantools.database.load_file(resolved_dbc)
         logger.info(f"📁 Loaded DBC file: {resolved_dbc}")
 
         # Postgres connection pool (ThreadedConnectionPool for concurrent writes)
@@ -231,16 +231,26 @@ class TimescaleBridge:
                 if can_id is None or len(data_bytes) != 8:
                     continue
 
+                try:
+                    can_id = int(can_id)
+                except (TypeError, ValueError):
+                    continue
+
                 # Convert ms timestamp to datetime with UTC timezone
                 ts = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
 
                 # Decode CAN frame
-                frame = slicks.decode_frame(self.db, can_id, data_bytes)
-                if frame is None or not frame.signals:
+                try:
+                    message = self.db.get_message_by_frame_id(can_id)
+                    signals = message.decode(data_bytes, decode_choices=False)
+                except Exception:
+                    continue
+
+                if not signals:
                     continue
 
                 with self._batch_lock:
-                    self._batch.append((ts, frame.message_name, can_id, dict(frame.signals)))
+                    self._batch.append((ts, message.name, can_id, dict(signals)))
                     count += 1
 
                 # Flush if batch is full
@@ -258,13 +268,18 @@ class TimescaleBridge:
 
     def _periodic_flush(self):
         """Flush batch if FLUSH_INTERVAL has elapsed. Called from the async loop."""
+        # Decide under lock, flush outside lock to avoid re-entrant lock deadlock
+        # (_flush_batch acquires _batch_lock internally).
+        should_flush = False
         with self._batch_lock:
             elapsed = (time.time() - self._last_flush) * 1000
-            if self._batch and elapsed >= FLUSH_INTERVAL:
-                try:
-                    self._flush_batch()
-                except Exception:
-                    pass  # Already logged in _flush_batch
+            should_flush = bool(self._batch) and elapsed >= FLUSH_INTERVAL
+
+        if should_flush:
+            try:
+                self._flush_batch()
+            except Exception:
+                pass  # Already logged in _flush_batch
 
     # ── Main loop ──────────────────────────────────────────────────────────
 

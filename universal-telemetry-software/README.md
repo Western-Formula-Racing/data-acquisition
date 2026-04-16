@@ -127,7 +127,7 @@ Once `can0` is confirmed working, proceed to deployment.
 >
 > Then use the rpi5 override whenever starting the stack:
 > ```bash
-> docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.rpi5.yml up -d
+> docker compose -f deploy/docker-compose.yml up -d
 > ```
 
 ### Installation
@@ -170,15 +170,15 @@ docker compose logs -f telemetry
 
 ## Deploying with Pre-built Images (GHCR)
 
-Instead of building locally, use pre-built images from GitHub Container Registry:
+Use `docker-compose.macbook-base.yml` for MacBook or `docker-compose.rpi-base.yml` for Pi base station.
+Both pull pre-built images from GHCR:
 
 ```bash
-# Login (required for private packages)
-echo $CR_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+# MacBook full stack
+docker compose -f deploy/docker-compose.macbook-base.yml up -d
 
-# Pull and start
-docker compose -f deploy/docker-compose.prod.yml pull
-docker compose -f deploy/docker-compose.prod.yml up -d
+# RPi base station (ephemeral, no DB persistence)
+docker compose -f deploy/docker-compose.rpi-base.yml up -d
 ```
 
 Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
@@ -281,12 +281,13 @@ universal-telemetry-software/
 │   └── poe.py                  # PoE monitor
 ├── tests/
 ├── deploy/
-│   ├── docker-compose.yml          # Development/local build
-│   ├── docker-compose.prod.yml     # Production (GHCR images)
-│   ├── docker-compose.staging.yml  # Staging (:test-latest images)
-│   ├── docker-compose.test.yml     # Integration test stack (CI)
-│   ├── docker-compose.can-test.yml # vCAN pipeline tests
-│   ├── docker-compose.jitsi.yml    # Optional Jitsi comms addon
+│   ├── docker-compose.yml              # General purpose (RPi or MacBook)
+│   ├── docker-compose.macbook-base.yml # MacBook full stack (TimescaleDB + Grafana)
+│   ├── docker-compose.rpi-base.yml     # RPi lightweight base (ephemeral)
+│   ├── docker-compose.staging.yml      # Staging (:test-latest images)
+│   ├── docker-compose.test.yml         # Integration test stack (CI)
+│   ├── docker-compose.can-test.yml     # vCAN pipeline tests
+│   ├── docker-compose.jitsi.yml        # Optional Jitsi comms addon
 │   ├── docker-compose.rpi5.yml     # RPi5 QEMU override
 │   └── WHICH_ONE.md                # Compose file reference
 ├── Dockerfile

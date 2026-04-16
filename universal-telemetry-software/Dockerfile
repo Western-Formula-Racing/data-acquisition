@@ -39,6 +39,11 @@ COPY web-tester/ /app/web-tester/
 COPY main.py /app/.
 COPY example.dbc /app/example.dbc
 
+# Bake the git hash into the image so version.py can read it at runtime.
+# Pass --build-arg GIT_HASH=$(git rev-parse --short HEAD) when building.
+ARG GIT_HASH=unknown
+ENV GIT_HASH=$GIT_HASH
+
 # Use environment variables for configuration
 ENV ROLE=auto
 ENV REMOTE_IP=192.168.1.100

@@ -12,7 +12,7 @@ class LoggingHandler {
       
       // Stamp with wall-clock time at FDR receipt.
       // The car's msg.time is relative (ms since ECU boot) and has no
-      // meaning as a Unix timestamp — InfluxDB needs absolute epoch ms.
+      // meaning as a Unix timestamp — TimescaleDB expects absolute epoch ms.
       const receivedAt = Date.now();
       messages.forEach(msg => {
         if (msg?.signals) {

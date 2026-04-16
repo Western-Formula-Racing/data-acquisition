@@ -6,7 +6,7 @@ The `installer/docker-compose.yml` file orchestrates the complete DAQ telemetry 
 
 ```text
 ┌────────────┐                                ┌────────────┐
-│ Startup    │                                │ InfluxDB 3 │
+│ Startup    │                                │ TimescaleDB │
 │ data loader├───────────────────────────────▶│ + Explorer │
 └────────────┘                                └────────────┘
        │                                           │
@@ -20,21 +20,21 @@ The `installer/docker-compose.yml` file orchestrates the complete DAQ telemetry 
 └────────────┘                                   │ notifications
 ```
 
-All containers join the `datalink` bridge network, enabling them to communicate using Docker hostnames (for example `http://influxdb3:8181`).
+All containers join the `datalink` bridge network, enabling them to communicate using Docker hostnames (for example `http://timescaledb:8181`).
 
 ## Volumes
 
 | Volume | Mounted by | Purpose |
 | --- | --- | --- |
-| `influxdb3-data` | `influxdb3` | Persists InfluxDB 3 metadata and stored telemetry. |
-| `influxdb3-explorer-db` | `influxdb3-explorer` | Keeps explorer UI preferences. |
+| `timescaledb-data` | `timescaledb` | Persists TimescaleDB metadata and stored telemetry. |
+| `timescaledb-explorer-db` | `timescaledb-explorer` | Keeps explorer UI preferences. |
 | `grafana-storage` | `grafana` | Stores dashboards, plugins, and Grafana state. |
 
 Remove volumes with `docker compose down -v` if you need a clean slate.
 
 ## Environment file
 
-Docker Compose automatically reads `.env` files located next to `docker-compose.yml`. See [`installer/.env.example`](../installer/.env.example) for the full list of variables. Key values include `INFLUXDB_URL`, `INFLUXDB_ADMIN_TOKEN`, and the optional Slack credentials.
+Docker Compose automatically reads `.env` files located next to `docker-compose.yml`. See [`installer/.env.example`](../installer/.env.example) for the full list of variables. Key values include `POSTGRES_DSN`, `POSTGRES_PASSWORD`, and the optional Slack credentials.
 
 ## Conditional services
 
@@ -42,8 +42,8 @@ The Slack bot relies on valid `SLACK_APP_TOKEN` and `SLACK_BOT_TOKEN` values. Le
 
 ## Health checks
 
-- `influxdb3` exposes a TCP healthcheck on port 8181 to ensure the database is reachable before dependants start.
-- `startup-data-loader` waits an additional 5 seconds (`sleep 5`) to give InfluxDB 3 time to finish booting before loading the sample data.
+- `timescaledb` exposes a TCP healthcheck on port 8181 to ensure the database is reachable before dependants start.
+- `startup-data-loader` waits an additional 5 seconds (`sleep 5`) to give TimescaleDB time to finish booting before loading the sample data.
 
 ## Customisation tips
 
@@ -61,8 +61,8 @@ docker compose config
 # Tail logs for a specific service
 docker compose logs -f startup-data-loader
 
-# Execute a shell inside the InfluxDB 3 container
-docker compose exec influxdb3 /bin/sh
+# Execute a shell inside the TimescaleDB container
+docker compose exec timescaledb /bin/sh
 ```
 
 For detailed service documentation, browse the files under [`docs/containers/`](containers/).

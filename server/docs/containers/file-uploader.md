@@ -1,6 +1,6 @@
 # File uploader
 
-The file uploader is a Flask application that streams CAN CSV logs into InfluxDB 3. It exposes a simple web UI for selecting the destination **season** (InfluxDB table within the configured database) and monitoring progress.
+The file uploader is a Flask application that streams CAN CSV logs into TimescaleDB. It exposes a simple web UI for selecting the destination **season** (TimescaleDB table within the configured database) and monitoring progress.
 
 ## Ports
 
@@ -10,8 +10,8 @@ The file uploader is a Flask application that streams CAN CSV logs into InfluxDB
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `INFLUXDB_URL` | API endpoint for table discovery and writes. | `http://influxdb3:8181` |
-| `INFLUXDB_TOKEN` | Token with write access to the target database. | `dev-influxdb-admin-token` |
+| `POSTGRES_DSN` | Postgres DSN used for table discovery and writes. | `postgresql://wfr:wfr_password@timescaledb:5432/wfr` |
+| `POSTGRES_PASSWORD` | Database password used by DSN auth. | `wfr_password` |
 | `FILE_UPLOADER_WEBHOOK_URL` | Optional webhook invoked when uploads finish. | empty |
 | `SLACK_WEBHOOK_URL` | Fallback webhook if the dedicated uploader value is unset. | empty |
 
@@ -25,6 +25,6 @@ The file uploader is a Flask application that streams CAN CSV logs into InfluxDB
 ## Usage
 
 1. Visit http://localhost:8084.
-2. Choose a target season (table) from the drop-down (populated from the InfluxDB API).
+2. Choose a target season (table) from the drop-down (populated from the TimescaleDB API).
 3. Upload one or more CSV files exported from the vehicle logger.
 4. Monitor progress via the live event stream; notifications are sent upon completion if a webhook is configured.

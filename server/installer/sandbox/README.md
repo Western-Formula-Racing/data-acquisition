@@ -27,9 +27,9 @@ flowchart TD
     subgraph "Sandbox (port 8080)"
         direction TB
         Execute["Execute Python in subprocess"]
-        InfluxDB[("InfluxDB3")]
+        TimescaleDB[("TimescaleDB")]
 
-        Execute <-->|"slicks: fetch_telemetry(), discover_sensors()"| InfluxDB
+        Execute <-->|"slicks: fetch_telemetry(), discover_sensors()"| TimescaleDB
     end
 
     Slackbot -->|"POST /api/generate-code { prompt }"| Receive
@@ -50,8 +50,8 @@ flowchart TD
 
 2. **Custom Sandbox** (`sandbox_server.py`)
    - HTTP server that executes Python code in isolated environment
-   - **Has internet access** for InfluxDB queries and API calls
-   - Uses the [`slicks`](https://pypi.org/project/slicks/) package for data access (wraps InfluxDB, movement detection, sensor discovery)
+   - **Has internet access** for TimescaleDB queries and API calls
+   - Uses the [`slicks`](https://pypi.org/project/slicks/) package for data access (wraps TimescaleDB, movement detection, sensor discovery)
    - Supports full Python ecosystem: slicks, matplotlib, pandas, numpy, plotly, scikit-learn
    - Auto-captures output files (images, data)
    - Configurable timeout and resource limits
@@ -74,8 +74,8 @@ COHERE_MODEL=command-r-plus
 # Optional: Max retry attempts (default: 2)
 MAX_RETRIES=2
 
-# Optional: InfluxDB database name (default: telemetry)
-INFLUXDB_DATABASE=telemetry
+# Optional: TimescaleDB database name (default: telemetry)
+DEFAULT_SEASON_TABLE=telemetry
 ```
 
 ### Prompt Engineering Setup
@@ -128,12 +128,12 @@ Use the `!agent` command in Slack:
 1. User sends `!agent <prompt>` in Slack
 2. Slackbot forwards prompt to Code Generator service
 3. Code Generator:
-   - Loads system prompt with InfluxDB connection details
+   - Loads system prompt with TimescaleDB connection details
    - Calls Cohere AI to generate Python code
    - Submits code directly to Custom Sandbox for execution
 4. Custom Sandbox:
    - Executes Python code with full internet access
-   - Can query InfluxDB, make API calls, generate plots
+   - Can query TimescaleDB, make API calls, generate plots
    - Returns stdout, stderr, and output files
 5. If code fails:
    - Error message is appended to the prompt
@@ -275,10 +275,10 @@ docker compose logs -f sandbox
 ## Security
 
 - Code executes in isolated subprocess with timeout limits
-- **Has internet access** for InfluxDB queries via `slicks` and API calls
+- **Has internet access** for TimescaleDB queries via `slicks` and API calls
 - Limited runtime (120 seconds max, configurable via `SANDBOX_TIMEOUT`)
 - Limited memory and file size
-- InfluxDB credentials passed via environment variables (consumed by `slicks` automatically)
+- TimescaleDB credentials passed via environment variables (consumed by `slicks` automatically)
 - Generated code is logged for audit purposes
 
 ## Troubleshooting
@@ -301,7 +301,7 @@ docker compose logs -f sandbox
 - Check the system prompt in `prompt-guide.txt`
 - Increase MAX_RETRIES if needed
 - View generated code in container logs
-- Ensure InfluxDB credentials are correct
+- Ensure TimescaleDB credentials are correct
 
 ## Development
 

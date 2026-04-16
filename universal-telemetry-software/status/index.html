@@ -57,6 +57,62 @@
             text-transform: uppercase;
         }
 
+        .remote-ip-banner {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 10px 20px;
+            margin-bottom: 15px;
+            background: #0a0a0a;
+            border: 2px solid #222;
+            border-radius: 4px;
+            transition: border-color 0.3s;
+        }
+
+        .remote-ip-banner.alive {
+            border-color: #4ade80;
+        }
+
+        .remote-ip-banner.dead {
+            border-color: #ef4444;
+        }
+
+        .remote-ip-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: #8e8eab;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .remote-ip-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #4ade80;
+            letter-spacing: 2px;
+            transition: color 0.3s;
+        }
+
+        .remote-ip-value.dead {
+            color: #ef4444;
+        }
+
+        .remote-ip-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4ade80;
+            box-shadow: 0 0 8px rgba(74, 222, 128, 0.6);
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+
+        .remote-ip-indicator.dead {
+            background: #ef4444;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+        }
+
         .status-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -294,6 +350,44 @@
         }
         
         .highlight-green { color: #4ade80; }
+
+        .out-of-range {
+            border-color: #ef4444 !important;
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+            animation: pulse-red 1s infinite;
+        }
+
+        @keyframes pulse-red {
+            0% { background: #080808; }
+            50% { background: #1a0505; }
+            100% { background: #080808; }
+        }
+
+        .seq-tape-container {
+            background: #080808;
+            padding: 10px 15px;
+            border: 1px solid #222;
+            margin-top: 10px;
+        }
+
+        .seq-tape {
+            width: 100%;
+            height: 30px;
+            display: block;
+            image-rendering: pixelated;
+        }
+
+        .seq-legend {
+            display: flex;
+            gap: 15px;
+            font-size: 0.7rem;
+            color: #6b7280;
+            margin-top: 5px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .legend-dot { width: 8px; height: 8px; }
     </style>
 </head>
 
@@ -304,10 +398,16 @@
             <p class="subtitle">REAL-TIME CONNECTION MONITOR</p>
         </header>
 
+        <div class="remote-ip-banner">
+            <span class="remote-ip-label">📡 Target Car:</span>
+            <span class="remote-ip-value" id="remoteIp">--</span>
+            <div class="remote-ip-indicator" id="remoteIpIndicator"></div>
+        </div>
+
         <div class="pipeline-flow">
             <div class="pipe-node">
                 <div class="pipe-dot" id="pipeDot_car"></div>
-                <span class="pipe-label">CAR</span>
+                <span class="pipe-label" id="pipeLabelCar">CAR</span>
             </div>
             <div class="pipe-sep" id="pipeSep_car">──▶</div>
             <div class="pipe-node">
@@ -326,16 +426,33 @@
             </div>
         </div>
 
-        <!-- ECU / Clock sync banner -->
+        <!-- Base Clock Bad Banner -->
+        <div class="error-message" id="baseClockBadBanner" style="display: none; border: 2px solid #ef4444; margin-bottom: 15px; font-weight: 700; color: #fecaca; text-transform: uppercase;">
+            ⚠️ BASE STATION CLOCK IS WRONG (before 2026-04-01). Car time injection BLOCKED — set the base station clock below before racing.
+        </div>
+
+        <!-- DBC Warning Banner -->
+        <div class="error-message" id="dbcWarningBanner" style="display: none; border: 2px solid #ef4444; margin-bottom: 15px; font-weight: 700; color: #fecaca; text-transform: uppercase;">
+            ⚠️ WARNING: USING PLACEHOLDER EXAMPLE.DBC! Telemetry is decoded with a fake schema. Raw CAN is saved, but DB will hold incorrect data! — Set DBC_HOST_PATH in deploy/.env and restart the telemetry container to fix.
+        </div>
+
+        <!-- Version mismatch banner -->
+        <div class="error-message" id="versionMismatchBanner" style="display: none; border: 2px solid #f59e0b; margin-bottom: 15px; font-weight: 700; color: #fde68a; text-transform: uppercase;">
+            ⚠️ VERSION MISMATCH — <span id="versionDetail"></span> — Redeploy both sides to the same commit before racing.
+        </div>
+
+        <!-- Clock sync banner -->
         <div class="sync-banner waiting" id="syncBanner">
             <div class="sync-banner-text">
-                <strong id="syncTitle">⏳ Waiting for ECU time sync</strong>
-                <small id="syncDetail">Data is held until a valid clock source is established (ECU RTC, NTP, or manual set)</small>
+                <strong id="syncTitle">⏳ Waiting for clock sync</strong>
+                <small id="syncDetail">Timestamps may be inaccurate until a clock source is established (ECU RTC, NTP, or manual set)</small>
+                <small id="carSyncStatus" style="display:none; color:#4ade80; margin-top:4px; display:block;">Car clock: auto-synced ✓</small>
             </div>
             <div class="time-form" id="timeForm">
                 <input type="datetime-local" id="timeInput" step="1">
                 <button class="btn btn-amber btn-sm" onclick="prefillNow()">Now ↺</button>
-                <button class="btn btn-amber btn-sm" onclick="setTime()">Set RPi Clock</button>
+                <button class="btn btn-amber btn-sm" onclick="setTime()">Inject Time to Car Pi</button>
+                <span id="setTimeStatus" style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; align-self: center;"></span>
             </div>
         </div>
 
@@ -409,18 +526,18 @@
             </div>
 
             <div class="card">
-                <div class="card-title">[INFLUXDB]</div>
+                <div class="card-title">[TIMESCALEDB]</div>
                 <div class="metric">
                     <span class="metric-label">Write Status</span>
-                    <span class="metric-value" id="influxStatus">--</span>
+                    <span class="metric-value" id="timescaleStatus">--</span>
                 </div>
                 <div class="metric">
                     <span class="metric-label">Points Written</span>
-                    <span class="metric-value" id="influxPoints">--</span>
+                    <span class="metric-value" id="timescalePoints">--</span>
                 </div>
                 <div class="metric">
                     <span class="metric-label">Write Errors</span>
-                    <span class="metric-value" id="influxErrors">--</span>
+                    <span class="metric-value" id="timescaleErrors">--</span>
                 </div>
             </div>
         </div>
@@ -430,9 +547,24 @@
             <canvas id="rateChart" class="sparkline"></canvas>
         </div>
 
+        <div class="seq-tape-container">
+            <div class="card-title">[PACKET_SEQUENCE_TAPE]</div>
+            <canvas id="seqTape" class="seq-tape"></canvas>
+            <div class="seq-legend">
+                <div class="legend-item"><div class="legend-dot" style="background: #4ade80;"></div> UDP_OK</div>
+                <div class="legend-item"><div class="legend-dot" style="background: #fbbf24;"></div> MISSED</div>
+                <div class="legend-item"><div class="legend-dot" style="background: #3b82f6;"></div> RECOVERED</div>
+            </div>
+        </div>
+
         <div class="timestamp" id="timestamp">--</div>
 
         <div class="error-message" id="errorMsg" style="display: none;"></div>
+
+        <div style="margin-top: 15px; padding: 10px 0; border-top: 1px solid #222; display: flex; gap: 10px;">
+            <button class="btn btn-amber btn-sm" onclick="shutdownCar()">⏻ Shutdown Car Pi</button>
+            <span id="shutdownStatus" style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #6b7280; align-self: center;"></span>
+        </div>
     </div>
 
     <div class="performance-footer">
@@ -446,13 +578,15 @@
     <script>
         const REDIS_WS_URL = 'ws://' + window.location.hostname + ':9080';
         const STATS_TIMEOUT = 5000;
-        const CAR_TIMEOUT = 5000;
+        const CAR_TIMEOUT = 3000; // Stats come every 1s; heartbeat every 2s — give breathing room
 
         let ws = null;
         let wsConnected = false;
         let startTime = Date.now();
         let lastMessageTime = null;
         let lastCarDataTime = null;
+        let lastUdpPacketTime = null;
+        let seqBuffer = [];
         let totalReceived = 0;
         let totalMissing = 0;
         let totalRecovered = 0;
@@ -462,10 +596,14 @@
 
         const canvas = document.getElementById('rateChart');
         const ctx = canvas.getContext('2d');
+        const tapeCanvas = document.getElementById('seqTape');
+        const tapeCtx = tapeCanvas.getContext('2d');
 
         function resizeCanvas() {
             canvas.width = canvas.offsetWidth;
             canvas.height = canvas.offsetHeight;
+            tapeCanvas.width = tapeCanvas.offsetWidth;
+            tapeCanvas.height = tapeCanvas.offsetHeight;
         }
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
@@ -521,9 +659,9 @@
         }
 
         const SOURCE_LABELS = {
-            'ecu_rtc':      { text: '✅ Synced — ECU RTC',        cls: 'synced',  detail: 'Timestamps from ECU DS3231 battery-backed RTC' },
-            'system_clock': { text: '✅ Synced — RPi system clock', cls: 'synced',  detail: 'RPi clock was past 2026-03-22 at startup (NTP or manual set)' },
-            'none':         { text: '⏳ Waiting for ECU time sync', cls: 'waiting', detail: 'Data still flows — timestamps may be inaccurate until a clock source is established. Set clock below or wait for ECU RTC.' },
+            'ecu_rtc':      { text: '✅ Synced — ECU RTC',     cls: 'synced',  detail: 'Timestamps from ECU DS3231 battery-backed RTC' },
+            'system_clock': { text: '✅ Synced — System clock', cls: 'synced',  detail: 'Base station clock is trusted. Car Pi clock is being auto-synced every 30s.' },
+            'none':         { text: '⏳ Waiting for clock sync', cls: 'waiting', detail: 'Timestamps may be inaccurate. Set base station clock below — car Pi will be synced automatically.' },
         };
 
         function updateSyncBanner(synced, source) {
@@ -551,31 +689,93 @@
 
         async function setTime() {
             const val = document.getElementById('timeInput').value;
-            if (!val) { alert('Enter a date/time first'); return; }
+            const el = document.getElementById('setTimeStatus');
+            if (!val) { el.textContent = 'Enter a date/time first'; el.style.color = '#fbbf24'; return; }
+            el.textContent = 'Setting…'; el.style.color = '#6b7280';
             try {
-                const res = await fetch('/set-time', {
+                const res = await fetch('/inject-car-time', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ time: val.replace('T', ' ') }),
                 });
                 const json = await res.json();
                 if (res.ok) {
-                    document.getElementById('syncTitle').textContent  = '🕐 Clock set — waiting for data to ungate…';
-                    document.getElementById('syncDetail').textContent = 'RPi clock: ' + json.time;
+                    el.textContent = '✓ Injected'; el.style.color = '#4ade80';
+                    document.getElementById('syncTitle').textContent  = '🕐 Car Pi clock set';
+                    document.getElementById('syncDetail').textContent = 'Car Pi clock: ' + json.time;
                 } else {
-                    alert('Failed to set time: ' + json.error);
+                    el.textContent = '✗ ' + (json.error || 'Failed'); el.style.color = '#ef4444';
                 }
             } catch (e) {
-                alert('Request failed: ' + e);
+                el.textContent = '✗ ' + e; el.style.color = '#ef4444';
             }
         }
 
         function updateStats(stats) {
-            const { received, missing, recovered, messages } = stats;
+            const { received, missing, recovered, messages, last_udp_time, status_buffer } = stats;
 
-            if ((received || 0) > 0 || (messages || 0) > 0) {
+            if (last_udp_time) {
+                lastUdpPacketTime = last_udp_time * 1000;
+            }
+
+            // car_alive: true only when base station is receiving actual UDP data from car
+            if (stats.car_alive) {
                 lastCarDataTime = Date.now();
             }
+
+            if (status_buffer) {
+                seqBuffer = status_buffer;
+            }
+
+            if (stats.dbc_file) {
+                const dbcWarning = document.getElementById('dbcWarningBanner');
+                if (stats.dbc_file.includes('example.dbc')) {
+                    dbcWarning.style.display = 'block';
+                } else {
+                    dbcWarning.style.display = 'none';
+                }
+            }
+
+            if (stats.remote_ip) {
+                document.getElementById('remoteIp').textContent = stats.remote_ip;
+                const pipeLabel = document.getElementById('pipeLabelCar');
+                if (pipeLabel) pipeLabel.textContent = stats.remote_ip;
+            }
+
+            // Update remote IP banner color based on car alive status
+            const banner = document.querySelector('.remote-ip-banner');
+            const ipValue = document.getElementById('remoteIp');
+            const ipDot = document.getElementById('remoteIpIndicator');
+            const carAlive = stats.car_alive;
+
+            if (banner) {
+                banner.classList.toggle('alive', !!carAlive);
+                banner.classList.toggle('dead', !carAlive);
+            }
+            if (ipValue) {
+                ipValue.classList.toggle('alive', !!carAlive);
+                ipValue.classList.toggle('dead', !carAlive);
+            }
+            if (ipDot) {
+                ipDot.classList.toggle('alive', !!carAlive);
+                ipDot.classList.toggle('dead', !carAlive);
+            }
+
+            const baseClockBad = document.getElementById('baseClockBadBanner');
+            if (baseClockBad) baseClockBad.style.display = stats.base_clock_bad ? 'block' : 'none';
+
+            if (stats.own_git_hash && stats.car_git_hash) {
+                const mismatch = stats.own_git_hash !== stats.car_git_hash;
+                const banner = document.getElementById('versionMismatchBanner');
+                banner.style.display = mismatch ? 'block' : 'none';
+                if (mismatch) {
+                    document.getElementById('versionDetail').textContent =
+                        `base=${stats.own_git_hash} car=${stats.car_git_hash}`;
+                }
+            }
+
+            const carSyncEl = document.getElementById('carSyncStatus');
+            if (carSyncEl) carSyncEl.style.display = stats.car_time_synced ? 'block' : 'none';
 
             if (stats.ecu_synced !== undefined) {
                 updateSyncBanner(stats.ecu_synced, stats.ecu_sync_source || 'none');
@@ -604,23 +804,24 @@
                 rateHistory.shift();
             }
 
-            updateInflux(stats.influx);
+            updateTimescale(stats.timescale);
             drawChart();
+            drawSeqTape();
         }
 
-        function updateInflux(influx) {
-            const statusEl = document.getElementById('influxStatus');
-            const pointsEl = document.getElementById('influxPoints');
-            const errorsEl = document.getElementById('influxErrors');
-            if (!influx) {
+        function updateTimescale(timescale) {
+            const statusEl = document.getElementById('timescaleStatus');
+            const pointsEl = document.getElementById('timescalePoints');
+            const errorsEl = document.getElementById('timescaleErrors');
+            if (!timescale) {
                 statusEl.textContent = 'Not running';
                 statusEl.style.color = '#6b7280';
                 pointsEl.textContent = '--';
                 errorsEl.textContent = '--';
                 return;
             }
-            const age = Date.now() / 1000 - (influx.ts || 0);
-            if (influx.ok) {
+            const age = Date.now() / 1000 - (timescale.ts || 0);
+            if (timescale.ok) {
                 if (age > 30) {
                     statusEl.textContent = 'Stale';
                     statusEl.style.color = '#fbbf24';
@@ -628,14 +829,14 @@
                     statusEl.textContent = 'Writing';
                     statusEl.style.color = '#4ade80';
                 }
-                pointsEl.textContent = (influx.points || 0).toLocaleString();
-                errorsEl.textContent = influx.errors || 0;
-                errorsEl.style.color = influx.errors > 0 ? '#fbbf24' : '#fff';
+                pointsEl.textContent = (timescale.rows || 0).toLocaleString();
+                errorsEl.textContent = timescale.errors || 0;
+                errorsEl.style.color = timescale.errors > 0 ? '#fbbf24' : '#fff';
             } else {
                 statusEl.textContent = 'Error';
                 statusEl.style.color = '#ef4444';
                 pointsEl.textContent = '--';
-                errorsEl.textContent = influx.error || 'unknown';
+                errorsEl.textContent = timescale.error || 'unknown';
                 errorsEl.style.color = '#ef4444';
             }
         }
@@ -704,6 +905,23 @@
             ctx.stroke();
         }
 
+        function drawSeqTape() {
+            tapeCtx.clearRect(0, 0, tapeCanvas.width, tapeCanvas.height);
+            if (!seqBuffer || seqBuffer.length === 0) return;
+
+            const pixelWidth = tapeCanvas.width / seqBuffer.length;
+            const colors = {
+                0: '#fbbf24', // Missing
+                1: '#4ade80', // UDP OK
+                2: '#3b82f6'  // Recovered (TCP)
+            };
+
+            seqBuffer.forEach((status, i) => {
+                tapeCtx.fillStyle = colors[status] || '#1a1a1a';
+                tapeCtx.fillRect(i * pixelWidth, 0, Math.ceil(pixelWidth), tapeCanvas.height);
+            });
+        }
+
         function updateUI() {
             const uptime = Math.floor((Date.now() - startTime) / 1000);
             const hours = Math.floor(uptime / 3600);
@@ -730,6 +948,19 @@
 
             document.getElementById('timestamp').textContent =
                 'Last updated: ' + new Date().toLocaleTimeString();
+
+            // Range warning — only when car is not alive and timeout expired
+            const connCard = document.querySelector('.card');
+            const now = Date.now();
+            const carAlive = lastCarDataTime && (now - lastCarDataTime <= CAR_TIMEOUT);
+
+            if (!carAlive) {
+                connCard.classList.add('out-of-range');
+                document.getElementById('connStatus').textContent = 'OUT OF RANGE';
+                document.getElementById('connStatus').style.color = '#ef4444';
+            } else {
+                connCard.classList.remove('out-of-range');
+            }
         }
 
         function showError(message) {
@@ -767,8 +998,28 @@
             }
         }
 
+        async function shutdownCar() {
+            if (!confirm('Shut down the Car Pi? This will kill telemetry until it is powered back on.')) return;
+            const el = document.getElementById('shutdownStatus');
+            el.textContent = 'Sending...';
+            try {
+                const res = await fetch('/shutdown-car', { method: 'POST' });
+                const json = await res.json();
+                if (res.ok) {
+                    el.textContent = '✓ Shutdown command sent';
+                    el.style.color = '#4ade80';
+                } else {
+                    el.textContent = '✗ ' + (json.error || 'Failed');
+                    el.style.color = '#ef4444';
+                }
+            } catch (e) {
+                el.textContent = '✗ Request failed: ' + e;
+                el.style.color = '#ef4444';
+            }
+        }
+
         connect();
-        setInterval(updateUI, 1000);
+        setInterval(updateUI, 100);
     </script>
 </body>
 

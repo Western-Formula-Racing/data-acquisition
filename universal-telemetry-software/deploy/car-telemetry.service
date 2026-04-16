@@ -1,0 +1,64 @@
+# DAQ Telemetry — Car RPi native systemd service
+#
+# Runs the Python telemetry stack directly on the car Pi (no Docker, no Redis).
+# Car reads CAN, sends UDP to base, serves TCP resend buffer, and runs a local
+# WebSocket bridge (port 9080) for direct PECAN connections when hotspotted.
+#
+# Off-the-shelf CAN HAT mode: set OFF_THE_SHELF=true to disable PoE and LED
+# services that depend on custom hardware (our PoE injection board / status LEDs).
+#
+# Install:
+#   sudo cp car-telemetry.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable car-telemetry
+#   sudo systemctl start car-telemetry
+
+[Unit]
+Description=DAQ Telemetry Car
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/daq-radio/universal-telemetry-software
+
+# Hardcoded car environment — edit here if IPs change
+Environment=ROLE=car
+Environment=REMOTE_IP=10.71.1.20
+Environment=UDP_PORT=5005
+Environment=TCP_PORT=5006
+Environment=REDIS_URL=redis://127.0.0.1:6379/0
+Environment=WS_PORT=9080
+Environment=STATUS_PORT=8080
+Environment=SIMULATE=false
+Environment=ENABLE_VIDEO=false
+Environment=ENABLE_AUDIO=false
+Environment=SET_TIME_ENABLED=true
+Environment=SHUTDOWN_ENABLED=true
+Environment=ENABLE_TIMESCALE_LOGGING=false
+# Set OFF_THE_SHELF=false when using our custom PoE injection board + status LEDs
+Environment=OFF_THE_SHELF=true
+# Set at install time: sed -i "s/GIT_HASH=unknown/GIT_HASH=$(git rev-parse --short HEAD)/" car-telemetry.service
+Environment=GIT_HASH=unknown
+# REDIS_URL points to localhost — Redis is optional on the car.
+# Without it the WS bridge uses the direct in-process queue instead.
+
+# uv run handles virtualenv creation and dependency sync automatically.
+# Run `uv sync` once during setup (requires internet) to pre-build the venv.
+ExecStart=/home/pi/.local/bin/uv run python main.py
+
+# Always restart — handles CAN bus glitches, Redis not ready yet, etc.
+Restart=always
+RestartSec=3
+
+# Give the process CAP_SYS_NICE so it can set its own scheduler priority
+AmbientCapabilities=CAP_SYS_NICE
+CapabilityBoundingSet=CAP_SYS_NICE
+
+# Log to systemd journal — view with: journalctl -u car-telemetry -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=car-telemetry
+
+[Install]
+WantedBy=multi-user.target

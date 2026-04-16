@@ -75,6 +75,6 @@ sequenceDiagram
   - `POST /api/data/query` to request a timeseries slice for a given `signalName` between two timestamps; the response echoes the exact SQL (matching `sql.py`) so the frontend can display the query being executed.
 - `scanner` reuses the same backend image but runs `python -m backend.periodic_worker` so the scan + unique sensor collection happens at the interval defined by `SCAN_INTERVAL_SECONDS`.
 
-Set `INFLUX_SCHEMA`/`INFLUX_TABLE` to the same values used in the legacy scripts (e.g. `iox` + `WFR25`) so the SQL sent from `backend/server_scanner.py` and `backend/sql.py` matches the proven queries.
+Set `POSTGRES_DSN` and `DEFAULT_SEASON_TABLE` to match your deployment so the SQL sent from `backend/server_scanner.py` and `backend/sql.py` queries the correct season table.
 
 All services mount `./data` inside the container and the FastAPI layer manages file I/O with atomic writes to keep data consistent between the worker and UI actions. If the rolling lookback produces no sensors, the collector now falls back to the oldest/newest run windows discovered by the date scanner, so no manual date tuning is required.

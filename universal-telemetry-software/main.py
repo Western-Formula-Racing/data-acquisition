@@ -8,6 +8,7 @@ from src.video import run_video
 from src.audio import run_audio
 from src.websocket_bridge import run_websocket_bridge
 from src.websocket_bridge_tx import run_tx_bridge
+from src.ws_relay import run_ws_relay
 from src.status_server import run_status_server
 from src.leds import run_leds
 from src.poe import run_poe
@@ -19,16 +20,39 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("Main")
 
 def start_telemetry(can_event=None, telemetry_event=None):
-    # Set High Priority (Critical for CAN)
+    # Base station: telemetry runs as its own process; WS bridge is a separate process reading Redis.
+    try:
+        os.nice(-10)
+        logger.info("Telemetry process priority set to -10 (High)")
+    except PermissionError:
+        logger.warning("Could not set Telemetry priority (needs root/CAP_SYS_NICE)")
+    node = TelemetryNode(can_event=can_event, telemetry_event=telemetry_event)
+    asyncio.run(node.start())
+
+
+def start_car_services(can_event=None, telemetry_event=None, websocket_event=None):
+    # Car: telemetry + WS bridge share one asyncio event loop via a direct queue.
+    # No Redis needed — messages flow in-process from TelemetryNode -> websocket_bridge.
     try:
         os.nice(-10)
         logger.info("Telemetry process priority set to -10 (High)")
     except PermissionError:
         logger.warning("Could not set Telemetry priority (needs root/CAP_SYS_NICE)")
 
-    # Telemetry is asyncio based
-    node = TelemetryNode(can_event=can_event, telemetry_event=telemetry_event)
-    asyncio.run(node.start())
+    async def _run():
+        # Queue must be created inside the event loop so it binds to the correct loop.
+        # Creating asyncio.Queue() before asyncio.run() triggers get_event_loop() which
+        # sets a default loop; asyncio.gather() then returns a Future instead of a
+        # coroutine, causing asyncio.run() to raise ValueError.
+        direct_queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
+        node = TelemetryNode(can_event=can_event, telemetry_event=telemetry_event)
+        node.direct_queue = direct_queue
+        await asyncio.gather(
+            node.start(),
+            run_websocket_bridge(heartbeat_event=websocket_event, direct_queue=direct_queue),
+        )
+
+    asyncio.run(_run())
 
 
 def start_leds(role, poe_ok_event, can_event, telemetry_event, websocket_event, audio_event, video_event):
@@ -65,6 +89,11 @@ def start_tx_bridge():
     # OFF by default; set ENABLE_TX_WS=true to enable
     logger.info("Starting TX WebSocket bridge on port 9078 (ENABLE_TX_WS controls actual CAN writes)")
     asyncio.run(run_tx_bridge())
+
+
+def start_ws_relay():
+    logger.info("Starting WebSocket telemetry relay (ENABLE_WS_RELAY)")
+    asyncio.run(run_ws_relay())
 
 def start_status_server():
     # HTTP server for status monitoring page
@@ -124,32 +153,51 @@ if __name__ == "__main__":
     audio_event      = multiprocessing.Event()
     video_event      = multiprocessing.Event()
 
-    # 0a. PoE enable & switch monitor
-    p_poe = multiprocessing.Process(target=start_poe, args=(poe_ok_event,), name="PoE")
-    p_poe.start()
-    processes.append(p_poe)
+    off_the_shelf = os.getenv("OFF_THE_SHELF", "true").lower() == "true"
 
-    # 0b. LED controller (always on when hardware is present)
-    p_leds = multiprocessing.Process(
-        target=start_leds,
-        args=(role, poe_ok_event, can_event, telemetry_event, websocket_event, audio_event, video_event),
-        name="LEDs"
-    )
-    p_leds.start()
-    processes.append(p_leds)
+    # 0a. PoE enable & switch monitor (skip on off-the-shelf CAN HAT — no PoE hardware)
+    if not off_the_shelf:
+        p_poe = multiprocessing.Process(target=start_poe, args=(poe_ok_event,), name="PoE")
+        p_poe.start()
+        processes.append(p_poe)
+    else:
+        poe_ok_event.set()  # assume OK when no PoE hardware
+        logger.info("PoE monitor skipped (OFF_THE_SHELF=true)")
 
-    # 1. Telemetry (Critical)
-    p_telemetry = multiprocessing.Process(target=start_telemetry, args=(can_event, telemetry_event), name="Telemetry")
-    p_telemetry.start()
-    processes.append(p_telemetry)
+    # 0b. LED controller (skip on off-the-shelf CAN HAT — no status LEDs)
+    if not off_the_shelf:
+        p_leds = multiprocessing.Process(
+            target=start_leds,
+            args=(role, poe_ok_event, can_event, telemetry_event, websocket_event, audio_event, video_event),
+            name="LEDs"
+        )
+        p_leds.start()
+        processes.append(p_leds)
+    else:
+        logger.info("LED controller skipped (OFF_THE_SHELF=true)")
 
-    # 2. WebSocket Bridge (Both roles — for PECAN)
-    #    Car mode:  enables direct CAN bus uplink writes (no Redis relay)
-    #    Base mode: relays uplink via Redis -> UDP to car
-    p_websocket = multiprocessing.Process(target=start_websocket_bridge, args=(websocket_event,), name="WebSocket")
-    p_websocket.start()
-    processes.append(p_websocket)
-    logger.info(f"WebSocket bridge started for PECAN dashboard (role={role})")
+    # 1. Telemetry + WebSocket Bridge
+    if role == "car":
+        # Car: single process runs CAN reader, UDP sender, and WS bridge together.
+        # They share an asyncio.Queue — no Redis required on the car.
+        p_telemetry = multiprocessing.Process(
+            target=start_car_services,
+            args=(can_event, telemetry_event, websocket_event),
+            name="CarServices",
+        )
+        p_telemetry.start()
+        processes.append(p_telemetry)
+        logger.info("Car services started (telemetry + WS bridge in one process, no Redis)")
+    else:
+        # Base: telemetry and WS bridge are separate processes communicating via Redis.
+        p_telemetry = multiprocessing.Process(target=start_telemetry, args=(can_event, telemetry_event), name="Telemetry")
+        p_telemetry.start()
+        processes.append(p_telemetry)
+
+        p_websocket = multiprocessing.Process(target=start_websocket_bridge, args=(websocket_event,), name="WebSocket")
+        p_websocket.start()
+        processes.append(p_websocket)
+        logger.info(f"WebSocket bridge started for PECAN dashboard (role={role})")
 
     # 2b. TX WebSocket Bridge (port 9078) — signal-based CAN encode + send via python-can
     #     OFF by default; set ENABLE_TX_WS=true to enable
@@ -157,6 +205,15 @@ if __name__ == "__main__":
     p_tx_websocket.start()
     processes.append(p_tx_websocket)
     logger.info("TX WebSocket bridge started on port 9078 (enable via ENABLE_TX_WS=true for actual CAN writes)")
+
+    if os.getenv("ENABLE_WS_RELAY", "false").lower() == "true":
+        p_ws_relay = multiprocessing.Process(target=start_ws_relay, name="WsRelay")
+        p_ws_relay.start()
+        processes.append(p_ws_relay)
+        logger.info(
+            "WebSocket relay started (RELAY_LISTEN_PORT=%s)",
+            os.getenv("RELAY_LISTEN_PORT", "9089"),
+        )
 
     # 3. Status Server (Base Station Only - for monitoring)
     if role == "base":
