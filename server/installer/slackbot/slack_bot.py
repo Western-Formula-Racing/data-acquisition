@@ -275,12 +275,69 @@ def handle_agent(user, command_full, thread_ts=None, timeout=120, channel=None):
         log_interaction(user, instructions, {}, "unexpected_error", str(e))
 
 
+def handle_wx(user, command_full, thread_ts=None, channel=None):
+    """Handle !wx [ICAO] command - fetches METAR and TAF from NOAA Aviation Weather API."""
+    channel = channel or DEFAULT_CHANNEL
+    parts = command_full.split()
+    icao = parts[1].strip().upper() if len(parts) > 1 else "CYXU"
+
+    if len(icao) != 4 or not icao.isalpha():
+        send_slack_message(
+            channel,
+            text=f"<@{user}> Invalid ICAO code `{icao}`. Must be 4 letters (e.g. `!wx CYYZ`).",
+            thread_ts=thread_ts,
+        )
+        return
+
+    base_url = "https://aviationweather.gov/api/data"
+    try:
+        metar_resp = requests.get(f"{base_url}/metar?ids={icao}&format=json", timeout=10)
+        taf_resp = requests.get(f"{base_url}/taf?ids={icao}&format=json", timeout=10)
+        metar_resp.raise_for_status()
+        taf_resp.raise_for_status()
+        metar_data = metar_resp.json()
+        taf_data = taf_resp.json()
+    except requests.exceptions.Timeout:
+        send_slack_message(channel, text=f"<@{user}> Aviation Weather API timed out.", thread_ts=thread_ts)
+        return
+    except Exception as exc:
+        send_slack_message(channel, text=f"<@{user}> Failed to fetch weather data: {exc}", thread_ts=thread_ts)
+        return
+
+    if not metar_data and not taf_data:
+        send_slack_message(
+            channel,
+            text=f"<@{user}> No weather data found for `{icao}`. Is that a valid ICAO?",
+            thread_ts=thread_ts,
+        )
+        return
+
+    lines = [f"*Weather for {icao}*"]
+
+    if metar_data:
+        raw = metar_data[0].get("rawOb", "N/A")
+        lines.append(f"\n*METAR*\n```{raw}```")
+    else:
+        lines.append(f"\n*METAR* — not available for `{icao}`")
+
+    if taf_data:
+        raw = taf_data[0].get("rawTAF", "N/A")
+        lines.append(f"*TAF*\n```{raw}```")
+    else:
+        lines.append("*TAF* — not available")
+
+    send_slack_message(channel, text="\n".join(lines), thread_ts=thread_ts)
+
+
 def handle_help(user, thread_ts=None, channel=None):
     channel = channel or DEFAULT_CHANNEL
     help_text = (
         f"📘 <@{user}> Available Commands:\n"
         "```\n"
         "!help                      - Show this help message.\n"
+        "!wx                        - METAR + TAF for CYXU (London Intl).\n"
+        "!wx <ICAO>                 - METAR + TAF for a specific airport.\n"
+        "                              Example: !wx CYYZ\n"
         "!location                  - Show the current :daqcar: location.\n"
         "!testimage                 - Upload the bundled Lappy test image.\n"
         "!agent <instructions>      - Generate and execute Python code using AI.\n"
@@ -354,7 +411,9 @@ def process_events(client: SocketModeClient, req: SocketModeRequest):
         # For DM responses, use the DM channel; otherwise use DEFAULT_CHANNEL
         response_channel = channel if is_dm else DEFAULT_CHANNEL
 
-        if main_command == "location":
+        if main_command == "wx":
+            handle_wx(user, command_full, thread_ts, response_channel)
+        elif main_command == "location":
             handle_location(user, thread_ts, response_channel)
         elif main_command == "testimage":
             handle_testimage(user, thread_ts, response_channel)
