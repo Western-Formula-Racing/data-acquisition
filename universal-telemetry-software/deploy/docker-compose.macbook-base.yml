@@ -66,6 +66,7 @@ services:
 
   pecan:
     image: ghcr.io/western-formula-racing/daq-radio/pecan:latest
+    build: ../../pecan
     container_name: daq-pecan
     restart: unless-stopped
     ports:
@@ -75,16 +76,18 @@ services:
     networks:
       - datalink
 
-  go2rtc:
-    image: alexxit/go2rtc
-    container_name: daq-go2rtc
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: daq-mediamtx
     restart: unless-stopped
     ports:
-      - "1984:1984"      # go2rtc API / WebSocket (Pecan video)
-      - "8555:8555/tcp"  # WebRTC TCP candidates
-      - "8555:8555/udp"  # WebRTC UDP candidates
+      - "8554:8554/tcp"   # RTSP — car Pi pushes here
+      - "8554:8554/udp"   # RTSP RTP/UDP
+      - "8889:8889/tcp"   # WebRTC WHEP (Pecan video)
+      - "8189:8189/udp"   # WebRTC ICE/UDP
+      - "9997:9997"       # API
     volumes:
-      - ../go2rtc.yaml:/config/go2rtc.yaml:ro
+      - ../mediamtx.yml:/mediamtx.yml:ro
     networks:
       - datalink
 

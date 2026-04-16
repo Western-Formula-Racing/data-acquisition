@@ -1,141 +1,128 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { AlertCircle, Signal, SignalLow, SignalMedium, SignalHigh } from 'lucide-react';
+import { AlertCircle, SignalLow, SignalMedium, SignalHigh } from 'lucide-react';
 
-type VideoQuality = 'auto' | 'low' | 'medium' | 'high';
-
-const QUALITY_BITRATES: Record<Exclude<VideoQuality, 'auto'>, number> = {
-    low: 500,     // 500 kbps
-    medium: 1000, // 1 Mbps
-    high: 2000,   // 2 Mbps
-};
+type VideoQuality = 'low' | 'medium' | 'high';
 
 interface CarVideoFeedProps {
-    go2rtcHost?: string;
+    /** MediaMTX host for WHEP (defaults to window.location.hostname) */
+    mediamtxHost?: string;
+    /** Car Pi host for quality control (defaults to 10.71.1.10) */
+    carHost?: string;
 }
 
-export default function CarVideoFeed({ go2rtcHost }: CarVideoFeedProps) {
+const QUALITY_OPTIONS: { value: VideoQuality; label: string; desc: string; icon: React.ReactNode }[] = [
+    { value: 'low',    label: '360p', desc: '640x360 500k',  icon: <SignalLow className="w-3.5 h-3.5" /> },
+    { value: 'medium', label: '480p', desc: '848x480 800k',  icon: <SignalMedium className="w-3.5 h-3.5" /> },
+    { value: 'high',   label: '720p', desc: '1280x720 2M',   icon: <SignalHigh className="w-3.5 h-3.5" /> },
+];
+
+export default function CarVideoFeed({ mediamtxHost, carHost }: CarVideoFeedProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const pcRef = useRef<RTCPeerConnection | null>(null);
-    const wsRef = useRef<WebSocket | null>(null);
     const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
     const [status, setStatus] = useState<'connecting' | 'live' | 'error' | 'offline'>('connecting');
-    const [quality, setQuality] = useState<VideoQuality>('auto');
+    const [quality, setQuality] = useState<VideoQuality>('medium');
+    const [switching, setSwitching] = useState(false);
 
-    // Bitrate control via offer renegotiation — sends a new offer with b=AS to go2rtc
-    const applyBandwidthLimit = useCallback((q: VideoQuality) => {
-        const pc = pcRef.current;
-        const ws = wsRef.current;
-        if (!pc || pc.signalingState !== 'stable' || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const piHost = carHost || '10.71.1.10';
+    const mtxHost = mediamtxHost || window.location.hostname;
 
-        pc.createOffer().then(async (offer) => {
-            let sdp = offer.sdp || '';
-            // Remove any existing bandwidth lines then inject new one
-            sdp = sdp.replace(/b=AS:.*\r\n/g, '');
-            if (q !== 'auto') {
-                sdp = sdp.replace(/(m=video.*\r\n)/g, `$1b=AS:${QUALITY_BITRATES[q]}\r\n`);
-            }
-            await pc.setLocalDescription(new RTCSessionDescription({ type: 'offer', sdp }));
-            ws.send(JSON.stringify({ type: 'webrtc/offer', value: sdp }));
-        }).catch(() => { /* PC may have closed between check and createOffer */ });
-    }, []);
+    // Sync quality state from Pi on mount
+    useEffect(() => {
+        fetch(`http://${piHost}:8081/video/quality`)
+            .then(r => r.json())
+            .then(data => { if (data.quality) setQuality(data.quality); })
+            .catch(() => {});
+    }, [piHost]);
 
     const connect = useCallback(() => {
-        // Cleanup previous
-        wsRef.current?.close();
         pcRef.current?.close();
+        clearTimeout(reconnectTimer.current);
 
-        const host = go2rtcHost || window.location.hostname;
-        const wsUrl = `ws://${host}:1984/api/ws?src=car-camera`;
-
+        const whepUrl = `http://${mtxHost}:8889/car-camera/whep`;
         setStatus('connecting');
 
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
+        const pc = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        });
+        pcRef.current = pc;
 
-        ws.onopen = () => {
-            const pc = new RTCPeerConnection({
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-            });
-            pcRef.current = pc;
-
-            pc.ontrack = (event) => {
-                if (videoRef.current) {
-                    videoRef.current.srcObject = event.streams[0];
-                    setStatus('live');
-                }
-            };
-
-            pc.onicecandidate = (event) => {
-                if (event.candidate) {
-                    ws.send(JSON.stringify({
-                        type: 'webrtc/candidate',
-                        value: event.candidate.candidate,
-                    }));
-                }
-            };
-
-            pc.oniceconnectionstatechange = () => {
-                if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-                    setStatus('offline');
-                }
-            };
-
-            pc.addTransceiver('video', { direction: 'recvonly' });
-
-            pc.createOffer().then(async (offer) => {
-                await pc.setLocalDescription(offer);
-                ws.send(JSON.stringify({
-                    type: 'webrtc/offer',
-                    value: offer.sdp,
-                }));
-            });
-        };
-
-        ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            if (msg.type === 'webrtc/answer') {
-                pcRef.current?.setRemoteDescription(
-                    new RTCSessionDescription({ type: 'answer', sdp: msg.value })
-                );
-            } else if (msg.type === 'webrtc/candidate') {
-                pcRef.current?.addIceCandidate(
-                    new RTCIceCandidate({ candidate: msg.value, sdpMid: '0' })
-                );
+        pc.ontrack = (event) => {
+            if (videoRef.current) {
+                videoRef.current.srcObject = event.streams[0];
+                setStatus('live');
+                setSwitching(false);
             }
         };
 
-        ws.onerror = () => setStatus('error');
-        ws.onclose = () => {
-            setStatus('offline');
-            pcRef.current?.close();
-            pcRef.current = null;
-            // Auto-reconnect
-            reconnectTimer.current = setTimeout(connect, 3000);
+        pc.oniceconnectionstatechange = () => {
+            if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                setStatus('offline');
+                reconnectTimer.current = setTimeout(connect, 3000);
+            }
         };
-    }, [go2rtcHost]); // quality removed — changing quality must not trigger reconnect
 
-    // Handle quality changes on live connection via renegotiation
-    useEffect(() => {
-        if (status === 'live') {
-            applyBandwidthLimit(quality);
+        pc.addTransceiver('video', { direction: 'recvonly' });
+
+        pc.createOffer().then(async (offer) => {
+            await pc.setLocalDescription(offer);
+
+            // Wait for ICE gathering to complete before sending offer
+            await new Promise<void>((resolve) => {
+                if (pc.iceGatheringState === 'complete') { resolve(); return; }
+                const timeout = setTimeout(resolve, 3000);
+                pc.onicegatheringstatechange = () => {
+                    if (pc.iceGatheringState === 'complete') {
+                        clearTimeout(timeout);
+                        resolve();
+                    }
+                };
+            });
+
+            const response = await fetch(whepUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/sdp' },
+                body: pc.localDescription!.sdp,
+            });
+
+            if (!response.ok) throw new Error(`WHEP ${response.status}`);
+
+            const answerSdp = await response.text();
+            await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+        }).catch(() => {
+            setStatus('error');
+            reconnectTimer.current = setTimeout(connect, 3000);
+        });
+    }, [mtxHost]);
+
+    const changeQuality = useCallback(async (preset: VideoQuality) => {
+        if (preset === quality || switching) return;
+        setQuality(preset);
+        setSwitching(true);
+
+        try {
+            const res = await fetch(`http://${piHost}:8081/video/quality`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quality: preset }),
+            });
+            if (!res.ok) throw new Error(`${res.status}`);
+            // ffmpeg restarts on Pi → stream briefly drops → reconnect after a short delay
+            setTimeout(connect, 2000);
+        } catch {
+            setSwitching(false);
+            // Pi unreachable — revert UI
+            setQuality(quality);
         }
-    }, [quality, status, applyBandwidthLimit]);
+    }, [quality, switching, piHost, connect]);
 
     useEffect(() => {
         connect();
         return () => {
             clearTimeout(reconnectTimer.current);
-            wsRef.current?.close();
             pcRef.current?.close();
         };
     }, [connect]);
-
-    const qualityOptions: { value: VideoQuality; label: string; icon: React.ReactNode }[] = [
-        { value: 'auto', label: 'Auto', icon: <Signal className="w-3.5 h-3.5" /> },
-        { value: 'low', label: '500k', icon: <SignalLow className="w-3.5 h-3.5" /> },
-        { value: 'medium', label: '1M', icon: <SignalMedium className="w-3.5 h-3.5" /> },
-        { value: 'high', label: '2M', icon: <SignalHigh className="w-3.5 h-3.5" /> },
-    ];
 
     return (
         <div className="relative w-full h-full bg-black rounded-lg overflow-hidden">
@@ -149,19 +136,21 @@ export default function CarVideoFeed({ go2rtcHost }: CarVideoFeedProps) {
 
             {/* Status overlay — top right */}
             <div className="absolute top-2 right-2 flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 text-xs">
-                {status === 'live' && (
+                {status === 'live' && !switching && (
                     <>
                         <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                         <span className="text-white font-footer">LIVE</span>
                     </>
                 )}
-                {status === 'connecting' && (
+                {(status === 'connecting' || switching) && (
                     <>
                         <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                        <span className="text-amber-400 font-footer">Connecting...</span>
+                        <span className="text-amber-400 font-footer">
+                            {switching ? 'Switching...' : 'Connecting...'}
+                        </span>
                     </>
                 )}
-                {(status === 'error' || status === 'offline') && (
+                {(status === 'error' || status === 'offline') && !switching && (
                     <>
                         <AlertCircle className="w-3 h-3 text-rose-400" />
                         <span className="text-rose-400 font-footer">No Signal</span>
@@ -171,16 +160,17 @@ export default function CarVideoFeed({ go2rtcHost }: CarVideoFeedProps) {
 
             {/* Quality selector — bottom right */}
             <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-black/60 rounded-lg p-1">
-                {qualityOptions.map((opt) => (
+                {QUALITY_OPTIONS.map((opt) => (
                     <button
                         key={opt.value}
-                        onClick={() => setQuality(opt.value)}
+                        onClick={() => changeQuality(opt.value)}
+                        disabled={switching}
                         className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-footer transition-colors ${
                             quality === opt.value
                                 ? 'bg-emerald-600/40 text-emerald-400'
                                 : 'text-sidebarfg/70 hover:text-white'
-                        }`}
-                        title={`${opt.label} bitrate`}
+                        } ${switching ? 'opacity-50 cursor-wait' : ''}`}
+                        title={opt.desc}
                     >
                         {opt.icon}
                         <span className="hidden sm:inline">{opt.label}</span>
@@ -189,7 +179,7 @@ export default function CarVideoFeed({ go2rtcHost }: CarVideoFeedProps) {
             </div>
 
             {/* No signal placeholder */}
-            {(status === 'error' || status === 'offline' || status === 'connecting') && (
+            {(status === 'error' || status === 'offline' || status === 'connecting') && !switching && (
                 <div className="absolute inset-0 flex items-center justify-center">
                     <div className="text-center text-sidebarfg/50">
                         <AlertCircle className="w-12 h-12 mx-auto mb-2 opacity-30" />

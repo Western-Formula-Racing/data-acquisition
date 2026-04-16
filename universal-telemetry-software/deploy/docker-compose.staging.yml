@@ -72,17 +72,18 @@ services:
         max-size: "5m"
         max-file: "2"
 
-  go2rtc:
-    image: alexxit/go2rtc:latest
-    container_name: daq-go2rtc
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: daq-mediamtx
     restart: unless-stopped
     ports:
-      - "1984:1984/tcp"
-      - "8555:8555/tcp"
-      - "8555:8555/udp"
-      - "5600:5600/udp"
+      - "8554:8554/tcp"
+      - "8554:8554/udp"
+      - "8889:8889/tcp"
+      - "8189:8189/udp"
+      - "9997:9997"
     volumes:
-      - ../go2rtc.yaml:/config/go2rtc.yaml:ro
+      - ../mediamtx.yml:/mediamtx.yml:ro
     logging:
       driver: "json-file"
       options:

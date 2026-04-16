@@ -83,7 +83,25 @@ The car sends UDP to `REMOTE_IP=10.71.1.20` (hardcoded in `car-telemetry.service
 | 5005 | UDP | CAN data stream → base |
 | 5006 | TCP | Packet resend server (base pulls missing batches) |
 | 8080 | HTTP | Status page (`/`, `/version`, `/set-time`) |
+| 8081 | HTTP | Video quality control — `POST /video/quality` (when `ENABLE_VIDEO=true`) |
 | 9080 | WS | PECAN WebSocket (direct connection when hotspotted) |
+
+## Video
+
+When `ENABLE_VIDEO=true`, the car runs ffmpeg to push H.264 to MediaMTX on the base station via RTSP. A lightweight HTTP control server on port 8081 lets Pecan change quality presets at runtime without restarting the service.
+
+**Quality presets** (POST to `http://10.71.1.10:8081/video/quality`):
+```json
+{"quality": "low"}    // 640x360 @ 500kbps
+{"quality": "medium"} // 848x480 @ 800kbps  (default)
+{"quality": "high"}   // 1280x720 @ 2000kbps
+```
+
+**Camera focus** (USB cameras with autofocus):
+```bash
+v4l2-ctl --device /dev/video0 --set-ctrl focus_automatic_continuous=0
+v4l2-ctl --device /dev/video0 --set-ctrl focus_absolute=40
+```
 
 ---
 

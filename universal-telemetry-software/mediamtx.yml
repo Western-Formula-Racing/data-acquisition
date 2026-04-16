@@ -1,0 +1,29 @@
+# MediaMTX — base station video relay
+# Pi pushes RTSP here, Pecan pulls via WebRTC (WHEP)
+
+# Disable protocols we don't use
+rtmp: no
+hls: no
+srt: no
+
+# RTSP — car Pi pushes H.264 here via ANNOUNCE/RECORD
+rtsp: yes
+rtspAddress: :8554
+
+# WebRTC — Pecan browser pulls via WHEP
+webrtc: yes
+webrtcAddress: :8889
+
+# API
+api: yes
+apiAddress: :9997
+
+pathDefaults:
+  record: no
+
+# Accept any RTSP publish to /car-camera
+paths:
+  car-camera:
+    source: publisher
+  all_others:
+    source: publisher

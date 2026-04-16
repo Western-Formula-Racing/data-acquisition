@@ -1,10 +1,13 @@
 import gi
 import os
 import glob
+import json
 import logging
 import subprocess
 import threading
 import time
+import http.server
+import socketserver
 
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
@@ -23,6 +26,14 @@ except ImportError:
 
 RTSP_PORT   = int(os.getenv("RTSP_PORT", "8554"))
 STREAM_NAME = os.getenv("VIDEO_STREAM_NAME", "car-camera")
+VIDEO_CONTROL_PORT = int(os.getenv("VIDEO_CONTROL_PORT", "8081"))
+
+QUALITY_PRESETS = {
+    "low":    {"width": "640",  "height": "360", "bitrate": "500",  "fps": "30"},
+    "medium": {"width": "848",  "height": "480", "bitrate": "800",  "fps": "30"},
+    "high":   {"width": "1280", "height": "720", "bitrate": "2000", "fps": "30"},
+}
+DEFAULT_QUALITY = "medium"
 
 
 class VideoStream:
@@ -34,6 +45,9 @@ class VideoStream:
         self.loop      = None
         self.appsrc    = None
         self.running   = False
+        self._quality  = DEFAULT_QUALITY
+        self._ffmpeg_proc = None
+        self._ffmpeg_lock = threading.Lock()
 
         Gst.init(None)
 
@@ -66,58 +80,79 @@ class VideoStream:
         except Exception:
             return False
 
-    # ── Car sender — TCP Push to Mac Helper ──────────────────────────────────
+    # ── Quality control ──────────────────────────────────────────────────────
 
-    def _start_rtsp_push(self, device: str, native_h264: bool):
-        """
-        Push H.264 from the USB camera directly to the Mac's external helper.
-        The external helper on Mac must be listening on 8554.
-        """
+    def set_quality(self, preset: str) -> bool:
+        """Change quality preset and restart ffmpeg. Returns True on success."""
+        if preset not in QUALITY_PRESETS:
+            return False
+        if preset == self._quality:
+            return True
+        self._quality = preset
+        logger.info(f"Quality changed to '{preset}' — restarting ffmpeg")
+        with self._ffmpeg_lock:
+            if self._ffmpeg_proc and self._ffmpeg_proc.poll() is None:
+                self._ffmpeg_proc.terminate()
+                try:
+                    self._ffmpeg_proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self._ffmpeg_proc.kill()
+        return True
+
+    # ── Car sender — RTSP push to MediaMTX on Mac ─────────────────────────
+
+    def _build_ffmpeg_cmd(self, device: str, native_h264: bool):
+        """Build ffmpeg command for current quality preset."""
+        preset = QUALITY_PRESETS[self._quality]
         rtsp_url = f"rtsp://{self.remote_ip}:{RTSP_PORT}/{STREAM_NAME}"
-        width    = os.getenv("VIDEO_WIDTH",  "1280")
-        height   = os.getenv("VIDEO_HEIGHT", "720")
-        fps      = os.getenv("VIDEO_FPS",    "30")
-        bitrate  = os.getenv("VIDEO_BITRATE", "2000")
+        width   = preset["width"]
+        height  = preset["height"]
+        fps     = preset["fps"]
+        bitrate = preset["bitrate"]
 
-        # FORCE software encoding for testing.
-        # Hardware USB cameras often output only ONE keyframe (I-frame) at the very start.
-        # WebRTC over UDP will drop a packet eventually (usually within ~5s). Without periodic
-        # I-frames, WebRTC cannot recover and freezes forever. libx264 with '-g 30' forces
-        # an I-frame every second, allowing WebRTC to recover instantly.
-        native_h264 = False
-
+        # Force software encoding — hardware cameras often lack periodic keyframes,
+        # which breaks WebRTC recovery after packet loss.
         if native_h264:
             input_args  = ["-f", "v4l2", "-input_format", "h264",
                            "-timestamps", "abs",
                            "-video_size", f"{width}x{height}", "-framerate", fps,
                            "-i", device]
             encode_args = ["-use_wallclock_as_timestamps", "1", "-c:v", "copy"]
-            logger.info(f"Native H.264 passthrough from {device} (wall-clock timestamps) → {rtsp_url}")
         else:
-            input_args  = ["-f", "v4l2",
+            input_args  = ["-fflags", "nobuffer", "-flags", "low_delay",
+                           "-f", "v4l2",
                            "-timestamps", "abs",
                            "-video_size", f"{width}x{height}", "-framerate", fps,
                            "-i", device]
             encode_args = ["-c:v", "libx264", "-preset", "ultrafast",
                            "-tune", "zerolatency", "-b:v", f"{bitrate}k",
-                           "-g", fps]
-            logger.info(f"Software x264 encode from {device} @ {bitrate} kbps → {rtsp_url}")
+                           "-g", "15", "-bf", "0", "-threads", "1"]
 
-        # The key to zero latency: -rtsp_transport tcp (no container buffering like SRT)
-        cmd = (
+        logger.info(f"[{self._quality}] {width}x{height} @ {bitrate}kbps → {rtsp_url}")
+
+        return (
             ["ffmpeg", "-hide_banner", "-loglevel", "warning"]
             + input_args + encode_args
             + ["-an", "-f", "rtsp", "-rtsp_transport", "tcp", rtsp_url]
         )
-        logger.info(f"RTSP push command: {' '.join(cmd)}")
+
+    def _start_rtsp_push(self, device: str, native_h264: bool):
+        """Push H.264 from the USB camera to MediaMTX on the base station via RTSP."""
+        # Always force software encoding for reliable keyframes
+        native_h264 = False
 
         self.running = True
         while self.running:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-            )
+            cmd = self._build_ffmpeg_cmd(device, native_h264)
+            logger.info(f"RTSP push command: {' '.join(cmd)}")
+
+            with self._ffmpeg_lock:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                )
+                self._ffmpeg_proc = proc
 
             def _drain_ffmpeg(p):
                 for line in p.stdout:
@@ -134,6 +169,66 @@ class VideoStream:
                 break
             logger.error(f"ffmpeg exited (code {ret}) — restarting in 3s")
             time.sleep(3)
+
+    # ── HTTP control server ──────────────────────────────────────────────────
+
+    def _start_control_server(self):
+        """Start a tiny HTTP server for quality control from Pecan."""
+        stream = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, fmt, *args):
+                logger.debug(f"[ctrl] {fmt % args}")
+
+            def do_OPTIONS(self):
+                self.send_response(200)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                self.end_headers()
+
+            def do_GET(self):
+                if self.path == '/video/quality':
+                    body = json.dumps({
+                        "quality": stream._quality,
+                        "presets": QUALITY_PRESETS,
+                    }).encode()
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+            def do_POST(self):
+                if self.path == '/video/quality':
+                    length = int(self.headers.get('Content-Length', 0))
+                    data = json.loads(self.rfile.read(length))
+                    preset = data.get('quality', '')
+                    if stream.set_quality(preset):
+                        body = json.dumps({"ok": True, "quality": preset}).encode()
+                        self.send_response(200)
+                    else:
+                        body = json.dumps({"error": f"unknown preset: {preset}"}).encode()
+                        self.send_response(400)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+        class ReuseServer(socketserver.TCPServer):
+            allow_reuse_address = True
+
+        server = ReuseServer(("0.0.0.0", VIDEO_CONTROL_PORT), Handler)
+        logger.info(f"Video control server on port {VIDEO_CONTROL_PORT}")
+        server.serve_forever()
 
     # ── GStreamer source (file simulation / libcamera fallback) ───────────────
 
@@ -213,6 +308,10 @@ class VideoStream:
 
     def start(self):
         if self.role == "car":
+            # Start quality control HTTP server in background
+            ctrl_thread = threading.Thread(target=self._start_control_server, daemon=True)
+            ctrl_thread.start()
+
             device = self._find_usb_camera()
             if device:
                 native = self._camera_supports_h264(device)

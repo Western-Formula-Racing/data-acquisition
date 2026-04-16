@@ -12,18 +12,25 @@ graph LR
     CAN["CAN Reader\n(can0)"] --> UDP["UDP Sender\n(batch 20msg/50ms)"]
     CAN --> RB["Ring Buffer\n(60 sec)"]
     RB --> TCP_S["TCP Resend Server\n(:5006)"]
+    CAM["USB Camera"] --> FFMPEG["ffmpeg\nx264 encoder"]
+    FFMPEG -- "RTSP ANNOUNCE\nTCP :8554" --> MTX_PUSH["→ MediaMTX"]
+    CTRL["Video Control\nHTTP :8081"] -. "quality preset" .-> FFMPEG
   end
 
-  subgraph BASE["BASE — Raspberry Pi"]
+  subgraph BASE["BASE — MacBook / RPi"]
     UDP_R["UDP Receiver"] --> Redis["Redis Publisher"]
     Redis --> WS["WebSocket Bridge\n(:9080)"]
     Redis --> STATUS["Status HTTP Server\n(:8080)"]
     TCP_C["TCP Client\n(recovery)"] --> Redis
+    MTX["MediaMTX\n(:8554 RTSP in\n:8889 WebRTC out)"]
   end
 
   UDP -- "UDP :5005" --> UDP_R
   TCP_S -- "TCP :5006" --> TCP_C
+  MTX_PUSH -- "RTSP push" --> MTX
   WS --> PECAN["PECAN Dashboard\n(:3000)"]
+  MTX -- "WebRTC WHEP\n:8889" --> PECAN
+  PECAN -. "quality change\nHTTP :8081" .-> CTRL
 ```
 
 **Car mode** is auto-detected when `can0` is present. Otherwise the software runs in **base station mode**.
@@ -199,9 +206,16 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 | `WS_PORT` | `9080` | WebSocket port for PECAN |
 | `STATUS_PORT` | `8080` | HTTP port for status page |
 | `SIMULATE` | `false` | Simulate CAN data (no hardware needed) |
-| `ENABLE_VIDEO` | `false` | Enable video streaming |
+| `ENABLE_VIDEO` | `false` | Enable video streaming (car: push RTSP; base: unused) |
 | `ENABLE_AUDIO` | `false` | Enable audio streaming |
 | `ENABLE_TIMESCALE_LOGGING` | `false` | Log telemetry to server TimescaleDB (direct write) |
+| `RTSP_PORT` | `8554` | Port on base station where MediaMTX accepts RTSP push |
+| `VIDEO_STREAM_NAME` | `car-camera` | RTSP/WebRTC stream path name |
+| `VIDEO_WIDTH` | `848` | Capture width (overridden by quality preset) |
+| `VIDEO_HEIGHT` | `480` | Capture height (overridden by quality preset) |
+| `VIDEO_FPS` | `30` | Frame rate |
+| `VIDEO_BITRATE` | `800` | Encoder bitrate in kbps (overridden by quality preset) |
+| `VIDEO_CONTROL_PORT` | `8081` | HTTP port for runtime quality control on car |
 
 ### Ports
 
@@ -213,6 +227,58 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 | 8080 | HTTP | Status monitoring page |
 | 9080 | WebSocket | PECAN dashboard feed |
 | 3000 | HTTP | PECAN dashboard UI |
+| 8081 | HTTP | Video quality control (car only, when ENABLE_VIDEO=true) |
+| 8554 | TCP | RTSP — car pushes H.264 to MediaMTX on base |
+| 8889 | HTTP | WebRTC WHEP — Pecan pulls video from MediaMTX |
+
+---
+
+## Video Streaming
+
+Video uses a **push architecture**: the car Pi encodes H.264 with ffmpeg and pushes RTSP to [MediaMTX](https://github.com/bluenviron/mediamtx) running on the base station. Pecan receives the stream via WebRTC (WHEP protocol).
+
+```
+Car Pi (ffmpeg x264) → RTSP ANNOUNCE/RECORD → MediaMTX (:8554)
+                                                    ↓
+                                    WebRTC WHEP (:8889) → Pecan browser
+```
+
+### Why MediaMTX
+
+go2rtc (previous relay) does not support RTSP ANNOUNCE/RECORD (push). MediaMTX natively supports both push and WebRTC output with sub-second latency.
+
+### Encoder settings
+
+ffmpeg runs on the car with `libx264 -preset ultrafast -tune zerolatency`. Key parameters:
+
+| Parameter | Value | Reason |
+|-----------|-------|--------|
+| `-preset ultrafast` | — | Minimum encode latency |
+| `-tune zerolatency` | — | Disables B-frames and lookahead |
+| `-g 15` | keyframe every 0.5s | WebRTC can recover from packet loss within 0.5s |
+| `-bf 0` | no B-frames | Eliminates reorder buffer delay |
+| `-threads 1` | — | Avoids thread synchronisation stalls |
+| `-rtsp_transport tcp` | — | MediaMTX only accepts TCP for incoming ANNOUNCE/RECORD |
+
+### Quality presets
+
+Selectable live from Pecan's video feed (bottom-right). Pecan POSTs to the car's control server (`http://10.71.1.10:8081/video/quality`), which restarts ffmpeg with new encoder params.
+
+| Preset | Resolution | Bitrate |
+|--------|-----------|---------|
+| 360p (low) | 640×360 | 500 kbps |
+| 480p (medium, default) | 848×480 | 800 kbps |
+| 720p (high) | 1280×720 | 2000 kbps |
+
+### Camera focus
+
+If using a USB camera with autofocus that parks at infinity, set manual focus via v4l2:
+
+```bash
+# Disable autofocus and set manual focus (0=close, 255=infinity)
+v4l2-ctl --device /dev/video0 --set-ctrl focus_automatic_continuous=0
+v4l2-ctl --device /dev/video0 --set-ctrl focus_absolute=40
+```
 
 ---
 
