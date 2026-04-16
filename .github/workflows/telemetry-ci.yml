@@ -217,6 +217,7 @@ jobs:
       env:
         GIT_HASH: ${{ github.sha }}
       run: |
+        docker compose -f deploy/docker-compose.test.yml down -v --remove-orphans || true
         docker compose -f deploy/docker-compose.test.yml up -d --build
         echo "Waiting for all services to become ready..."
         sleep 20

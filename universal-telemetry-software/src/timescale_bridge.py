@@ -268,13 +268,18 @@ class TimescaleBridge:
 
     def _periodic_flush(self):
         """Flush batch if FLUSH_INTERVAL has elapsed. Called from the async loop."""
+        # Decide under lock, flush outside lock to avoid re-entrant lock deadlock
+        # (_flush_batch acquires _batch_lock internally).
+        should_flush = False
         with self._batch_lock:
             elapsed = (time.time() - self._last_flush) * 1000
-            if self._batch and elapsed >= FLUSH_INTERVAL:
-                try:
-                    self._flush_batch()
-                except Exception:
-                    pass  # Already logged in _flush_batch
+            should_flush = bool(self._batch) and elapsed >= FLUSH_INTERVAL
+
+        if should_flush:
+            try:
+                self._flush_batch()
+            except Exception:
+                pass  # Already logged in _flush_batch
 
     # ── Main loop ──────────────────────────────────────────────────────────
 
