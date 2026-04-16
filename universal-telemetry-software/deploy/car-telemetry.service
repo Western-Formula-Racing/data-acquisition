@@ -19,8 +19,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/daq-radio/universal-telemetry-software
+User=base
+WorkingDirectory=/home/base/data-acquisition/universal-telemetry-software
 
 # Hardcoded car environment — edit here if IPs change
 Environment=ROLE=car
@@ -31,7 +31,7 @@ Environment=REDIS_URL=redis://127.0.0.1:6379/0
 Environment=WS_PORT=9080
 Environment=STATUS_PORT=8080
 Environment=SIMULATE=false
-Environment=ENABLE_VIDEO=false
+Environment=ENABLE_VIDEO=true
 Environment=ENABLE_AUDIO=false
 Environment=SET_TIME_ENABLED=true
 Environment=SHUTDOWN_ENABLED=true
@@ -45,7 +45,7 @@ Environment=GIT_HASH=unknown
 
 # uv run handles virtualenv creation and dependency sync automatically.
 # Run `uv sync` once during setup (requires internet) to pre-build the venv.
-ExecStart=/home/pi/.local/bin/uv run python main.py
+ExecStart=/home/base/.local/bin/uv run python main.py
 
 # Always restart — handles CAN bus glitches, Redis not ready yet, etc.
 Restart=always

@@ -137,16 +137,12 @@ services:
       - "8084:8084"
     volumes:
       - ./file-uploader:/app
-      # Host DBC file → fixed container location
-      - ./${DBC_FILE_PATH:-example.dbc}:/installer/example.dbc:ro
     restart: unless-stopped
     networks:
       - datalink
     environment:
       - POSTGRES_DSN=${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}
       - FILE_UPLOADER_WEBHOOK_URL=${FILE_UPLOADER_WEBHOOK_URL:-}
-      # Fixed container path only
-      - DBC_FILE_PATH=/installer/example.dbc
       # Optional: PAT with repo read to list/download .dbc from GitHub (never sent to browser)
       - GITHUB_DBC_TOKEN=${GITHUB_DBC_TOKEN:-}
       - GITHUB_DBC_REPO=${GITHUB_DBC_REPO:-Western-Formula-Racing/DBC}

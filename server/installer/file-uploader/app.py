@@ -44,7 +44,7 @@ POSTGRES_DSN = os.getenv("POSTGRES_DSN", "postgresql://wfr:wfr_password@timescal
 GITHUB_DBC_TOKEN = os.getenv("GITHUB_DBC_TOKEN", "").strip()
 GITHUB_DBC_REPO = os.getenv("GITHUB_DBC_REPO", "Western-Formula-Racing/DBC").strip()
 GITHUB_DBC_BRANCH = os.getenv("GITHUB_DBC_BRANCH", "main").strip()
-app = Flask(__name__)
+app = Flask(__name__, static_url_path="/assets")
 
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,6 @@ from src.status_server import run_status_server
 from src.leds import run_leds
 from src.poe import run_poe
 from src.link_diagnostics import run_link_diagnostics
-from src.timescale_bridge import run_timescale_bridge
 import asyncio
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -107,6 +106,8 @@ def start_link_diagnostics():
 
 def start_timescale_bridge():
     # Redis → TimescaleDB bridge (decodes CAN and writes to server TimescaleDB)
+    # Imported lazily so the car role doesn't need psycopg2 installed
+    from src.timescale_bridge import run_timescale_bridge
     logger.info("Starting TimescaleDB bridge (Redis → server TimescaleDB)")
     asyncio.run(run_timescale_bridge())
 

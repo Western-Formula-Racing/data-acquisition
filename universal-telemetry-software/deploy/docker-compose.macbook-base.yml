@@ -75,6 +75,19 @@ services:
     networks:
       - datalink
 
+  go2rtc:
+    image: alexxit/go2rtc
+    container_name: daq-go2rtc
+    restart: unless-stopped
+    ports:
+      - "1984:1984"      # go2rtc API / WebSocket (Pecan video)
+      - "8555:8555/tcp"  # WebRTC TCP candidates
+      - "8555:8555/udp"  # WebRTC UDP candidates
+    volumes:
+      - ../go2rtc.yaml:/config/go2rtc.yaml:ro
+    networks:
+      - datalink
+
   # ── TimescaleDB (local, for received telemetry hot-load) ─────────────────
   timescaledb:
     image: timescale/timescaledb:latest-pg16

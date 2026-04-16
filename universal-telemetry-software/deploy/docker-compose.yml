@@ -63,10 +63,10 @@ services:
     container_name: daq-go2rtc
     restart: unless-stopped
     ports:
-      - "1984:1984/tcp" # API + WHEP endpoint
-      - "8555:8555/tcp" # WebRTC TCP
-      - "8555:8555/udp" # WebRTC UDP candidates
-      - "5600:5600/udp" # RTP ingest from car
+      - "1984:1984/tcp"  # API + WHEP endpoint
+      - "8555:8555/tcp"  # WebRTC TCP
+      - "8555:8555/udp"  # WebRTC UDP candidates
+      # No inbound port needed for SRT — go2rtc dials OUT to Pi:5000
     volumes:
       - ../go2rtc.yaml:/config/go2rtc.yaml:ro
     logging:

@@ -21,36 +21,22 @@ export default function CarVideoFeed({ go2rtcHost }: CarVideoFeedProps) {
     const [status, setStatus] = useState<'connecting' | 'live' | 'error' | 'offline'>('connecting');
     const [quality, setQuality] = useState<VideoQuality>('auto');
 
-    const applyBandwidthLimit = useCallback((pc: RTCPeerConnection, q: VideoQuality) => {
-        if (q === 'auto') {
-            // Remove bandwidth constraints — let WebRTC auto-adapt
-            pc.getReceivers().forEach(receiver => {
-                if (receiver.track.kind === 'video') {
-                    const params = receiver.getParameters();
-                    // Clear any degradation preference
-                    delete (params as any).degradationPreference;
-                    // Note: setParameters on receivers is limited, but we handle
-                    // bandwidth via SDP renegotiation for more reliable control
-                }
-            });
-            return;
-        }
+    // Bitrate control via offer renegotiation — sends a new offer with b=AS to go2rtc
+    const applyBandwidthLimit = useCallback((q: VideoQuality) => {
+        const pc = pcRef.current;
+        const ws = wsRef.current;
+        if (!pc || pc.signalingState !== 'stable' || !ws || ws.readyState !== WebSocket.OPEN) return;
 
-        const _maxBitrate = QUALITY_BITRATES[q] * 1000; // convert kbps to bps
-        // For receive-only, bandwidth is controlled via SDP b= line during renegotiation
-        void _maxBitrate;
-
-        // The most reliable approach: modify the remote description's bandwidth
-        // This is applied during the next renegotiation
-        const desc = pc.remoteDescription;
-        if (desc) {
-            let sdp = desc.sdp;
-            // Remove existing bandwidth lines
+        pc.createOffer().then(async (offer) => {
+            let sdp = offer.sdp || '';
+            // Remove any existing bandwidth lines then inject new one
             sdp = sdp.replace(/b=AS:.*\r\n/g, '');
-            // Add new bandwidth limit after each m=video line
-            sdp = sdp.replace(/(m=video.*\r\n)/g, `$1b=AS:${QUALITY_BITRATES[q]}\r\n`);
-            pc.setRemoteDescription(new RTCSessionDescription({ type: desc.type, sdp }));
-        }
+            if (q !== 'auto') {
+                sdp = sdp.replace(/(m=video.*\r\n)/g, `$1b=AS:${QUALITY_BITRATES[q]}\r\n`);
+            }
+            await pc.setLocalDescription(new RTCSessionDescription({ type: 'offer', sdp }));
+            ws.send(JSON.stringify({ type: 'webrtc/offer', value: sdp }));
+        }).catch(() => { /* PC may have closed between check and createOffer */ });
     }, []);
 
     const connect = useCallback(() => {
@@ -96,17 +82,11 @@ export default function CarVideoFeed({ go2rtcHost }: CarVideoFeedProps) {
 
             pc.addTransceiver('video', { direction: 'recvonly' });
 
-            pc.createOffer().then((offer) => {
-                // Apply bandwidth limit to outgoing SDP offer if quality is set
-                let sdp = offer.sdp || '';
-                if (quality !== 'auto') {
-                    sdp = sdp.replace(/(m=video.*\r\n)/g, `$1b=AS:${QUALITY_BITRATES[quality]}\r\n`);
-                }
-                const modifiedOffer = new RTCSessionDescription({ type: 'offer', sdp });
-                pc.setLocalDescription(modifiedOffer);
+            pc.createOffer().then(async (offer) => {
+                await pc.setLocalDescription(offer);
                 ws.send(JSON.stringify({
                     type: 'webrtc/offer',
-                    value: sdp,
+                    value: offer.sdp,
                 }));
             });
         };
@@ -132,12 +112,12 @@ export default function CarVideoFeed({ go2rtcHost }: CarVideoFeedProps) {
             // Auto-reconnect
             reconnectTimer.current = setTimeout(connect, 3000);
         };
-    }, [go2rtcHost, quality]);
+    }, [go2rtcHost]); // quality removed — changing quality must not trigger reconnect
 
-    // Handle quality changes on live connection
+    // Handle quality changes on live connection via renegotiation
     useEffect(() => {
-        if (pcRef.current && status === 'live') {
-            applyBandwidthLimit(pcRef.current, quality);
+        if (status === 'live') {
+            applyBandwidthLimit(quality);
         }
     }, [quality, status, applyBandwidthLimit]);
 
