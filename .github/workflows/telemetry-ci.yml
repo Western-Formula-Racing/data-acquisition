@@ -650,7 +650,9 @@ jobs:
   deploy-pecan-internal-cloudflare:
     needs: [detect-changes, unit-tests, integration, vcan]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+    if: |
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') &&
+      needs.detect-changes.outputs.pecan == 'true'
     permissions:
       contents: read
       deployments: write

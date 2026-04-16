@@ -15,6 +15,7 @@ from src.config import (
     REDIS_URL, REDIS_CAN_CHANNEL, REDIS_UPLINK_CHANNEL, ENABLE_UPLINK,
 )
 from src import redis_utils, utils
+from src.version import get_git_hash
 
 BATCH_SIZE = 20
 BATCH_TIMEOUT = 0.05  # 50ms
@@ -71,7 +72,6 @@ class TelemetryNode:
         self.status_map = {}                          # seq -> status (0: missing, 1: udp, 2: tcp)
         self.latest_seq = -1
         self.last_udp_time = 0.0
-        from src.version import get_git_hash
         self._own_git_hash: str = get_git_hash()
         self._car_git_hash: str | None = None         # None until first successful version check
 
