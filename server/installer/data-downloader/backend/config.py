@@ -1,7 +1,7 @@
 """
 config.py — Centralised configuration for the data-downloader.
 
-Replaces InfluxDB connection settings with a single POSTGRES_DSN.
+Uses a single POSTGRES_DSN for TimescaleDB access.
 """
 from __future__ import annotations
 

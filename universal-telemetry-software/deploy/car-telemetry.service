@@ -35,7 +35,7 @@ Environment=ENABLE_VIDEO=false
 Environment=ENABLE_AUDIO=false
 Environment=SET_TIME_ENABLED=true
 Environment=SHUTDOWN_ENABLED=true
-Environment=ENABLE_INFLUX_LOGGING=false
+Environment=ENABLE_TIMESCALE_LOGGING=false
 # Set OFF_THE_SHELF=false when using our custom PoE injection board + status LEDs
 Environment=OFF_THE_SHELF=true
 # Set at install time: sed -i "s/GIT_HASH=unknown/GIT_HASH=$(git rev-parse --short HEAD)/" car-telemetry.service

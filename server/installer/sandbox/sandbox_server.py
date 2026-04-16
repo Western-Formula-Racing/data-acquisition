@@ -45,7 +45,7 @@ def run_user_code(code: str) -> Dict[str, Any]:
         script_path = workdir / "snippet.py"
         script_path.write_text(code, encoding="utf-8")
         
-        # Pass through environment variables (InfluxDB credentials, etc.)
+        # Pass through environment variables (TimescaleDB credentials, etc.)
         # Inherit current process env and allow subprocess to access them
         env = os.environ.copy()
         

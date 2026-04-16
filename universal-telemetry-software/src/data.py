@@ -623,19 +623,19 @@ class TelemetryNode:
         async def stats_publisher():
             while True:
                 await asyncio.sleep(1)
-                influx_raw = self.redis_client.get("influx:status") if self.redis_client else None
-                influx_status = None
-                if influx_raw:
+                timescale_raw = self.redis_client.get("timescale:status") if self.redis_client else None
+                timescale_status = None
+                if timescale_raw:
                     try:
-                        influx_status = json.loads(influx_raw)
+                        timescale_status = json.loads(timescale_raw)
                     except (json.JSONDecodeError, UnicodeDecodeError):
-                        logger.warning(f"influx:status contains invalid JSON: {influx_raw!r}")
+                        logger.warning(f"timescale:status contains invalid JSON: {timescale_raw!r}")
                 payload = {
                     "type": "system_stats",
                     **stats,
                     "ecu_synced": self._ecu_synced,
                     "ecu_sync_source": self._sync_source,
-                    "influx": influx_status,
+                    "timescale": timescale_status,
                     "dbc_file": os.getenv("DBC_FILE_PATH", "unknown"),
                     "car_time_synced": self._car_time_synced,
                     "base_clock_bad": self._base_clock_bad,

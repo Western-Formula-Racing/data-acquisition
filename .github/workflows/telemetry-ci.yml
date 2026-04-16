@@ -150,16 +150,15 @@ jobs:
       run: |
         pip install \
           pytest pytest-asyncio pytest-timeout \
-          cantools influxdb-client \
-          websockets redis requests \
-          "slicks>=0.2.0"
+          cantools \
+          websockets redis requests
 
     - name: Run unit tests
       working-directory: ./universal-telemetry-software
       run: |
         python -m pytest \
           tests/test_leds.py \
-          tests/test_influx_bridge.py \
+          tests/test_helpers.py \
           tests/test_car_mode.py \
           tests/test_dbc_consistency.py \
           tests/test_ws_relay.py \
@@ -193,7 +192,6 @@ jobs:
     # ── Pull heavy images in parallel ────────────────────────────────────
     - name: Pull base images
       run: |
-        docker pull influxdb:3.5.0-core &
         docker pull redis:8.2 &
         wait
         echo "✓ Images pulled"
@@ -207,10 +205,9 @@ jobs:
       run: |
         pip install \
           pytest pytest-asyncio pytest-timeout \
-          cantools influxdb-client \
+          cantools \
           websockets redis requests aiohttp \
-          playwright \
-          "slicks>=0.2.0"
+          playwright
 
     - name: Install Playwright browsers
       run: playwright install chromium --with-deps
@@ -221,7 +218,7 @@ jobs:
         GIT_HASH: ${{ github.sha }}
       run: |
         docker compose -f deploy/docker-compose.test.yml up -d --build
-        echo "Waiting for all services (InfluxDB3 needs ~15s)..."
+        echo "Waiting for all services to become ready..."
         sleep 20
 
     - name: Check container health
@@ -319,9 +316,8 @@ jobs:
       run: |
         pip install \
           pytest pytest-asyncio pytest-timeout \
-          cantools influxdb-client \
-          websockets redis requests \
-          "slicks>=0.2.0"
+          cantools \
+          websockets redis requests
 
     - name: Start vCAN test stack
       working-directory: ./universal-telemetry-software

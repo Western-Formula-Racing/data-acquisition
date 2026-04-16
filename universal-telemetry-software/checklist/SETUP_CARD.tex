@@ -633,7 +633,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 \begin{tabular}{p{126mm}}
   When \cmd{ENABLE\_TIMESCALE\_LOGGING=true}, the \cmd{TimescaleBridge} process starts automatically. \\
   It reads decoded CAN frames from Redis and writes them directly to the server stack's \\
-  TimescaleDB over the network (writes to \cmd{POSTGRES\_DSN}). No local InfluxDB. \\[1mm]
+  TimescaleDB over the network (writes to \cmd{POSTGRES\_DSN}). No local TimescaleDB. \\[1mm]
   Wide format: one row per CAN message, all signals as columns. \\
   Table: \cmd{WFR26test\_base} (MacBook) or as set by \cmd{TIMESCALE\_TABLE}. \\
 \end{tabular}

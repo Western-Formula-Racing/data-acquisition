@@ -46,9 +46,9 @@ All secrets and tokens are defined in `.env`. The defaults provided in `.env.exa
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `DBC_FILE_PATH` | Path to the CAN DBC file used by startup-data-loader and file-uploader and other services | `example.dbc` |
-| `INFLUXDB_URL` | Internal URL used by services to talk to TimescaleDB | `http://postgresdb3:8181` |
-| `INFLUXDB_INIT_USERNAME` / `INFLUXDB_INIT_PASSWORD` | Bootstraps the initial admin user | `admin` / `dev-postgresdb-password` |
-| `INFLUXDB_ADMIN_TOKEN` | API token shared by all services | `dev-postgresdb-admin-token` |
+| `POSTGRES_DSN` | DSN used by services to connect to TimescaleDB | `postgresql://wfr:wfr_password@timescaledb:5432/wfr` |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | Bootstraps the initial admin user | `wfr` / `wfr_password` |
+| `POSTGRES_PASSWORD` | Database password shared by services that use DSN auth | `wfr_password` |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana administrator password | `dev-grafana-password` |
 | `EXPLORER_SESSION_SECRET` | Secret for the TimescaleDB Explorer UI | `dev-explorer-session-key` |
 | `ENABLE_SLACK` | Gate to disable Slack-specific services | `false` |
@@ -59,7 +59,7 @@ All secrets and tokens are defined in `.env`. The defaults provided in `.env.exa
 | `COHERE_API_KEY` | Cohere API key for AI-powered code generation | empty |
 | `COHERE_MODEL` | Cohere model to use | `command-a-03-2025` |
 | `MAX_RETRIES` | Maximum retries for failed code execution | `2` |
-| `INFLUXDB_DATABASE` | Database name for telemetry queries | `telemetry` |
+| `DEFAULT_SEASON_TABLE` | Default season table for telemetry queries | `wfr26` |
 | `DEBUG` | Enables verbose logging for selected services | `0` |
 
 > **Security reminder:** Replace every default value when deploying outside of a local development environment. Generate secure tokens with `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`.

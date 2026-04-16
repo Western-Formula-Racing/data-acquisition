@@ -526,18 +526,18 @@
             </div>
 
             <div class="card">
-                <div class="card-title">[INFLUXDB]</div>
+                <div class="card-title">[TIMESCALEDB]</div>
                 <div class="metric">
                     <span class="metric-label">Write Status</span>
-                    <span class="metric-value" id="influxStatus">--</span>
+                    <span class="metric-value" id="timescaleStatus">--</span>
                 </div>
                 <div class="metric">
                     <span class="metric-label">Points Written</span>
-                    <span class="metric-value" id="influxPoints">--</span>
+                    <span class="metric-value" id="timescalePoints">--</span>
                 </div>
                 <div class="metric">
                     <span class="metric-label">Write Errors</span>
-                    <span class="metric-value" id="influxErrors">--</span>
+                    <span class="metric-value" id="timescaleErrors">--</span>
                 </div>
             </div>
         </div>
@@ -804,24 +804,24 @@
                 rateHistory.shift();
             }
 
-            updateInflux(stats.influx);
+            updateTimescale(stats.timescale);
             drawChart();
             drawSeqTape();
         }
 
-        function updateInflux(influx) {
-            const statusEl = document.getElementById('influxStatus');
-            const pointsEl = document.getElementById('influxPoints');
-            const errorsEl = document.getElementById('influxErrors');
-            if (!influx) {
+        function updateTimescale(timescale) {
+            const statusEl = document.getElementById('timescaleStatus');
+            const pointsEl = document.getElementById('timescalePoints');
+            const errorsEl = document.getElementById('timescaleErrors');
+            if (!timescale) {
                 statusEl.textContent = 'Not running';
                 statusEl.style.color = '#6b7280';
                 pointsEl.textContent = '--';
                 errorsEl.textContent = '--';
                 return;
             }
-            const age = Date.now() / 1000 - (influx.ts || 0);
-            if (influx.ok) {
+            const age = Date.now() / 1000 - (timescale.ts || 0);
+            if (timescale.ok) {
                 if (age > 30) {
                     statusEl.textContent = 'Stale';
                     statusEl.style.color = '#fbbf24';
@@ -829,14 +829,14 @@
                     statusEl.textContent = 'Writing';
                     statusEl.style.color = '#4ade80';
                 }
-                pointsEl.textContent = (influx.points || 0).toLocaleString();
-                errorsEl.textContent = influx.errors || 0;
-                errorsEl.style.color = influx.errors > 0 ? '#fbbf24' : '#fff';
+                pointsEl.textContent = (timescale.rows || 0).toLocaleString();
+                errorsEl.textContent = timescale.errors || 0;
+                errorsEl.style.color = timescale.errors > 0 ? '#fbbf24' : '#fff';
             } else {
                 statusEl.textContent = 'Error';
                 statusEl.style.color = '#ef4444';
                 pointsEl.textContent = '--';
-                errorsEl.textContent = influx.error || 'unknown';
+                errorsEl.textContent = timescale.error || 'unknown';
                 errorsEl.style.color = '#ef4444';
             }
         }

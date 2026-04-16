@@ -240,11 +240,11 @@ def index():
     """Simple status page for debugging."""
     try:
         service._log_db_connectivity()
-        influx_status = "Connected"
-        influx_color = "green"
+        timescale_status = "Connected"
+        timescale_color = "green"
     except Exception as e:
-        influx_status = f"Error: {e}"
-        influx_color = "red"
+        timescale_status = f"Error: {e}"
+        timescale_color = "red"
 
     # Default to first season for overview
     runs = service.get_runs()
@@ -272,7 +272,7 @@ def index():
         
         <div class="card">
             <h2>System Status</h2>
-            <p><strong>InfluxDB Connection:</strong> <span style="color: {influx_color}">{influx_status}</span></p>
+            <p><strong>TimescaleDB Connection:</strong> <span style="color: {timescale_color}">{timescale_status}</span></p>
             <p><strong>Scanner Status:</strong> {scanner_status.get('status', 'Unknown')} (Last run: {scanner_status.get('last_run', 'Never')})</p>
             <p><strong>API Version:</strong> 1.1.0 (Multi-Season Support)</p>
         </div>

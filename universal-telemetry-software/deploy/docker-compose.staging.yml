@@ -33,7 +33,7 @@ services:
       # TimescaleDB logging (Base Station only)
       - ENABLE_TIMESCALE_LOGGING=true
       - POSTGRES_DSN=${TIMESCALE_DSN}
-      - TIMESCALE_TABLE=${INFLUX_SEASON:-WFR26}_base
+      - TIMESCALE_TABLE=${TIMESCALE_SEASON:-WFR26}_base
       - DBC_FILE_PATH=/app/example.dbc
     volumes:
       - /lib/modules:/lib/modules

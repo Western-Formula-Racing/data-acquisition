@@ -1,6 +1,6 @@
 # Grafana
 
-Grafana provides dashboards for visualising the telemetry stored in InfluxDB 3.
+Grafana provides dashboards for visualising the telemetry stored in TimescaleDB.
 
 ## Ports
 
@@ -11,9 +11,9 @@ Grafana provides dashboards for visualising the telemetry stored in InfluxDB 3.
 | Variable | Description | Default |
 | --- | --- | --- |
 | `GRAFANA_ADMIN_PASSWORD` | Password for the `admin` Grafana user. | `dev-grafana-password` |
-| `INFLUXDB_TOKEN` | Injected automatically from `.env` via provisioning. | `dev-influxdb-admin-token` |
+| `POSTGRES_PASSWORD` | Injected automatically from `.env` via provisioning. | `dev-timescaledb-password` |
 
-Provisioning files live under `installer/grafana/provisioning/`. They configure the InfluxDB datasource and automatically import dashboards from `installer/grafana/dashboards/`.
+Provisioning files live under `installer/grafana/provisioning/`. They configure the TimescaleDB datasource and automatically import dashboards from `installer/grafana/dashboards/`.
 
 ## First login
 
@@ -24,5 +24,5 @@ Provisioning files live under `installer/grafana/provisioning/`. They configure 
 ## Customisation
 
 - Drop additional JSON dashboards into `installer/grafana/dashboards/`.
-- Update `installer/grafana/provisioning/datasources/influxdb.yml` to point at different buckets or organisations.
+- Update `installer/grafana/provisioning/datasources/postgres.yml` to point at different buckets or organisations.
 - Install additional plugins by editing `GF_INSTALL_PLUGINS` in `docker-compose.yml`.
