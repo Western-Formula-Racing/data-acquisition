@@ -6,16 +6,16 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-download the FastEmbed ONNX model so first startup is instant
+RUN python -c "from langchain_community.embeddings import FastEmbedEmbeddings; FastEmbedEmbeddings()"
+
 # Copy application code
 COPY code_generator.py .
-COPY prompt-guide.txt* prompt-guide.txt.example ./
-RUN if [ ! -f prompt-guide.txt ]; then \
-      echo "WARNING: prompt-guide.txt not found, using prompt-guide.txt.example"; \
-      cp prompt-guide.txt.example prompt-guide.txt; \
-    fi
+COPY stats_report.py .
+COPY prompt-guide.txt prompt-guide.txt.example ./
 
-# Create directory for generated code
-RUN mkdir -p /app/generated
+# Create directories for generated code, ChromaDB, and cache
+RUN mkdir -p /app/generated /app/chroma_db /app/cache
 
 # Expose port
 EXPOSE 3030
