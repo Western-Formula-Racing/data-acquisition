@@ -636,7 +636,7 @@ class TelemetryNode:
                     "ecu_synced": self._ecu_synced,
                     "ecu_sync_source": self._sync_source,
                     "timescale": timescale_status,
-                    "dbc_file": os.getenv("DBC_FILE_PATH", "unknown"),
+                    "dbc_file": os.getenv("DBC_DISPLAY_NAME") or os.path.basename(os.getenv("DBC_FILE_PATH", "unknown")),
                     "car_time_synced": self._car_time_synced,
                     "base_clock_bad": self._base_clock_bad,
                     "last_udp_time": self.last_udp_time,

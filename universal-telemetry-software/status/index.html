@@ -539,6 +539,10 @@
                     <span class="metric-label">Write Errors</span>
                     <span class="metric-value" id="timescaleErrors">--</span>
                 </div>
+                <div class="metric" style="margin-top:8px; padding-top:8px; border-top:1px solid #222;">
+                    <span class="metric-label">DBC File</span>
+                    <span class="metric-value" id="dbcFileName" style="font-size:0.75rem; word-break:break-all;">--</span>
+                </div>
             </div>
         </div>
 
@@ -729,7 +733,13 @@
 
             if (stats.dbc_file) {
                 const dbcWarning = document.getElementById('dbcWarningBanner');
-                if (stats.dbc_file.includes('example.dbc')) {
+                const dbcFileName = document.getElementById('dbcFileName');
+                const isExample = stats.dbc_file.includes('example.dbc');
+                // Show just the filename, not the full container path
+                const shortName = stats.dbc_file.split('/').pop();
+                dbcFileName.textContent = shortName;
+                dbcFileName.style.color = isExample ? '#f85149' : '#3fb950';
+                if (isExample) {
                     dbcWarning.style.display = 'block';
                 } else {
                     dbcWarning.style.display = 'none';
