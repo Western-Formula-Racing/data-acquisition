@@ -11,6 +11,7 @@ RUN python -c "from langchain_community.embeddings import FastEmbedEmbeddings; F
 
 # Copy application code
 COPY code_generator.py .
+COPY stats_report.py .
 COPY prompt-guide.txt prompt-guide.txt.example ./
 
 # Create directories for generated code, ChromaDB, and cache

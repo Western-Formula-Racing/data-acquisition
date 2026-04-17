@@ -11,3 +11,9 @@ chromadb
 fastembed
 diskcache
 requests
+duckdb
+matplotlib
+pandas
+numpy
+chromadb
+scikit-learn

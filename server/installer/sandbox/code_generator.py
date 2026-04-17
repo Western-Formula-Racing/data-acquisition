@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import os
+import time as _time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, TypedDict
@@ -17,6 +18,8 @@ import diskcache
 import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+
+from stats_report import init_metrics, record_metrics, stats_response
 from langchain_anthropic import ChatAnthropic
 from langchain_chroma import Chroma
 from langchain_community.embeddings import FastEmbedEmbeddings
@@ -67,6 +70,9 @@ solutions_store = Chroma(client=_chroma_client, collection_name="verified_soluti
 # ── Disk Cache ─────────────────────────────────────────────────────────────────
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 cache = diskcache.Cache(str(CACHE_DIR))
+
+# ── DuckDB Metrics ─────────────────────────────────────────────────────────────
+init_metrics(CACHE_DIR / "metrics.duckdb")
 
 # ── Indexing ───────────────────────────────────────────────────────────────────
 _indexed_mtimes: dict[str, float] = {}
@@ -144,6 +150,8 @@ class AgentState(TypedDict):
     error: str
     retries: int
     retry_history: List[dict]
+    llm_cache_hit: bool
+    exec_cache_hit: bool
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -231,7 +239,7 @@ def generate_code_node(state: AgentState) -> dict:
     cached = cache.get(cache_key)
     if cached:
         logger.info("LLM cache hit")
-        return {"code": cached}
+        return {"code": cached, "llm_cache_hit": True}
 
     response = llm.invoke([
         SystemMessage(content=system_content),
@@ -247,7 +255,7 @@ def generate_code_node(state: AgentState) -> dict:
                  len(raw_text), getattr(response, "stop_reason", "?"))
     code = _extract_python(response.content)
     cache.set(cache_key, code, expire=LLM_CACHE_TTL)
-    return {"code": code}
+    return {"code": code, "llm_cache_hit": False}
 
 
 def execute_code_node(state: AgentState) -> dict:
@@ -256,15 +264,18 @@ def execute_code_node(state: AgentState) -> dict:
     retry_history = state.get("retry_history", [])
 
     # Only check execution cache on the first (non-retry) attempt
+    exec_cache_hit = False
     if retries == 0:
         exec_key = "exec:" + hashlib.sha256(code.encode()).hexdigest()
         cached = cache.get(exec_key)
         if cached:
             logger.info("Execution cache hit")
-            return {"sandbox_result": cached, "error": ""}
+            return {"sandbox_result": cached, "error": "", "exec_cache_hit": True}
 
     try:
+        t0 = _time.perf_counter()
         resp = requests.post(SANDBOX_URL, json={"code": code}, timeout=120)
+        sandbox_ms = (_time.perf_counter() - t0) * 1000
         resp.raise_for_status()
         result = resp.json()
     except Exception as e:
@@ -274,6 +285,7 @@ def execute_code_node(state: AgentState) -> dict:
             "error": err,
             "retries": retries + 1,
             "retry_history": retry_history + [{"attempt": retries + 1, "error": err}],
+            "sandbox_ms": 0.0,
         }
 
     if not result.get("ok"):
@@ -291,11 +303,12 @@ def execute_code_node(state: AgentState) -> dict:
             "error": err,
             "retries": retries + 1,
             "retry_history": retry_history + [{"attempt": retries + 1, "error": err}],
+            "sandbox_ms": sandbox_ms,
         }
 
     exec_key = "exec:" + hashlib.sha256(code.encode()).hexdigest()
     cache.set(exec_key, result, expire=EXEC_CACHE_TTL)
-    return {"sandbox_result": result, "error": ""}
+    return {"sandbox_result": result, "error": "", "exec_cache_hit": False, "sandbox_ms": sandbox_ms}
 
 
 def _route_after_execute(state: AgentState) -> str:
@@ -365,6 +378,18 @@ def save_verified_solution(
         raise
 
     return solution_id
+
+
+# ── RAG stats helper (needs _chroma_client from this module) ───────────────────
+def _rag_stats() -> dict:
+    stats = {}
+    for name in ["sensors", "runs", "verified_solutions"]:
+        try:
+            col = _chroma_client.get_collection(name)
+            stats[name] = {"count": col.count()}
+        except Exception:
+            stats[name] = {"count": 0}
+    return stats
 
 
 # ── Response formatting ────────────────────────────────────────────────────────
@@ -481,9 +506,32 @@ def generate_code_endpoint():
             "error": "",
             "retries": 0,
             "retry_history": [],
+            "llm_cache_hit": False,
+            "exec_cache_hit": False,
         })
         response = _format_response(final_state)
-        if response["result"]["status"] == "success":
+
+        # Record metrics
+        llm_hit = final_state.get("llm_cache_hit", False)
+        exec_hit = final_state.get("exec_cache_hit", False)
+        retries = final_state.get("retries", 0)
+        sandbox_ms = final_state.get("sandbox_ms", 0.0) or 0.0
+        ok = response["result"]["status"] == "success"
+        creator = data.get("creator", "") or ""
+        try:
+            record_metrics(
+                prompt_hash=prompt_key,
+                llm_cache_hit=llm_hit,
+                exec_cache_hit=exec_hit,
+                retry_count=retries,
+                sandbox_ms=sandbox_ms,
+                success=ok,
+                creator=creator,
+            )
+        except Exception:
+            logger.exception("Failed to record metrics")
+
+        if ok:
             cache.set(prompt_key, response, expire=LLM_CACHE_TTL)
         return jsonify(response)
     except Exception as e:
@@ -492,6 +540,16 @@ def generate_code_endpoint():
             "error": str(e),
             "result": {"status": "error", "output": "", "error": str(e), "files": []},
         }), 500
+
+
+@app.route("/api/metrics", methods=["GET"])
+def metrics_endpoint():
+    """Return aggregated observability stats and a dashboard PNG."""
+    try:
+        return jsonify(stats_response(rag_stats_fn=_rag_stats))
+    except Exception:
+        logger.exception("Metrics endpoint failed")
+        return jsonify({"error": "Failed to build metrics report"}), 500
 
 
 if __name__ == "__main__":

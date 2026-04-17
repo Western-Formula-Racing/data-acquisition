@@ -419,7 +419,106 @@ def handle_approve(user, thread_ts=None, channel=None):
 
 
 
-def handle_help(user, thread_ts=None, channel=None):
+def handle_aistats(user, thread_ts=None, channel=None):
+    """Fetch and display observability stats + dashboard PNG from code-generator."""
+    channel = channel or DEFAULT_CHANNEL
+    send_slack_message(
+        channel,
+        text=f"🤖 <@{user}> Fetching AI observability stats...",
+        thread_ts=thread_ts,
+    )
+    try:
+        resp = requests.get(f"{CODE_GENERATOR_URL}/api/metrics", timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        send_slack_message(
+            channel,
+            text=f"❌ <@{user}> Failed to fetch metrics: {e}",
+            thread_ts=thread_ts,
+        )
+        return
+
+    stats = data.get("stats", {})
+    rag = stats.get("rag_stats", {})
+    png_b64 = data.get("dashboard_png", "")
+
+    # Build summary text
+    total = stats.get("total_generations", 0)
+    if total == 0:
+        summary = (
+            "*AI Observability — No data yet*\n"
+            "Run `!agent` a few times to start collecting metrics."
+        )
+    else:
+        def pct(v): return f"{v * 100:.1f}%"
+
+        summary_lines = [
+            "*AI Observability Stats*",
+            "",
+            f"*Total generations:* {total}",
+            f"*Success rate:* {pct(stats.get('success_rate', 0))}  "
+            f"({stats.get('success_count', 0)}/{total})",
+            f"*Avg retry count:* {stats.get('avg_retry_count', 0):.2f}",
+            f"*Avg sandbox duration:* {stats.get('avg_sandbox_ms', 0):.0f} ms",
+            "",
+            "*Cache hit rates:*",
+            f"  LLM cache:  {pct(stats.get('llm_cache_hit_rate', 0))}",
+            f"  Exec cache: {pct(stats.get('exec_cache_hit_rate', 0))}",
+            "",
+            "*RAG Vector Space:*",
+        ]
+        for coll, info in rag.items():
+            label = coll.replace("_", " ").title()
+            summary_lines.append(f"  {label}: {info.get('count', 0):,} vectors")
+
+        summary = "\n".join(summary_lines)
+
+    send_slack_message(channel, text=summary, thread_ts=thread_ts)
+
+    if png_b64:
+        try:
+            img_data = base64.b64decode(png_b64)
+            tmp_path = Path("/tmp/aistats_dashboard.png")
+            tmp_path.write_bytes(img_data)
+            send_slack_image(
+                channel,
+                str(tmp_path),
+                title="AI Observability Dashboard",
+                initial_comment=f"📊 <@{user}> Observability dashboard:",
+                thread_ts=thread_ts,
+            )
+            tmp_path.unlink()
+        except Exception as e:
+            send_slack_message(
+                channel,
+                text=f"⚠️ Could not render dashboard: {e}",
+                thread_ts=thread_ts,
+            )
+
+    rag_png_b64 = data.get("rag_viz_png", "")
+    if rag_png_b64:
+        try:
+            img_data = base64.b64decode(rag_png_b64)
+            tmp_path = Path("/tmp/aistats_rag_viz.png")
+            tmp_path.write_bytes(img_data)
+            send_slack_image(
+                channel,
+                str(tmp_path),
+                title="RAG Vector Space",
+                initial_comment=f"🔮 <@{user}> RAG vector space (PCA projection):",
+                thread_ts=thread_ts,
+            )
+            tmp_path.unlink()
+        except Exception as e:
+            send_slack_message(
+                channel,
+                text=f"⚠️ Could not render RAG viz: {e}",
+                thread_ts=thread_ts,
+            )
+
+
+
     channel = channel or DEFAULT_CHANNEL
     help_text = (
         f"📘 <@{user}> Available Commands:\n"
@@ -439,6 +538,9 @@ def handle_help(user, thread_ts=None, channel=None):
         "                              Automatically retries up to 2 times if code fails.\n"
         "!approve                   - Save your most recent successful !agent result as a\n"
         "                              verified example (golden sample) for future queries.\n"
+        "!aistats                   - Show AI code-generator observability dashboard:\n"
+        "                              cache hit rates, success rate, sandbox duration,\n"
+        "                              retry distribution, and RAG vector space stats.\n"
         "```\n"
         "💬 React with :+1: on the result message — same as !approve, just quicker.\n"
         "💬 Verified examples make future !agent queries smarter.\n"
@@ -539,6 +641,8 @@ def process_events(client: SocketModeClient, req: SocketModeRequest):
             handle_help(user, thread_ts, response_channel)
         elif main_command == "approve":
             handle_approve(user, thread_ts, response_channel)
+        elif main_command == "aistats":
+            handle_aistats(user, thread_ts, response_channel)
         else:
             send_slack_message(
                 response_channel,
