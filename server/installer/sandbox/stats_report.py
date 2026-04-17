@@ -42,7 +42,6 @@ def init_metrics(db_path: Path) -> None:
             creator     VARCHAR
         )
     """)
-    _metrics_conn.execute("CREATE SEQUENCE IF NOT EXISTS metrics_id_seq")
     _metrics_conn.commit()
 
 
@@ -58,7 +57,11 @@ def record_metrics(
     if _metrics_conn is None:
         return
     with _id_lock:
-        rid = _metrics_conn.execute("SELECT nextval('metrics_id_seq')").fetchone()[0]
+        # Use Python-side counter to avoid DuckDB sequence collision after restarts
+        row = _metrics_conn.execute(
+            "SELECT COALESCE(MAX(id), 0) FROM generation_metrics"
+        ).fetchone()
+        rid = (row[0] if row else 0) + 1
     _metrics_conn.execute(
         """
         INSERT INTO generation_metrics

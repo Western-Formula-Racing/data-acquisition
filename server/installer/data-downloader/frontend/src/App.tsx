@@ -212,43 +212,52 @@ export default function App() {
     ? new Date(sensors.updated_at).toLocaleString()
     : "never";
 
-  const selectedSeasonColor = useMemo(() => {
-    return seasons.find(s => s.name === selectedSeason)?.color || "#0bf"; // Default blue
-  }, [seasons, selectedSeason]);
+  const SEASON_COLORS: Record<string, string> = {
+    WFR25: "#ec4899",    // pink
+    WFR26: "#f59e0b",    // gold
+    WFR26TEST: "#ff6b00", // bright orange
+  };
+  const seasonColor = (name: string) => SEASON_COLORS[name] || "#0bf";
 
   return (
     <div className="app-shell">
-      <header style={{ marginBottom: "1.5rem", borderLeft: `6px solid ${selectedSeasonColor}`, paddingLeft: "1rem" }}>
+      <header style={{ marginBottom: "1.5rem", borderLeft: `6px solid ${seasonColor(selectedSeason)}`, paddingLeft: "1rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <h1 style={{ margin: 0, color: selectedSeasonColor }}>DAQ Data Downloader</h1>
+            <h1 style={{ margin: 0, color: seasonColor(selectedSeason) }}>Data Downloader</h1>
             <p className="subtitle">
               Inspect historical scans, refresh availability, and capture run notes.
             </p>
           </div>
 
           {seasons.length > 0 && (
-            <div className="season-selector" style={{ textAlign: "right" }}>
-              <label style={{ display: "block", fontSize: "0.8rem", color: selectedSeasonColor, marginBottom: "0.25rem", fontWeight: "bold" }}>
-                Active Season
-              </label>
-              <select
-                value={selectedSeason}
-                onChange={(e) => setSelectedSeason(e.target.value)}
-                style={{
-                  padding: "0.5rem",
-                  borderRadius: "4px",
-                  border: `2px solid ${selectedSeasonColor}`,
-                  fontSize: "1rem",
-                  outline: "none",
-                  color: selectedSeasonColor,
-                  fontWeight: "bold"
-                }}
-              >
-                {seasons.map(s => (
-                  <option key={s.name} value={s.name}>{s.name} ({s.year})</option>
-                ))}
-              </select>
+            <div style={{ textAlign: "right" }}>
+              <p style={{ fontSize: "0.7rem", color: "#6b7280", margin: "0 0 0.25rem 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>Active Season</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0", border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden", maxWidth: "320px" }}>
+                {seasons.map(s => {
+                  const active = s.name === selectedSeason;
+                  const sc = seasonColor(s.name);
+                  return (
+                    <button
+                      key={s.name}
+                      onClick={() => setSelectedSeason(s.name)}
+                      style={{
+                        padding: "0.35rem 0.75rem",
+                        border: "none",
+                        borderRight: "1px solid #e5e7eb",
+                        background: active ? sc : "transparent",
+                        color: active ? "#fff" : sc,
+                        fontWeight: active ? "bold" : "normal",
+                        fontSize: "0.85rem",
+                        cursor: "pointer",
+                        transition: "background 0.15s",
+                      }}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -279,6 +288,9 @@ export default function App() {
         <button className="button secondary" onClick={() => void handleRefreshClick()} disabled={loading}>
           {loading ? "Refreshing..." : "Refresh Data"}
         </button>
+        <p style={{ fontSize: "0.75rem", color: "#9ca3af", margin: "0" }}>
+          Use the top right season selector to switch the active season.
+        </p>
         {scanState !== "idle" && (
           <span
             className="status-pill"
