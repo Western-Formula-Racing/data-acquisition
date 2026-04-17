@@ -344,6 +344,8 @@ def save_verified_solution(
     _solution_id_counter += 1
 
     doc_text = user_prompt.strip()
+    summary_text = f"{doc_text}\n---\nResult: {output_summary.strip()}"
+
     metadata = {
         "run_key": run_key or "",
         "creator": creator or "",
@@ -354,12 +356,8 @@ def save_verified_solution(
         _solutions_raw.upsert(
             ids=[solution_id],
             embeddings=embeddings.embed_documents([doc_text]),
-            documents=[doc_text],
+            documents=[summary_text],
             metadatas=[metadata],
-        )
-        solutions_store.update(
-            ids=[solution_id],
-            documents=[output_summary.strip()],
         )
         logger.info("Saved verified solution: id=%s", solution_id)
     except Exception:
