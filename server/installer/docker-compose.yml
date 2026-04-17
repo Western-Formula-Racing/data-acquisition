@@ -1,12 +1,16 @@
 networks:
   datalink:
     driver: bridge
+  briefer-internal:
+    driver: bridge
 
 volumes:
   grafana-storage:
   timescaledb-data:
   code-generator-chroma:
   code-generator-cache:
+  briefer-jupyter:
+  briefer-postgres:
 
 services:
   # ── TimescaleDB (primary time-series store) ─────────────────────────────────
@@ -334,3 +338,181 @@ services:
       resources:
         limits:
           memory: 1024M
+
+  # ── Briefer (notebooks & dashboards) ──────────────────────────────────────────
+  # Briefer's own PostgreSQL for metadata (separate from timescaledb)
+  briefer-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: briefer-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${BRIEFER_POSTGRES_DB:-briefer}
+      POSTGRES_USER: ${BRIEFER_POSTGRES_USERNAME:?bri}
+      POSTGRES_PASSWORD: ${BRIEFER_POSTGRES_PASSWORD:?err}
+    volumes:
+      - briefer-postgres:/var/lib/postgresql/data
+    networks:
+      - briefer-internal
+      - datalink
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BRIEFER_POSTGRES_USERNAME:?bri} -d briefer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Run database migrations then exit
+  briefer-migration:
+    image: briefercloud/briefer-api
+    container_name: briefer-migration
+    command: ["sh", "-c", "npx prisma migrate deploy"]
+    environment:
+      NODE_ENV: production
+      POSTGRES_PRISMA_URL: postgresql://${BRIEFER_POSTGRES_USERNAME:?bri}:${BRIEFER_POSTGRES_PASSWORD:?err}@briefer-postgres:5432/briefer?schema=public
+    networks:
+      - briefer-internal
+    depends_on:
+      briefer-postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Jupyter server — executes user Python/SQL code inside notebooks
+  briefer-jupyter:
+    image: briefercloud/briefer-jupyter
+    container_name: briefer-jupyter
+    restart: unless-stopped
+    command: ["sh", "-c", "jupyter server --ip=0.0.0.0 --ZMQChannelsWebsocketConnection.iopub_data_rate_limit=1.0e10 --ZMQChannelsWebsocketConnection.iopub_msg_rate_limit=1.0e6 --ServerApp.max_body_size=107374182400"]
+    environment:
+      JUPYTER_TOKEN: ${BRIEFER_JUPYTER_TOKEN:?bri}
+    volumes:
+      - briefer-jupyter:/home/jupyteruser
+    networks:
+      - briefer-internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8888/api || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: "1"
+
+  # AI code-generation service (optional — omit or set BRIEFER_OPENAI_API_KEY empty to disable)
+  briefer-ai:
+    image: briefercloud/briefer-ai
+    container_name: briefer-ai
+    restart: unless-stopped
+    environment:
+      BASIC_AUTH_USERNAME: ${BRIEFER_AI_USERNAME:-briefer}
+      BASIC_AUTH_PASSWORD: ${BRIEFER_AI_PASSWORD:-change-me}
+      OPENAI_DEFAULT_MODEL_NAME: ${BRIEFER_OPENAI_MODEL:-gpt-4o}
+      OPENAI_API_KEY: ${BRIEFER_OPENAI_API_KEY:-}
+      PORT: 8000
+    networks:
+      - briefer-internal
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Briefer web (Next.js frontend)
+  briefer-web:
+    image: briefercloud/briefer-web
+    container_name: briefer-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    networks:
+      - briefer-internal
+    depends_on:
+      briefer-api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Briefer API (Node.js)
+  briefer-api:
+    image: briefercloud/briefer-api
+    container_name: briefer-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: ${BRIEFER_LOG_LEVEL:-info}
+      API_URL: /api
+      FRONTEND_URL: /
+      LOGIN_JWT_SECRET: ${BRIEFER_LOGIN_JWT_SECRET:?err}
+      AUTH_JWT_SECRET: ${BRIEFER_AUTH_JWT_SECRET:?err}
+      AI_API_URL: http://briefer-ai:8000
+      AI_API_USERNAME: ${BRIEFER_AI_USERNAME:-briefer}
+      AI_API_PASSWORD: ${BRIEFER_AI_PASSWORD:-change-me}
+      PYTHON_ALLOWED_LIBRARIES: plotly,matplotlib,numpy,pandas,scipy,sklearn,seaborn,statsmodels
+      POSTGRES_USERNAME: ${BRIEFER_POSTGRES_USERNAME:?bri}
+      POSTGRES_PASSWORD: ${BRIEFER_POSTGRES_PASSWORD:?err}
+      POSTGRES_HOSTNAME: briefer-postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DATABASE: briefer
+      ENVIRONMENT_VARIABLES_ENCRYPTION_KEY: ${BRIEFER_ENV_VARS_ENCRYPTION_KEY:?err}
+      WORKSPACE_SECRETS_ENCRYPTION_KEY: ${BRIEFER_WORKSPACE_SECRETS_ENCRYPTION_KEY:?err}
+      DATASOURCES_ENCRYPTION_KEY: ${BRIEFER_DATASOURCES_ENCRYPTION_KEY:?err}
+      JUPYTER_HOST: briefer-jupyter
+      JUPYTER_PORT: "8888"
+      JUPYTER_TOKEN: ${BRIEFER_JUPYTER_TOKEN:?bri}
+    networks:
+      - briefer-internal
+      - datalink
+    depends_on:
+      briefer-postgres:
+        condition: service_healthy
+      briefer-migration:
+        condition: service_completed_successfully
+      briefer-jupyter:
+        condition: service_healthy
+      briefer-ai:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+
+  # Nginx reverse proxy — exposed on host port 3030 for cloudflared to route
+  briefer-nginx:
+    image: nginx:1.27
+    container_name: briefer-nginx
+    restart: unless-stopped
+    ports:
+      - "3030:3000"
+    volumes:
+      - ./briefer/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - briefer-internal
+    depends_on:
+      - briefer-web
+      - briefer-api
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
