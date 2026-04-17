@@ -434,14 +434,10 @@ function Trace() {
   const [tourOpen, setTourOpen] = useState(false);
   const [currentTourStep, setCurrentTourStep] = useState(0);
 
-  // Frozen copy while paused
-  const frozenRef = useRef<TelemetrySample[]>([]);
-  const activeFrames = paused ? frozenRef.current : frames;
-
   // Easter Egg State
   const [showRaceGame, setShowRaceGame] = useState(false);
 
-  // Freeze on pause
+  // Pause: freeze the cursor at the latest data point
   const handlePause = useCallback(() => {
     if (replayLocked) {
       return;
@@ -452,15 +448,8 @@ function Trace() {
       return;
     }
 
-    frozenRef.current = [...frames];
     seek(collectionEndMs ?? Date.now());
-  }, [paused, replayLocked, goLive, frames, seek, collectionEndMs]);
-
-  useEffect(() => {
-    if (paused && frozenRef.current.length === 0) {
-      frozenRef.current = [...frames];
-    }
-  }, [paused, frames]);
+  }, [paused, replayLocked, goLive, seek, collectionEndMs]);
 
   // Re-enable auto-scroll when unpausing
   useEffect(() => {
@@ -486,8 +475,8 @@ function Trace() {
   // Filter logic: match CAN ID or message name (comma-separated terms)
   const filteredFrames = useMemo(() => {
     const timelineFrames = paused
-      ? activeFrames.filter((frame) => frame.timestamp <= selectedTimeMs)
-      : activeFrames;
+      ? frames.filter((frame) => frame.timestamp <= selectedTimeMs)
+      : frames;
 
     const terms = filter
       .split(",")
@@ -499,7 +488,7 @@ function Trace() {
       const name = f.messageName.toLowerCase();
       return terms.some((t) => id.includes(t) || name.includes(t));
     });
-  }, [activeFrames, filter, paused, selectedTimeMs]);
+  }, [frames, filter, paused, selectedTimeMs]);
 
   const enriched = useMemo(() => buildEnriched(filteredFrames), [filteredFrames]);
   const fixed = useMemo(() => enriched, [enriched]);
