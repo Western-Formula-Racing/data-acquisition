@@ -4,6 +4,10 @@
 # WFR's telemetry analysis stack (pandas, matplotlib)
 slicks>=0.2.0
 
+# SQL access for TimescaleDB (explicitly listed — slicks dep is indirect)
+sqlalchemy
+psycopg2-binary
+
 # Data & visualization (extras beyond what slicks brings in)
 pyarrow
 plotly

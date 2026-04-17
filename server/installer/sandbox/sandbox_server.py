@@ -67,6 +67,16 @@ def run_user_code(code: str) -> Dict[str, Any]:
             std_err = (exc.stderr or "") + f"\nExecution timed out after {SANDBOX_TIMEOUT}s."
             proc = None  # type: ignore[assignment]
 
+        # Collect output files from the workdir (where cwd-relative paths land)
+        # AND from /tmp (matplotlib's default save dir when cwd != /tmp)
+        system_tmp = Path("/tmp")
+        if system_tmp.exists() and system_tmp.is_dir():
+            import shutil
+            for f in system_tmp.iterdir():
+                if f.is_file() and f.suffix in (".png", ".jpg", ".jpeg", ".gif", ".svg", ".csv", ".pdf"):
+                    dest = workdir / f.name
+                    shutil.copy2(f, dest)
+
         output_files = _collect_output_files(workdir)
 
     return {

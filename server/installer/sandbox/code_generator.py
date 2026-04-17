@@ -46,7 +46,7 @@ os.environ["ANTHROPIC_API_KEY"] = ANTHROPIC_API_KEY
 os.environ["ANTHROPIC_BASE_URL"] = ANTHROPIC_BASE_URL
 
 # ── LLM ────────────────────────────────────────────────────────────────────────
-llm = ChatAnthropic(model=ANTHROPIC_MODEL, temperature=0.2, max_tokens=4096)
+llm = ChatAnthropic(model=ANTHROPIC_MODEL, temperature=0.2, max_tokens=8192)
 
 # ── Embeddings + ChromaDB ──────────────────────────────────────────────────────
 logger.info("Loading FastEmbed embeddings (BAAI/bge-small-en-v1.5)...")
@@ -225,6 +225,14 @@ def generate_code_node(state: AgentState) -> dict:
         SystemMessage(content=system_content),
         HumanMessage(content=user_content),
     ])
+    raw_content = response.content
+    if isinstance(raw_content, list):
+        text_parts = [b.get("text", "") if isinstance(b, dict) else str(b) for b in raw_content]
+        raw_text = "\n".join(text_parts)
+    else:
+        raw_text = str(raw_content)
+    logger.info("LLM raw response (%d chars, stop=%s)",
+                 len(raw_text), getattr(response, "stop_reason", "?"))
     code = _extract_python(response.content)
     cache.set(cache_key, code, expire=LLM_CACHE_TTL)
     return {"code": code}
