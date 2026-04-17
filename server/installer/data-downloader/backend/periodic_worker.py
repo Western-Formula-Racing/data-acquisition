@@ -24,9 +24,15 @@ async def run_worker():
 
     while True:
         try:
-            active_season = settings.seasons[0]  # sorted descending by year; first = active
-            logging.info(f"Running scheduled scan for active season: {active_season.name}")
-            service.run_full_scan(source="periodic", season_names=[active_season.name])
+            # scan all known seasons (auto-discovered or explicitly configured)
+            seasons = service._seasons
+            if seasons:
+                active_season = seasons[0]  # newest first
+                logging.info(f"Running scheduled scan for active season: {active_season.name}")
+                service.run_full_scan(source="periodic", season_names=[active_season.name])
+            else:
+                logging.info("No seasons available yet, running full discovery scan")
+                service.run_full_scan(source="periodic")
             logging.info("Finished scheduled scan.")
             
             if daily_time:

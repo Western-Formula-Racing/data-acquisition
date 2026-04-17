@@ -168,7 +168,7 @@ services:
       - .env
     environment:
       POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
-      SEASONS: "${SEASONS:-WFR26:2026}"
+      SEASONS: "${SEASONS:-}"
     ports:
       - "8000:8000"
     volumes:
@@ -194,7 +194,7 @@ services:
       - .env
     environment:
       POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
-      SEASONS: "${SEASONS:-WFR26:2026}"
+      SEASONS: "${SEASONS:-}"
       SCAN_DAILY_TIME: "${SCAN_DAILY_TIME}"
     command: [ "python", "-m", "backend.periodic_worker" ]
     volumes:

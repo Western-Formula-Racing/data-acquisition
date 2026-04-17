@@ -25,9 +25,14 @@ class SeasonConfig(BaseModel):
 
 
 def _parse_seasons(raw: str | None) -> List[SeasonConfig]:
-    """Parse SEASONS env var: \"WFR25:2025:colour,WFR26:2026\"."""
+    """
+    Parse SEASONS env var: \"WFR25:2025:colour,WFR26:2026\".
+
+    Returns an empty list when SEASONS is not set — the service will then
+    auto-discover season tables directly from TimescaleDB.
+    """
     if not raw:
-        return [SeasonConfig(name="WFR25", year=2025, table="wfr25")]
+        return []
 
     seasons = []
     for part in raw.split(","):
@@ -49,9 +54,6 @@ def _parse_seasons(raw: str | None) -> List[SeasonConfig]:
             ))
         except ValueError:
             continue
-
-    if not seasons:
-        return [SeasonConfig(name="WFR25", year=2025, table="wfr25")]
 
     seasons.sort(key=lambda s: s.year, reverse=True)
     return seasons
