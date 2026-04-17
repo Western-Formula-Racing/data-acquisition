@@ -13,6 +13,14 @@ from slack_sdk.socket_mode.response import SocketModeResponse
 
 processed_messages = set()
 
+# Track recent successful interactions per user for the !approve command
+# Key: user_id, Value: dict with prompt/code/output/rag_context
+_recent_success: dict[str, dict] = {}
+
+# Track pending approvals keyed by user_id
+# Value: dict with prompt/code/output/result/creator + bot_message_ts + channel
+pending_approvals: dict[str, dict] = {}
+
 # --- Logging Configuration ---
 LOG_DIR = Path("/app/logs")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -192,9 +200,10 @@ def handle_agent(user, command_full, thread_ts=None, timeout=120, channel=None):
             success_msg = f"✅ <@{user}> Code executed successfully!"
             if retries:
                 success_msg += f" (after {len(retries)} retry/retries)"
-            
-            send_slack_message(channel, text=success_msg, thread_ts=thread_ts)
-            
+
+            success_reply = send_slack_message(channel, text=success_msg, thread_ts=thread_ts)
+            bot_ts = (success_reply.get("ts") if isinstance(success_reply, dict) else None) or thread_ts
+
             # Send output if any
             if output:
                 output_msg = f"**Output:**\n```\n{output[:2000]}\n```"
@@ -234,6 +243,30 @@ def handle_agent(user, command_full, thread_ts=None, timeout=120, channel=None):
             
             # Log successful interaction
             log_interaction(user, instructions, result, "success")
+
+            # Store result so user can approve it later with !approve or :+1:
+            exec_result = result.get("result", {})
+            _recent_success[user] = {
+                "prompt": instructions,
+                "code": result.get("code", ""),
+                "output": exec_result.get("output", ""),
+                "result": exec_result,
+                "creator": user,
+            }
+            pending_approvals[user] = _recent_success[user].copy()
+            pending_approvals[user]["bot_ts"] = bot_ts
+            pending_approvals[user]["channel"] = channel
+
+            # Prompt user to approve via reaction or command
+            send_slack_message(
+                channel,
+                text=(
+                    f"_React with :+1: to save this as a verified example, "
+                    f"or type `!approve` in this thread._"
+                ),
+                thread_ts=thread_ts,
+            )
+            print(f"✅ Result stored for user {user} — pending approval via reaction or !approve")
         
         else:
             # Execution failed
@@ -329,6 +362,63 @@ def handle_wx(user, command_full, thread_ts=None, channel=None):
     send_slack_message(channel, text="\n".join(lines), thread_ts=thread_ts)
 
 
+def _do_approve(user, channel, pending, thread_ts=None):
+    """Send pending result to /api/feedback and acknowledge in thread."""
+    try:
+        feedback_payload = {
+            "prompt": pending["prompt"],
+            "code": pending["code"],
+            "output": pending.get("output", ""),
+            "creator": user,
+        }
+        resp = requests.post(
+            f"{CODE_GENERATOR_URL}/api/feedback",
+            json=feedback_payload,
+            timeout=15,
+        )
+        if resp.ok:
+            solution_data = resp.json()
+            solution_id = solution_data.get("solution_id", "")
+            _recent_success[user] = pending.copy()
+            _recent_success[user]["solution_id"] = solution_id
+            send_slack_message(
+                channel,
+                text=f"✅ <@{user}> Saved as a verified example (id: `{solution_id}`). "
+                     "Future similar queries will reference this solution.",
+                thread_ts=thread_ts,
+            )
+        else:
+            send_slack_message(
+                channel,
+                text=f"❌ <@{user}> Failed to save: {resp.status_code} {resp.text}",
+                thread_ts=thread_ts,
+            )
+    except Exception as e:
+        send_slack_message(
+            channel,
+            text=f"❌ <@{user}> Error saving verified example: {e}",
+            thread_ts=thread_ts,
+        )
+
+
+def handle_approve(user, thread_ts=None, channel=None):
+    """Re-save the most recent successful result as a verified solution (golden example)."""
+    channel = channel or DEFAULT_CHANNEL
+    recent = pending_approvals.get(user) or _recent_success.get(user)
+    if not recent:
+        send_slack_message(
+            channel,
+            text=f"⚠️ <@{user}> No recent successful result found to approve. "
+                 "Run `!agent` first and make sure it succeeds.",
+            thread_ts=thread_ts,
+        )
+        return
+
+    _do_approve(user, channel, recent, thread_ts=thread_ts)
+    pending_approvals.pop(user, None)
+
+
+
 def handle_help(user, thread_ts=None, channel=None):
     channel = channel or DEFAULT_CHANNEL
     help_text = (
@@ -347,7 +437,11 @@ def handle_help(user, thread_ts=None, channel=None):
         "                              Timeout: 1200s (20 minutes)\n"
         "                              Use for complex analysis or large datasets.\n"
         "                              Automatically retries up to 2 times if code fails.\n"
+        "!approve                   - Save your most recent successful !agent result as a\n"
+        "                              verified example (golden sample) for future queries.\n"
         "```\n"
+        "💬 React with :+1: on the result message — same as !approve, just quicker.\n"
+        "💬 Verified examples make future !agent queries smarter.\n"
         "💬 Tip: You can also DM me these commands directly!"
     )
     send_slack_message(channel, text=help_text, thread_ts=thread_ts)
@@ -361,6 +455,26 @@ def process_events(client: SocketModeClient, req: SocketModeRequest):
 
         client.send_socket_mode_response(SocketModeResponse(envelope_id=req.envelope_id))
         event = req.payload.get("event", {})
+
+        # ── Reaction added (thumbs-up to approve a result) ──────────────────────
+        if event.get("type") == "reaction_added":
+            reaction_user = event.get("user")
+            reaction_name = event.get("reaction")
+            item = event.get("item", {})
+            reaction_channel = item.get("channel")
+            reaction_ts = item.get("ts")
+
+            if reaction_name == "thumbsup":
+                pending = pending_approvals.get(reaction_user)
+                if (
+                    pending
+                    and pending.get("channel") == reaction_channel
+                    and pending.get("bot_ts") == reaction_ts
+                ):
+                    _do_approve(reaction_user, reaction_channel, pending)
+                    del pending_approvals[reaction_user]
+            return
+
         if event.get("type") != "message" or event.get("subtype") is not None:
             return
 
@@ -423,6 +537,8 @@ def process_events(client: SocketModeClient, req: SocketModeRequest):
             handle_agent(user, command_full, thread_ts, timeout=1200, channel=response_channel)
         elif main_command == "help":
             handle_help(user, thread_ts, response_channel)
+        elif main_command == "approve":
+            handle_approve(user, thread_ts, response_channel)
         else:
             send_slack_message(
                 response_channel,

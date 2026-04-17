@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, TypedDict
 
@@ -36,6 +37,7 @@ CACHE_DIR = Path(os.getenv("CACHE_DIR", "/app/cache"))
 CHROMA_DIR = Path(os.getenv("CHROMA_DIR", "/app/chroma_db"))
 RAG_SENSOR_K = int(os.getenv("RAG_SENSOR_K", "20"))
 RAG_RUN_K = int(os.getenv("RAG_RUN_K", "5"))
+RAG_SOLUTION_K = int(os.getenv("RAG_SOLUTION_K", "3"))
 LLM_CACHE_TTL = 24 * 3600
 EXEC_CACHE_TTL = 3600
 
@@ -59,6 +61,8 @@ _runs_raw = _chroma_client.get_or_create_collection("runs")
 
 sensors_store = Chroma(client=_chroma_client, collection_name="sensors", embedding_function=embeddings)
 runs_store = Chroma(client=_chroma_client, collection_name="runs", embedding_function=embeddings)
+_solutions_raw = _chroma_client.get_or_create_collection("verified_solutions")
+solutions_store = Chroma(client=_chroma_client, collection_name="verified_solutions", embedding_function=embeddings)
 
 # ── Disk Cache ─────────────────────────────────────────────────────────────────
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -193,6 +197,14 @@ def retrieve_context_node(state: AgentState) -> dict:
     except Exception:
         logger.warning("Runs RAG query failed", exc_info=True)
 
+    try:
+        solution_docs = solutions_store.similarity_search(prompt, k=RAG_SOLUTION_K)
+        if solution_docs:
+            summaries = [d.page_content for d in solution_docs]
+            parts.append("SUCCESSFUL EXAMPLES:\n" + "\n".join(f"  - {s}" for s in summaries))
+    except Exception:
+        logger.warning("Solutions RAG query failed", exc_info=True)
+
     return {"rag_context": "\n\n".join(parts)}
 
 
@@ -311,6 +323,52 @@ _builder.add_conditional_edges(
 graph = _builder.compile()
 
 
+# ── Verified Solutions (Golden Examples) ──────────────────────────────────────
+_solution_id_counter = 0
+
+
+def save_verified_solution(
+    user_prompt: str,
+    rag_context: str,
+    final_code: str,
+    output_summary: str,
+    *,
+    run_key: str | None = None,
+    creator: str | None = None,
+) -> str:
+    """Save a successful code execution as a verified solution in ChromaDB."""
+    global _solution_id_counter
+    import time
+
+    solution_id = f"solution_{int(time.time() * 1000)}_{_solution_id_counter}"
+    _solution_id_counter += 1
+
+    doc_text = user_prompt.strip()
+    metadata = {
+        "run_key": run_key or "",
+        "creator": creator or "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        _solutions_raw.upsert(
+            ids=[solution_id],
+            embeddings=embeddings.embed_documents([doc_text]),
+            documents=[doc_text],
+            metadatas=[metadata],
+        )
+        solutions_store.update(
+            ids=[solution_id],
+            documents=[output_summary.strip()],
+        )
+        logger.info("Saved verified solution: id=%s", solution_id)
+    except Exception:
+        logger.exception("Failed to save verified solution")
+        raise
+
+    return solution_id
+
+
 # ── Response formatting ────────────────────────────────────────────────────────
 def _format_response(state: AgentState) -> dict:
     result = state.get("sandbox_result", {})
@@ -345,6 +403,61 @@ CORS(app)
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "service": "code-generator", "model": ANTHROPIC_MODEL})
+
+
+@app.route("/api/feedback", methods=["POST"])
+def feedback_endpoint():
+    """Save a successful code execution as a verified solution (Golden Example).
+
+    Body:
+        prompt: str          — original user request
+        code: str            — executed Python code
+        output: str          — stdout from execution (used as summary)
+        rag_context: str     — RAG context retrieved at generation time (optional)
+        run_key: str         — associated run key (optional)
+        creator: str        — user identifier (optional)
+    """
+    data = request.get_json() or {}
+    user_prompt = data.get("prompt", "").strip()
+    final_code = data.get("code", "").strip()
+    output_summary = data.get("output", "").strip()
+
+    if not user_prompt or not final_code:
+        return jsonify({"error": "prompt and code are required"}), 400
+
+    rag_context = data.get("rag_context", "")
+    run_key = data.get("run_key")
+    creator = data.get("creator")
+
+    # Build a concise output summary (first 300 chars of stdout, or file list)
+    files = []
+    result_data = data.get("result", {})
+    if isinstance(result_data, dict):
+        files = result_data.get("files", [])
+    if output_summary and len(output_summary) > 300:
+        output_summary = output_summary[:300] + "..."
+
+    file_names = [f.get("name", "") for f in files if f.get("name")]
+    if file_names:
+        summary = f"Generated: {', '.join(file_names)}"
+        if output_summary:
+            summary += f" | Output: {output_summary}"
+    else:
+        summary = output_summary or "Code executed successfully"
+
+    try:
+        solution_id = save_verified_solution(
+            user_prompt=user_prompt,
+            rag_context=rag_context,
+            final_code=final_code,
+            output_summary=summary,
+            run_key=run_key,
+            creator=creator,
+        )
+        return jsonify({"status": "ok", "solution_id": solution_id})
+    except Exception as e:
+        logger.exception("feedback endpoint failed")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/generate-code", methods=["POST"])

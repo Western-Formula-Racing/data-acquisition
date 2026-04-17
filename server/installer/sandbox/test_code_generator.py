@@ -106,16 +106,69 @@ def test_error_with_retry():
     print("\n" + "=" * 60 + "\n")
     return True
 
+def test_feedback_endpoint():
+    """Test saving a verified solution via the feedback endpoint."""
+    print("Testing feedback endpoint...")
+
+    # First generate a piece of code
+    prompt = "Generate a simple line plot of sin(x) from 0 to 2pi and save as sin_wave.png"
+    gen_resp = requests.post(
+        f"{CODE_GENERATOR_URL}/api/generate-code",
+        json={"prompt": prompt},
+        timeout=120,
+    )
+    if gen_resp.status_code != 200:
+        print(f"⚠️ Generate-code failed ({gen_resp.status_code}), skipping feedback test")
+        return False
+
+    gen_result = gen_resp.json()
+    exec_result = gen_result.get("result", {})
+    if exec_result.get("status") != "success":
+        print("⚠️ Code execution was not successful, skipping feedback test")
+        return False
+
+    feedback_payload = {
+        "prompt": prompt,
+        "code": gen_result.get("code", ""),
+        "output": exec_result.get("output", ""),
+        "result": exec_result,
+        "creator": "test_user",
+    }
+
+    feedback_resp = requests.post(
+        f"{CODE_GENERATOR_URL}/api/feedback",
+        json=feedback_payload,
+        timeout=15,
+    )
+    print(f"Status: {feedback_resp.status_code}")
+    print(f"Response: {feedback_resp.json()}\n")
+    if feedback_resp.status_code == 200:
+        solution_id = feedback_resp.json().get("solution_id", "")
+        print(f"✅ Saved verified solution: {solution_id}")
+
+        # Verify it can be retrieved via RAG on a similar prompt
+        similar_resp = requests.post(
+            f"{CODE_GENERATOR_URL}/api/generate-code",
+            json={"prompt": "plot sin wave from 0 to 2π"},
+            timeout=120,
+        )
+        if similar_resp.status_code == 200:
+            print("✅ Similar prompt processed successfully (RAG may have retrieved the solution)")
+    print()
+    return feedback_resp.status_code == 200
+
+
 def main():
     """Run all tests."""
     print("=" * 60)
     print("Code Generator Service Test Suite")
     print("=" * 60 + "\n")
-    
+
     tests = [
         ("Health Check", test_health_check),
         ("Simple Code Generation", test_simple_code_generation),
         ("Error Handling", test_error_with_retry),
+        ("Feedback / Verified Solutions", test_feedback_endpoint),
     ]
     
     results = []
