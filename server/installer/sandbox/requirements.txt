@@ -1,5 +1,13 @@
 flask
 flask-cors
 python-dotenv
-cohere
+anthropic
+langchain
+langchain-anthropic
+langchain-chroma
+langchain-community
+langgraph
+chromadb
+fastembed
+diskcache
 requests
