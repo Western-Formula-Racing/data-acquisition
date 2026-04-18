@@ -545,7 +545,7 @@ and point their own Pecan instance at the car's WSS endpoint.
   TimescaleDB runs on MacBook's \cmd{macbook-base} stack only. \\
   RPi base (\cmd{rpi-base}) does NOT write to DB -- it relays to MacBook via UDP/TCP. \\[1mm]
   Connect with \cmd{psql}: \cmd{psql postgresql://wfr:wfr\_password@localhost:5432/wfr} \\
-  Check tables: \cmd{\textbackslash dt} \quad Check data: \cmd{SELECT COUNT(*) FROM wfr26test\_base;} \\
+  Check tables: \cmd{\textbackslash dt} \quad Check data: \cmd{SELECT COUNT(*) FROM wfr26base;} \\
   Grafana: \cmd{http://localhost:8087} \quad user: \cmd{admin} \quad pass: \cmd{admin} (or as set in \cmd{.env}) \\
 \end{tabular}
 
@@ -555,7 +555,7 @@ and point their own Pecan instance at the car's WSS endpoint.
 \noindent
 \begin{tabular}{p{126mm}}
   \cmd{docker logs daq-telemetry $\vert$ grep "table="} \\[1mm]
-  \textbf{PASS:} \cmd{table=WFR26test\_base} (or as set by \cmd{TIMESCALE\_TABLE}) \\
+  \textbf{PASS:} \cmd{table=wfr26base} (or as set by \cmd{TIMESCALE\_TABLE}) \\
   \textbf{FAIL:} \cmd{ENABLE\_TIMESCALE\_LOGGING=true} not set, or TimescaleDB not reachable \\
   \textit{Schema:} wide format -- one row per CAN message, each decoded signal as a column. \\
   \textit{Table is created automatically on first write.} \\
@@ -635,7 +635,7 @@ and point their own Pecan instance at the car's WSS endpoint.
   It reads decoded CAN frames from Redis and writes them directly to the server stack's \\
   TimescaleDB over the network (writes to \cmd{POSTGRES\_DSN}). No local TimescaleDB. \\[1mm]
   Wide format: one row per CAN message, all signals as columns. \\
-  Table: \cmd{WFR26test\_base} (MacBook) or as set by \cmd{TIMESCALE\_TABLE}. \\
+  Table: \cmd{wfr26base} (MacBook) or as set by \cmd{TIMESCALE\_TABLE}. \\
 \end{tabular}
 
 \vspace{1mm}
@@ -710,6 +710,7 @@ and point their own Pecan instance at the car's WSS endpoint.
   5006 & TCP & Packet retransmission \\
   5432 & TCP & TimescaleDB (MacBook only) \\
   6379 & TCP & Redis \\
+  8092 & HTTP & Cloud Sync dashboard (MacBook only) \\
   8080 & HTTP & Status monitoring page \\
   8087 & HTTP & Grafana dashboards (MacBook) \\
   9080 & WebSocket & PECAN telemetry feed (plain WS) \\
@@ -741,7 +742,7 @@ and point their own Pecan instance at the car's WSS endpoint.
   ENABLE\_VIDEO & false & Video streaming \\
   ENABLE\_AUDIO & false & Audio streaming \\
   ENABLE\_TIMESCALE\_LOGGING & false & Log telemetry to TimescaleDB (MacBook only) \\
-  TIMESCALE\_TABLE & WFR26test\_base & Table name for telemetry writes \\
+  TIMESCALE\_TABLE & wfr26base & Table name for telemetry writes \\
   POSTGRES\_DSN & (local) & TimescaleDB connection string (MacBook: local; RPi: points to MacBook) \\
   ENABLE\_WS\_RELAY & false & Start WS relay (ws\_relay.py) on port 9089 \\
   RELAY\_UPSTREAM\_WS & ws://127.0.0.1:9080 & Upstream WS URL for relay \\
