@@ -458,7 +458,6 @@ function Trace() {
 
   const handleClear = useCallback(() => {
     clearTrace();
-    frozenRef.current = [];
   }, [clearTrace]);
 
   // Handle Easter Egg Trigger

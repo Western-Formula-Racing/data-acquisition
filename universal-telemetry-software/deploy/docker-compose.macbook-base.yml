@@ -1,16 +1,24 @@
 # MacBook base station — full local stack with TimescaleDB persistence
 # Use this for development and testing with full telemetry recording.
-# Run from universal-telemetry-software/:
-#   docker compose -f deploy/docker-compose.macbook-base.yml up -d --build
+# Run from repo root (data-acquisition/):
+#   docker compose -f universal-telemetry-software/deploy/docker-compose.macbook-base.yml --env-file universal-telemetry-software/deploy/.env.macbook up -d --build
 #
 # Access points:
 #   Pecan dashboard:  http://localhost:3000
+#   Status page:      http://localhost:8080
 #   Grafana:          http://localhost:8087
 #   TimescaleDB:      postgresql://wfr:wfr_password@localhost:5432/wfr
+#   Cloud Sync:       http://localhost:8092
 
 networks:
   datalink:
     driver: bridge
+
+volumes:
+  redis_data:
+  timescaledb_data:
+  raw_can_data:
+  grafana_storage:
 
 services:
   telemetry:
@@ -35,10 +43,11 @@ services:
       - ENABLE_VIDEO=false
       - ENABLE_AUDIO=false
       - SET_TIME_ENABLED=false
-      - ENABLE_TIMESCALE_LOGGING=true
+      - ENABLE_TIMESCALE_LOGGING=${ENABLE_TIMESCALE_LOGGING:-false}
       - POSTGRES_DSN=postgresql://wfr:wfr_password@timescaledb:5432/wfr
-      - TIMESCALE_TABLE=${TIMESCALE_TABLE:-WFR26test}_base
+      - TIMESCALE_TABLE=${TIMESCALE_TABLE:-wfr26base}
       - DBC_FILE_PATH=/app/active.dbc
+      - DBC_DISPLAY_NAME=${DBC_DISPLAY_NAME:-example.dbc}
     volumes:
       - ${DBC_HOST_PATH:-./example.dbc}:/app/active.dbc:ro
       - raw_can_data:/app/raw_can_logs
@@ -91,7 +100,7 @@ services:
     networks:
       - datalink
 
-  # ── TimescaleDB (local, for received telemetry hot-load) ─────────────────
+# ── TimescaleDB (local, for received telemetry hot-load) ─────────────────
   timescaledb:
     image: timescale/timescaledb:latest-pg16
     container_name: daq-timescaledb
@@ -105,6 +114,8 @@ services:
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
       - ./timescaledb_init_macbook.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ./pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    command: postgres -c hba_file=/etc/postgresql/pg_hba.conf
     networks:
       - datalink
     healthcheck:
@@ -118,7 +129,55 @@ services:
         limits:
           memory: 8G
 
-volumes:
-  redis_data:
-  timescaledb_data:
-  raw_can_data:
+  cloud-sync:
+    build: ../cloud-sync
+    container_name: daq-cloud-sync
+    restart: unless-stopped
+    ports:
+      - "8092:8092"
+    environment:
+      - LOCAL_POSTGRES_DSN=postgresql://wfr:wfr_password@timescaledb:5432/wfr
+      - LOCAL_TABLE=${LOCAL_TABLE:-${TIMESCALE_TABLE:-wfr26base}}
+      - CLOUD_POSTGRES_DSN=${CLOUD_POSTGRES_DSN:-}
+      - CLOUD_TABLE=${CLOUD_TABLE:-wfr26}
+      - SYNC_BATCH_SIZE=${SYNC_BATCH_SIZE:-5000}
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    networks:
+      - datalink
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  grafana:
+    image: grafana/grafana
+    container_name: daq-grafana
+    restart: unless-stopped
+    ports:
+      - "8087:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_ANONYMOUS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 100ms
+      POSTGRES_USER: wfr
+      POSTGRES_PASSWORD: wfr_password
+    volumes:
+      - grafana_storage:/var/lib/grafana
+      - ../../server/installer/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../server/installer/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - datalink
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+# Run from repo root (data-acquisition/):
+#   docker compose -f universal-telemetry-software/deploy/docker-compose.macbook-base.yml --env-file universal-telemetry-software/deploy/.env.macbook up -d

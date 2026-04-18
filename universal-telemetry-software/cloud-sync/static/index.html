@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WFR Cloud Sync</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --border:   #30363d;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --accent:   #e8b923;
+      --green:    #3fb950;
+      --red:      #f85149;
+      --amber:    #d29922;
+      --radius:   8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.5px;
+    }
+    header .subtitle {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    /* ── stat cards ─────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 600px) {
+      .cards { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+    .card-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .card-value {
+      font-size: 28px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .card-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+    .card-sub.amber { color: var(--amber); }
+    .card-sub.green { color: var(--green); }
+
+    .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      background: var(--muted);
+    }
+    .dot.green { background: var(--green); }
+    .dot.red   { background: var(--red); }
+
+    /* ── warning banner ─────────────────────────────────── */
+    .banner {
+      background: #1c1000;
+      border: 1px solid var(--amber);
+      border-radius: var(--radius);
+      padding: 10px 16px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: var(--amber);
+      display: none;
+    }
+    .banner.visible { display: block; }
+
+    /* ── table picker ───────────────────────────────────── */
+    .table-picker {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .table-picker label {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .table-picker select,
+    .table-picker input[type="text"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      padding: 5px 10px;
+      outline: none;
+    }
+    .table-picker select:focus,
+    .table-picker input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+    .table-picker select { min-width: 140px; }
+    .table-picker input[type="text"] { width: 130px; }
+    .divider {
+      width: 1px; height: 20px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+
+    /* ── action row ─────────────────────────────────────── */
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    button {
+      padding: 8px 18px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      background: var(--surface);
+      color: var(--text);
+      transition: opacity 0.15s, background 0.15s;
+    }
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    button.primary {
+      background: var(--accent);
+      color: #0d1117;
+      border-color: var(--accent);
+      font-weight: 700;
+    }
+    button.primary:not(:disabled):hover {
+      background: #f5ca40;
+    }
+    button:not(.primary):not(:disabled):hover {
+      background: #21262d;
+    }
+
+    /* ── progress bar ────────────────────────────────────── */
+    .progress-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .progress-wrap.visible { display: block; }
+    .progress-label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .progress-bar-track {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 3px;
+      transition: width 0.3s ease;
+      width: 0%;
+    }
+
+    /* ── activity log ────────────────────────────────────── */
+    .log-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .log-header {
+      padding: 10px 16px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .log-entries {
+      max-height: 220px;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+    .log-entry {
+      display: flex;
+      gap: 12px;
+      padding: 4px 16px;
+      font-size: 12px;
+      font-family: "SF Mono", "Fira Code", monospace;
+    }
+    .log-entry:hover { background: #1c2128; }
+    .log-time { color: var(--muted); flex-shrink: 0; }
+    .log-msg  { color: var(--text); }
+    .log-msg.ok     { color: var(--green); }
+    .log-msg.err    { color: var(--red); }
+    .log-msg.warn   { color: var(--amber); }
+    .log-empty {
+      padding: 16px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>WFR Cloud Sync</h1>
+    <div class="subtitle" id="table-info">local → cloud</div>
+  </div>
+</header>
+
+<div class="banner" id="no-dsn-banner">
+  CLOUD_POSTGRES_DSN not configured — set it in <code>deploy/.env.macbook</code> and restart.
+</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-label">Local Rows</div>
+    <div class="card-value" id="local-count">—</div>
+    <div class="card-sub" id="local-table-sub"></div>
+  </div>
+  <div class="card">
+    <div class="card-label">Cloud Status</div>
+    <div class="card-value" id="cloud-status" style="font-size:18px;padding-top:4px">
+      <span class="dot" id="cloud-dot"></span><span id="cloud-status-text">Unknown</span>
+    </div>
+    <div class="card-sub" id="cloud-latency"></div>
+  </div>
+  <div class="card">
+    <div class="card-label">Last Sync</div>
+    <div class="card-value" id="last-sync" style="font-size:16px;padding-top:4px">Never</div>
+    <div class="card-sub" id="unsynced-count"></div>
+  </div>
+</div>
+
+<div class="table-picker">
+  <label>Local table:</label>
+  <select id="local-table-select" onchange="selectLocalTable(this.value)">
+    <option value="">— loading —</option>
+  </select>
+  <div class="divider"></div>
+  <label>Cloud table:</label>
+  <select id="table-select" onchange="selectTable(this.value)">
+    <option value="">— loading —</option>
+  </select>
+  <div class="divider"></div>
+  <label>New cloud:</label>
+  <input type="text" id="new-table-input" placeholder="wfr27" maxlength="32"
+         onkeydown="if(event.key==='Enter') createTable()" />
+  <button onclick="createTable()" id="btn-create">Create</button>
+</div>
+
+<div class="actions">
+  <button id="btn-check" onclick="checkCloud()">Check Connection</button>
+  <button id="btn-sync" class="primary" onclick="startSync()">Sync Now</button>
+</div>
+
+<div class="progress-wrap" id="progress-wrap">
+  <div class="progress-label" id="progress-label">Syncing…</div>
+  <div class="progress-bar-track">
+    <div class="progress-bar-fill" id="progress-fill"></div>
+  </div>
+</div>
+
+<div class="log-wrap">
+  <div class="log-header">Activity Log</div>
+  <div class="log-entries" id="log-entries">
+    <div class="log-empty">No activity yet.</div>
+  </div>
+</div>
+
+<script>
+  const MAX_LOG = 50;
+  let syncPollInterval = null;
+  let idlePollInterval = null;
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function fmt(n) {
+    if (n == null) return '—';
+    return Number(n).toLocaleString();
+  }
+
+  function timeAgo(isoStr) {
+    if (!isoStr) return null;
+    const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
+    if (diff < 5)  return 'just now';
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+    return `${Math.floor(diff/3600)}h ago`;
+  }
+
+  function nowStr() {
+    return new Date().toLocaleTimeString('en-CA', { hour12: false });
+  }
+
+  function addLog(msg, cls = '') {
+    const entries = document.getElementById('log-entries');
+    const empty = entries.querySelector('.log-empty');
+    if (empty) empty.remove();
+
+    const div = document.createElement('div');
+    div.className = 'log-entry';
+    div.innerHTML = `<span class="log-time">${nowStr()}</span><span class="log-msg ${cls}">${msg}</span>`;
+    entries.prepend(div);
+
+    while (entries.children.length > MAX_LOG) {
+      entries.removeChild(entries.lastChild);
+    }
+  }
+
+  // ── Status update ──────────────────────────────────────────────────────────
+
+  async function refreshStatus() {
+    let data;
+    try {
+      const res = await fetch('/api/status');
+      data = await res.json();
+    } catch (e) {
+      return;
+    }
+
+    // Banner
+    const banner = document.getElementById('no-dsn-banner');
+    banner.classList.toggle('visible', !data.cloud_configured);
+
+    // Table info
+    document.getElementById('table-info').textContent =
+      `${data.local_table} → ${data.cloud_table}`;
+
+    // Local count
+    document.getElementById('local-count').textContent = fmt(data.local_count);
+    document.getElementById('local-table-sub').textContent = data.local_table;
+
+    // Last sync
+    const lastSync = document.getElementById('last-sync');
+    lastSync.textContent = data.last_sync_iso ? timeAgo(data.last_sync_iso) : 'Never';
+
+    // Unsynced
+    const unsyncedEl = document.getElementById('unsynced-count');
+    if (data.unsynced_count != null) {
+      const n = data.unsynced_count;
+      unsyncedEl.textContent = `${fmt(n)} unsynced`;
+      unsyncedEl.className = 'card-sub ' + (n > 0 ? 'amber' : 'green');
+    } else {
+      unsyncedEl.textContent = '';
+    }
+
+    // Sync running → switch to fast poll
+    if (data.sync_running && !syncPollInterval) {
+      startSyncPoll();
+    }
+  }
+
+  // ── Check connection ───────────────────────────────────────────────────────
+
+  async function checkCloud() {
+    const btn = document.getElementById('btn-check');
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+
+    try {
+      const res = await fetch('/api/check-cloud', { method: 'POST' });
+      const data = await res.json();
+
+      const dot = document.getElementById('cloud-dot');
+      const txt = document.getElementById('cloud-status-text');
+      const lat = document.getElementById('cloud-latency');
+
+      if (data.ok) {
+        dot.className = 'dot green';
+        txt.textContent = 'Connected';
+        lat.textContent = data.latency_ms != null ? `${data.latency_ms} ms` : '';
+        addLog(`Cloud check: Connected (${data.latency_ms}ms)`, 'ok');
+      } else {
+        dot.className = 'dot red';
+        txt.textContent = 'Unreachable';
+        lat.textContent = data.detail || '';
+        addLog(`Cloud check failed: ${data.detail}`, 'err');
+      }
+    } catch (e) {
+      addLog(`Cloud check error: ${e}`, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Check Connection';
+    }
+  }
+
+  // ── Sync ───────────────────────────────────────────────────────────────────
+
+  async function startSync() {
+    const btn = document.getElementById('btn-sync');
+    btn.disabled = true;
+    btn.textContent = 'Syncing…';
+
+    try {
+      const res = await fetch('/api/sync', { method: 'POST' });
+      if (res.status === 409) {
+        addLog('Sync already in progress', 'warn');
+        return;
+      }
+      if (res.status === 400) {
+        const d = await res.json();
+        addLog(`Sync error: ${d.detail}`, 'err');
+        return;
+      }
+      addLog('Sync started', '');
+      startSyncPoll();
+    } catch (e) {
+      addLog(`Sync request failed: ${e}`, 'err');
+      btn.disabled = false;
+      btn.textContent = 'Sync Now';
+    }
+  }
+
+  function startSyncPoll() {
+    if (syncPollInterval) return;
+    document.getElementById('progress-wrap').classList.add('visible');
+    syncPollInterval = setInterval(pollSyncStatus, 1000);
+  }
+
+  async function pollSyncStatus() {
+    let data;
+    try {
+      const res = await fetch('/api/sync-status');
+      data = await res.json();
+    } catch (e) {
+      return;
+    }
+
+    // Update progress bar
+    const done = data.rows_done || 0;
+    const total = data.rows_total || 0;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    document.getElementById('progress-fill').style.width = `${pct}%`;
+    document.getElementById('progress-label').textContent =
+      total > 0
+        ? `Syncing: ${fmt(done)} / ${fmt(total)} rows (${pct}%)`
+        : 'Syncing…';
+
+    if (!data.running) {
+      // Sync finished
+      clearInterval(syncPollInterval);
+      syncPollInterval = null;
+      document.getElementById('progress-wrap').classList.remove('visible');
+      document.getElementById('progress-fill').style.width = '0%';
+
+      const btn = document.getElementById('btn-sync');
+      btn.disabled = false;
+      btn.textContent = 'Sync Now';
+
+      if (data.last_error) {
+        addLog(`Sync failed: ${data.last_error}`, 'err');
+      } else if (data.last_sync_rows != null) {
+        addLog(
+          `Sync complete — ${fmt(data.last_sync_rows)} rows in ${data.last_sync_elapsed}s`,
+          'ok'
+        );
+      }
+
+      // Refresh status to update counts
+      refreshStatus();
+    }
+  }
+
+  // ── Local table picker ─────────────────────────────────────────────────────
+
+  async function loadLocalTables() {
+    try {
+      const res = await fetch('/api/local-tables');
+      if (!res.ok) return;
+      const data = await res.json();
+      const sel = document.getElementById('local-table-select');
+      const current = data.current;
+      sel.innerHTML = '';
+      if (data.tables.length === 0) {
+        sel.innerHTML = '<option value="">— no tables found —</option>';
+      } else {
+        data.tables.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = t;
+          if (t === current) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        if (!data.tables.includes(current)) {
+          const opt = document.createElement('option');
+          opt.value = current;
+          opt.textContent = current + ' (env)';
+          opt.selected = true;
+          sel.prepend(opt);
+        }
+      }
+    } catch (e) {
+      // local DB not reachable yet
+    }
+  }
+
+  async function selectLocalTable(table) {
+    if (!table) return;
+    try {
+      await fetch('/api/select-local-table', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ table }),
+      });
+      addLog(`Local table switched to: ${table}`, '');
+      refreshStatus();
+    } catch (e) {
+      addLog(`Failed to select local table: ${e}`, 'err');
+    }
+  }
+
+  // ── Cloud table picker ─────────────────────────────────────────────────────
+
+  async function loadCloudTables() {
+    try {
+      const res = await fetch('/api/cloud-tables');
+      if (!res.ok) return;
+      const data = await res.json();
+      const sel = document.getElementById('table-select');
+      const current = data.current;
+      sel.innerHTML = '';
+      if (data.tables.length === 0) {
+        sel.innerHTML = '<option value="">— no tables found —</option>';
+      } else {
+        data.tables.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t;
+          opt.textContent = t;
+          if (t === current) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        // If current not in list, add it
+        if (!data.tables.includes(current)) {
+          const opt = document.createElement('option');
+          opt.value = current;
+          opt.textContent = current + ' (env)';
+          opt.selected = true;
+          sel.prepend(opt);
+        }
+      }
+    } catch (e) {
+      // cloud not configured yet — leave placeholder
+    }
+  }
+
+  async function selectTable(table) {
+    if (!table) return;
+    try {
+      await fetch('/api/select-table', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ table }),
+      });
+      addLog(`Cloud table switched to: ${table}`, '');
+      refreshStatus();
+    } catch (e) {
+      addLog(`Failed to select table: ${e}`, 'err');
+    }
+  }
+
+  async function createTable() {
+    const input = document.getElementById('new-table-input');
+    const name = input.value.trim().toLowerCase();
+    if (!name) return;
+    const btn = document.getElementById('btn-create');
+    btn.disabled = true;
+    btn.textContent = 'Creating…';
+    try {
+      const res = await fetch('/api/cloud-tables', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ table: name }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        addLog(`Create failed: ${data.detail}`, 'err');
+      } else {
+        addLog(`Created cloud table: ${data.created}`, 'ok');
+        input.value = '';
+        await loadCloudTables();
+        // Auto-select the newly created table
+        document.getElementById('table-select').value = name;
+        selectTable(name);
+      }
+    } catch (e) {
+      addLog(`Create error: ${e}`, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Create';
+    }
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────────
+
+  refreshStatus();
+  loadLocalTables();
+  loadCloudTables();
+  idlePollInterval = setInterval(refreshStatus, 10000);
+  setInterval(loadLocalTables, 30000);
+  setInterval(loadCloudTables, 30000);
+</script>
+</body>
+</html>
