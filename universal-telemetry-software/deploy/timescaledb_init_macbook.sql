@@ -58,7 +58,7 @@ $$;
 -- ─────────────────────────────────────────────────────────────
 -- Season table — WFR26test (no preloaded data)
 -- ─────────────────────────────────────────────────────────────
-SELECT create_season_table('WFR26test');
+SELECT create_season_table('wfr26base');
 
 -- ─────────────────────────────────────────────────────────────
 -- Monitoring table
