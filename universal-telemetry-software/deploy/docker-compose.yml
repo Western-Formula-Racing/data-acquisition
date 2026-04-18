@@ -84,6 +84,15 @@ services:
     depends_on:
       - telemetry
 
+  stream-overlay:
+    image: nginx:alpine
+    container_name: daq-stream-overlay
+    restart: unless-stopped
+    ports:
+      - "8085:80"
+    volumes:
+      - ../../livestream:/usr/share/nginx/html:ro
+
 volumes:
   redis_data:
   caddy_data:

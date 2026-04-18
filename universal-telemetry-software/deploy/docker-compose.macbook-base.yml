@@ -100,6 +100,17 @@ services:
     networks:
       - datalink
 
+  stream-overlay:
+    image: nginx:alpine
+    container_name: daq-stream-overlay
+    restart: unless-stopped
+    ports:
+      - "8085:80"
+    volumes:
+      - ../../livestream:/usr/share/nginx/html:ro
+    networks:
+      - datalink
+
 # ── TimescaleDB (local, for received telemetry hot-load) ─────────────────
   timescaledb:
     image: timescale/timescaledb:latest-pg16
