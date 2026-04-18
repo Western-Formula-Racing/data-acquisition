@@ -14,6 +14,12 @@ networks:
   datalink:
     driver: bridge
 
+volumes:
+  redis_data:
+  timescaledb_data:
+  raw_can_data:
+  grafana_storage:
+
 services:
   telemetry:
     image: ghcr.io/western-formula-racing/daq-radio/universal-telemetry:latest
@@ -146,7 +152,32 @@ services:
         max-size: "10m"
         max-file: "3"
 
-volumes:
-  redis_data:
-  timescaledb_data:
-  raw_can_data:
+  grafana:
+    image: grafana/grafana
+    container_name: daq-grafana
+    restart: unless-stopped
+    ports:
+      - "8087:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_ANONYMOUS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 100ms
+      POSTGRES_USER: wfr
+      POSTGRES_PASSWORD: wfr_password
+    volumes:
+      - grafana_storage:/var/lib/grafana
+      - ../../server/installer/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../server/installer/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - datalink
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+# Run from repo root (data-acquisition/):
+#   docker compose -f universal-telemetry-software/deploy/docker-compose.macbook-base.yml --env-file universal-telemetry-software/deploy/.env.macbook up -d
