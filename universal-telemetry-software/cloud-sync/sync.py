@@ -10,7 +10,7 @@ Write pattern mirrors timescale_bridge.py and file-uploader/helper.py:
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Callable, Optional, Set
 
 import psycopg2
@@ -171,14 +171,14 @@ class SyncEngine:
                         timescaledb.compress_orderby   = 'time DESC'
                     )
                 """)
-            except Exception:
-                pass  # Extension not available or already set — non-fatal
+            except Exception as exc:
+                logger.debug("Skipping compression setup for '%s': %s", self.cloud_table, exc)
             try:
                 cur.execute("""
                     SELECT add_compression_policy(%s, INTERVAL '2 days', if_not_exists => TRUE)
                 """, (self.cloud_table,))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Skipping compression policy setup for '%s': %s", self.cloud_table, exc)
             cur.execute(
                 f"CREATE INDEX IF NOT EXISTS {self.cloud_table}_time_idx "
                 f"ON {self.cloud_table} (time DESC)"
@@ -322,11 +322,11 @@ class SyncEngine:
             try:
                 local_conn.close()
             except Exception:
-                pass
+                logger.debug("Ignoring error while closing local DB connection", exc_info=True)
             try:
                 cloud_conn.close()
             except Exception:
-                pass
+                logger.debug("Ignoring error while closing cloud DB connection", exc_info=True)
 
         elapsed = time.monotonic() - t0
         logger.info(f"Sync complete: {rows_synced} rows in {elapsed:.1f}s ({batches} batches)")

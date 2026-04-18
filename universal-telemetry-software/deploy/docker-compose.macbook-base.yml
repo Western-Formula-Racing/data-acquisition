@@ -100,7 +100,7 @@ services:
     networks:
       - datalink
 
-  # ── TimescaleDB (local, for received telemetry hot-load) ─────────────────
+# ── TimescaleDB (local, for received telemetry hot-load) ─────────────────
   timescaledb:
     image: timescale/timescaledb:latest-pg16
     container_name: daq-timescaledb

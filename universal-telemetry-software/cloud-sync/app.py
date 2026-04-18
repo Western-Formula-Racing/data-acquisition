@@ -1,7 +1,6 @@
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
