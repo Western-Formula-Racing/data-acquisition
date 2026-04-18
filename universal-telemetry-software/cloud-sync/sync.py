@@ -277,16 +277,9 @@ class SyncEngine:
                     if col_names is None:
                         col_names = [d.name for d in read_cur.description]
                         signal_cols = [c for c in col_names if c not in _FIXED_COLS]
-
-                    # Collect signal names present in this batch (non-null columns vary)
-                    batch_signal_names: Set[str] = set()
-                    for row in rows:
-                        row_dict = dict(zip(col_names, row))
-                        for sc in signal_cols:
-                            if row_dict.get(sc) is not None:
-                                batch_signal_names.add(sc)
-
-                    self._ensure_cloud_signal_columns(cloud_conn, batch_signal_names, known_signals)
+                        # Ensure all local signal columns exist in cloud upfront —
+                        # batches may have nulls for columns that exist in the schema.
+                        self._ensure_cloud_signal_columns(cloud_conn, set(signal_cols), known_signals)
 
                     # Build INSERT for the fixed + all signal columns
                     all_cols = ["time", "message_name", "can_id"] + signal_cols
