@@ -141,7 +141,16 @@ else
     ok "uv installed at $UV"
 fi
 
-# ── 6. Python venv + dependencies ────────────────────────────────────────────
+# ── 6. Enable Wayland compositor (required for NoMachine on headless Pi) ─────
+hdr "Wayland compositor"
+if raspi-config nonint get_wayland 2>/dev/null | grep -q "W2"; then
+    ok "Wayland already enabled"
+else
+    raspi-config nonint do_wayland W2
+    ok "Wayland enabled (Wayfire) — takes effect after reboot"
+fi
+
+# ── 8. Python venv + dependencies ────────────────────────────────────────────
 hdr "Python venv (system-site-packages for gi/GStreamer)"
 cd "$SCRIPT_DIR"
 sudo -u "$SERVICE_USER" env HOME="$SERVICE_HOME" \
