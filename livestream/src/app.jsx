@@ -119,9 +119,19 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 }/*EDITMODE-END*/;
 
 function App() {
+  // Detect OBS solo mode from URL: ?solo=1&variant=A
+  const urlParams = new URL(location.href).searchParams;
+  const isSolo = urlParams.get('solo') === '1';
+  const soloVariant = urlParams.get('variant') || 'A';
+
   const [tweaks, setTweaks] = React.useState(() => {
-    try { return { ...TWEAK_DEFAULTS, ...JSON.parse(localStorage.getItem('wfr-tweaks') || '{}') }; }
-    catch { return TWEAK_DEFAULTS; }
+    try {
+      const saved = JSON.parse(localStorage.getItem('wfr-tweaks') || '{}');
+      const base = { ...TWEAK_DEFAULTS, ...saved };
+      // In solo mode, force single layout and correct variant regardless of saved state
+      if (isSolo) return { ...base, layout: 'single', activeVariant: soloVariant };
+      return base;
+    } catch { return TWEAK_DEFAULTS; }
   });
   const [editMode, setEditMode] = React.useState(false);
   const [panelOpen, setPanelOpen] = React.useState(true);
@@ -196,14 +206,14 @@ function App() {
     if (tweaks.layout === 'side-by-side') {
       return (
         <div style={{ display: 'flex', gap: 40, alignItems: 'flex-start' }}>
-          <Labeled title="Variant A · BROADCAST BAR">
-            {variantA}
-          </Labeled>
-          <Labeled title="Variant B · CORNER HUD">
-            {variantB}
-          </Labeled>
+          <Labeled title="Variant A · BROADCAST BAR">{variantA}</Labeled>
+          <Labeled title="Variant B · CORNER HUD">{variantB}</Labeled>
         </div>
       );
+    }
+    // Solo mode: render the overlay directly with no label wrapper, exact 1920×1080
+    if (isSolo) {
+      return tweaks.activeVariant === 'A' ? variantA : variantB;
     }
     return (
       <Labeled title={tweaks.activeVariant === 'A' ? 'BROADCAST BAR' : 'CORNER HUD'}>
@@ -212,54 +222,61 @@ function App() {
     );
   };
 
-  const natW = tweaks.layout === 'side-by-side' ? 1920 * 2 + 40 : 1920;
-  const natH = 1080 + 60;
+  // Solo: exact 1920×1080, no scaling needed — OBS browser source is set to that size
+  const natW = isSolo ? 1920 : (tweaks.layout === 'side-by-side' ? 1920 * 2 + 40 : 1920);
+  const natH = isSolo ? 1080 : 1080 + 60;
 
   return (
     <div style={{
-      minHeight: '100vh', background: '#0a0a0b', color: '#f4f4f5',
-      fontFamily: window.FONT.label, overflow: 'hidden',
+      minHeight: '100vh',
+      background: isSolo ? 'transparent' : '#0a0a0b',
+      color: '#f4f4f5', fontFamily: window.FONT.label, overflow: 'hidden',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} data-screen-label="01 Stream Overlay Canvas">
       <div style={{
-        width: natW, transform: `scale(${fitScale})`, transformOrigin: 'center center',
+        width: natW,
+        transform: isSolo ? 'none' : `scale(${fitScale})`,
+        transformOrigin: 'center center',
       }}>
         {renderCanvas()}
       </div>
 
-      {/* Connection pill (top-left, always visible) */}
-      <div style={{ position: 'fixed', top: 12, left: 12, display: 'flex', gap: 8,
-        alignItems: 'center', background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(255,255,255,0.1)',
-        padding: '6px 12px', fontFamily: window.FONT.mono, fontSize: 11 }}>
-        <span style={{
-          width: 8, height: 8, borderRadius: 4,
-          background: wsStatus.mode === 'live' ? window.COL.green :
-            wsStatus.mode === 'sim' ? window.COL.accent :
-            wsStatus.mode === 'connecting' ? '#fb8' : window.COL.red,
-        }} />
-        <span style={{ letterSpacing: 1.4, textTransform: 'uppercase' }}>
-          {wsStatus.mode === 'sim' ? 'SIM DATA' :
-            wsStatus.mode === 'live' ? 'LIVE WS' :
-            wsStatus.mode === 'connecting' ? 'CONNECTING' : 'WS ERROR'}
-        </span>
-        {wsStatus.url && <span style={{ opacity: 0.6 }}>· {wsStatus.url}</span>}
-      </div>
+      {/* All dev UI hidden in solo/OBS mode */}
+      {!isSolo && (
+        <div style={{ position: 'fixed', top: 12, left: 12, display: 'flex', gap: 8,
+          alignItems: 'center', background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(255,255,255,0.1)',
+          padding: '6px 12px', fontFamily: window.FONT.mono, fontSize: 11 }}>
+          <span style={{
+            width: 8, height: 8, borderRadius: 4,
+            background: wsStatus.mode === 'live' ? window.COL.green :
+              wsStatus.mode === 'sim' ? window.COL.accent :
+              wsStatus.mode === 'connecting' ? '#fb8' : window.COL.red,
+          }} />
+          <span style={{ letterSpacing: 1.4, textTransform: 'uppercase' }}>
+            {wsStatus.mode === 'sim' ? 'SIM DATA' :
+              wsStatus.mode === 'live' ? 'LIVE WS' :
+              wsStatus.mode === 'connecting' ? 'CONNECTING' : 'WS ERROR'}
+          </span>
+          {wsStatus.url && <span style={{ opacity: 0.6 }}>· {wsStatus.url}</span>}
+        </div>
+      )}
 
-      {/* Settings panel toggle */}
-      <button onClick={() => setPanelOpen((o) => !o)}
-        style={{
-          position: 'fixed', top: 12, right: 12, zIndex: 30,
-          background: 'rgba(0,0,0,0.7)', color: '#fff',
-          border: '1px solid rgba(255,255,255,0.15)',
-          padding: '6px 14px', fontFamily: window.FONT.mono, fontSize: 11,
-          letterSpacing: 1.4, textTransform: 'uppercase', cursor: 'pointer',
-        }}>
-        {panelOpen ? 'hide settings' : 'settings'}
-      </button>
+      {!isSolo && (
+        <button onClick={() => setPanelOpen((o) => !o)}
+          style={{
+            position: 'fixed', top: 12, right: 12, zIndex: 30,
+            background: 'rgba(0,0,0,0.7)', color: '#fff',
+            border: '1px solid rgba(255,255,255,0.15)',
+            padding: '6px 14px', fontFamily: window.FONT.mono, fontSize: 11,
+            letterSpacing: 1.4, textTransform: 'uppercase', cursor: 'pointer',
+          }}>
+          {panelOpen ? 'hide settings' : 'settings'}
+        </button>
+      )}
 
-      <CanDebugPanel />
+      {!isSolo && <CanDebugPanel />}
 
-      {panelOpen && (
+      {!isSolo && panelOpen && (
         <div style={{
           position: 'fixed', bottom: 12, right: 12, width: 360, zIndex: 25,
           background: 'rgba(12,12,14,0.96)', border: '1px solid rgba(255,255,255,0.12)',
@@ -396,17 +413,6 @@ function Labeled({ title, children }) {
   );
 }
 
-// URL params let OBS load a single variant, bare, at full size
-(function applyUrlParams() {
-  const u = new URL(location.href);
-  if (u.searchParams.get('solo') === '1') {
-    const v = u.searchParams.get('variant') || 'A';
-    try {
-      const t = JSON.parse(localStorage.getItem('wfr-tweaks') || '{}');
-      localStorage.setItem('wfr-tweaks', JSON.stringify({ ...t, layout: 'single', activeVariant: v }));
-    } catch {}
-  }
-})();
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);

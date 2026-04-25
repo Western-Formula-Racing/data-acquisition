@@ -971,6 +971,11 @@ BO_ 1200 BASE_STATION_ALIVE: 8 BASESTATION
 BO_ 997 TORCH_GLOBAL_MIN_VCELL: 8 CUSTOMBMS
  SG_ Absolute_min_cell_voltage : 0|16@1+ (0.0001,0) [0|0] "V" Vector__XXX
 
+BO_ 2030 VCU_Pitot_Tube: 8 VCU
+ SG_ Pitot_Voltage : 0|16@1+ (0.01,0) [0|5] "V" Vector__XXX
+ SG_ Pitot_Pressure : 16|16@1+ (0.01,0) [50|75] "mbar" Vector__XXX
+ SG_ Pitot_Speed : 32|16@1+ (0.01,0) [0|200] "km/h" Vector__XXX
+
 BO_ 998 TORCH_START_BALANCE: 8 Vector__XXX
 
 BO_ 999 TORCH_STOP_BALANCE: 8 Vector__XXX
