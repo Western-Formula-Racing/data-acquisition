@@ -23,10 +23,10 @@ jobs:
         include:
           - os: windows-latest
             artifact_name: kvaser-bridge-windows
-            binary_name: kvaser-bridge.exe
+            release_asset: kvaser-bridge-windows.exe
           - os: macos-latest
             artifact_name: kvaser-bridge-macos
-            binary_name: kvaser-bridge
+            release_asset: kvaser-bridge-macos.app.zip
 
     steps:
       - name: Checkout code
@@ -49,11 +49,25 @@ jobs:
           [[ -f build.spec ]] || { echo 'Missing kvaser-bridge/build.spec in repository checkout.'; exit 1; }
           pyinstaller --clean --noconfirm build.spec
 
+      - name: Prepare Windows release asset
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item -Path "kvaser-bridge/dist/kvaser-bridge.exe" -Destination "kvaser-bridge/dist/kvaser-bridge-windows.exe" -Force
+
+      - name: Package macOS app bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cd kvaser-bridge/dist
+          [[ -d kvaser-bridge.app ]] || { echo 'Expected macOS app bundle not found.'; exit 1; }
+          ditto -c -k --sequesterRsrc --keepParent kvaser-bridge.app kvaser-bridge-macos.app.zip
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: kvaser-bridge/dist/${{ matrix.binary_name }}
+          path: kvaser-bridge/dist/${{ matrix.release_asset }}
           if-no-files-found: error
           retention-days: 30
 
@@ -128,8 +142,8 @@ jobs:
         shell: bash
         run: |
           gh release upload "${{ steps.meta.outputs.tag }}" \
-            release-assets/kvaser-bridge-macos/kvaser-bridge \
-            release-assets/kvaser-bridge-windows/kvaser-bridge.exe \
+            release-assets/kvaser-bridge-macos/kvaser-bridge-macos.app.zip \
+            release-assets/kvaser-bridge-windows/kvaser-bridge-windows.exe \
             --clobber
 
   attach-release-assets:
@@ -150,5 +164,5 @@ jobs:
         with:
           tag_name: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
           files: |
-            release-assets/kvaser-bridge-macos/kvaser-bridge
-            release-assets/kvaser-bridge-windows/kvaser-bridge.exe
+            release-assets/kvaser-bridge-macos/kvaser-bridge-macos.app.zip
+            release-assets/kvaser-bridge-windows/kvaser-bridge-windows.exe

@@ -11,6 +11,7 @@
 import platform
 
 is_windows = platform.system() == 'Windows'
+is_macos = platform.system() == 'Darwin'
 
 a = Analysis(
     ['src/main.py'],
@@ -21,6 +22,7 @@ a = Analysis(
     ],
     hiddenimports=[
         'can.interfaces.kvaser',
+        'can.interfaces.maccan',
     ],
     hookspath=[],
     runtime_hooks=[],
@@ -39,6 +41,14 @@ exe = EXE(
     debug=False,
     strip=False,
     upx=True,
-    console=not is_windows,
+    console=not (is_windows or is_macos),
     onefile=True,
 )
+
+if is_macos:
+    app = BUNDLE(
+        exe,
+        name='kvaser-bridge.app',
+        icon=None,
+        bundle_identifier='org.westernformularacing.kvaserbridge',
+    )

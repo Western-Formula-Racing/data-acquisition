@@ -24,6 +24,11 @@ import can
 import websockets
 from websockets.server import serve
 
+
+def open_maccan_bus(channel, bitrate: int) -> can.BusABC:
+    """Open a CAN bus via the maccan interface (macOS, Peak USB adapter)."""
+    return can.interface.Bus(interface='maccan', channel=channel, bitrate=bitrate)
+
 import config
 
 # TLS cert/key: bundled with PyInstaller (sys._MEIPASS) or alongside this file
