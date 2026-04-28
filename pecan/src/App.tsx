@@ -78,6 +78,8 @@ function App() {
     dataStore.clearPersistedSnapshot();
     dataStore.notifyBoundsRefresh();
     clearCheckpoints();
+    localStorage.removeItem("dash:plots");
+    window.location.reload();
   };
 
   useEffect(() => {

@@ -103,7 +103,13 @@ function Dashboard() {
 
   // Plotting State
   // =====================================================================
-  const [plots, setPlots] = useState<Plot[]>([]);
+  const [plots, setPlots] = useState<Plot[]>(() => {
+    try {
+      const raw = localStorage.getItem("dash:plots");
+      if (raw) return JSON.parse(raw) as Plot[];
+    } catch { /* ignore */ }
+    return [];
+  });
   const [nextPlotId, setNextPlotId] = useState(1);
   const livePlotsSnapshotRef = useRef<Plot[] | null>(null);
   // Stores the loadedAtMs of the replay session whose layout has been applied,
@@ -161,6 +167,13 @@ function Dashboard() {
       });
     }
   }, [plots, viewMode, sortingMethod, session, saveConfig]);
+
+  // Persist plots locally so they survive page refresh
+  useEffect(() => {
+    try {
+      localStorage.setItem("dash:plots", JSON.stringify(plots));
+    } catch { /* ignore */ }
+  }, [plots]);
 
   // Data
   // =====================================================================
