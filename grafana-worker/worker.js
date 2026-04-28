@@ -8,10 +8,12 @@ export default {
       "https://pecan-internal.westernformularacing.org",
     ];
 
-    const corsOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+    if (!allowedOrigins.includes(origin)) {
+      return new Response("Forbidden", { status: 403 });
+    }
 
     const corsHeaders = {
-      "Access-Control-Allow-Origin": corsOrigin,
+      "Access-Control-Allow-Origin": origin,
       "Access-Control-Allow-Methods": "GET, HEAD, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization",
     };

@@ -42,7 +42,7 @@ trap cleanup EXIT
 # ── Unit tests ───────────────────────────────────────────────────────────────
 echo -e "\n${YELLOW}Running unit tests (no containers)...${NC}"
 uv sync --frozen --extra dev
-uv run -- python -m pytest tests/test_leds.py tests/test_influx_bridge.py -v || {
+uv run -- python -m pytest tests/test_leds.py -v || {
     echo -e "${RED}✗ Unit tests failed${NC}"
     exit 1
 }

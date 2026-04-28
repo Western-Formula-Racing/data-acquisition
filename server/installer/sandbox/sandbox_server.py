@@ -45,7 +45,7 @@ def run_user_code(code: str) -> Dict[str, Any]:
         script_path = workdir / "snippet.py"
         script_path.write_text(code, encoding="utf-8")
         
-        # Pass through environment variables (InfluxDB credentials, etc.)
+        # Pass through environment variables (TimescaleDB credentials, etc.)
         # Inherit current process env and allow subprocess to access them
         env = os.environ.copy()
         
@@ -66,6 +66,16 @@ def run_user_code(code: str) -> Dict[str, Any]:
             std_out = exc.stdout or ""
             std_err = (exc.stderr or "") + f"\nExecution timed out after {SANDBOX_TIMEOUT}s."
             proc = None  # type: ignore[assignment]
+
+        # Collect output files from the workdir (where cwd-relative paths land)
+        # AND from /tmp (matplotlib's default save dir when cwd != /tmp)
+        system_tmp = Path("/tmp")
+        if system_tmp.exists() and system_tmp.is_dir():
+            import shutil
+            for f in system_tmp.iterdir():
+                if f.is_file() and f.suffix in (".png", ".jpg", ".jpeg", ".gif", ".svg", ".csv", ".pdf"):
+                    dest = workdir / f.name
+                    shutil.copy2(f, dest)
 
         output_files = _collect_output_files(workdir)
 

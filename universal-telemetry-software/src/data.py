@@ -15,6 +15,7 @@ from src.config import (
     REDIS_URL, REDIS_CAN_CHANNEL, REDIS_UPLINK_CHANNEL, ENABLE_UPLINK,
 )
 from src import redis_utils, utils
+from src.version import get_git_hash
 
 BATCH_SIZE = 20
 BATCH_TIMEOUT = 0.05  # 50ms
@@ -71,7 +72,6 @@ class TelemetryNode:
         self.status_map = {}                          # seq -> status (0: missing, 1: udp, 2: tcp)
         self.latest_seq = -1
         self.last_udp_time = 0.0
-        from src.version import get_git_hash
         self._own_git_hash: str = get_git_hash()
         self._car_git_hash: str | None = None         # None until first successful version check
 
@@ -623,26 +623,28 @@ class TelemetryNode:
         async def stats_publisher():
             while True:
                 await asyncio.sleep(1)
-                influx_raw = self.redis_client.get("influx:status") if self.redis_client else None
-                influx_status = None
-                if influx_raw:
+                timescale_raw = self.redis_client.get("timescale:status") if self.redis_client else None
+                timescale_status = None
+                if timescale_raw:
                     try:
-                        influx_status = json.loads(influx_raw)
+                        timescale_status = json.loads(timescale_raw)
                     except (json.JSONDecodeError, UnicodeDecodeError):
-                        logger.warning(f"influx:status contains invalid JSON: {influx_raw!r}")
+                        logger.warning(f"timescale:status contains invalid JSON: {timescale_raw!r}")
                 payload = {
                     "type": "system_stats",
                     **stats,
                     "ecu_synced": self._ecu_synced,
                     "ecu_sync_source": self._sync_source,
-                    "influx": influx_status,
-                    "dbc_file": os.getenv("DBC_FILE_PATH", "unknown"),
+                    "timescale": timescale_status,
+                    "dbc_file": os.getenv("DBC_DISPLAY_NAME") or os.path.basename(os.getenv("DBC_FILE_PATH", "unknown")),
                     "car_time_synced": self._car_time_synced,
                     "base_clock_bad": self._base_clock_bad,
                     "last_udp_time": self.last_udp_time,
+                    "car_alive": (time.time() - self.last_udp_time) < 5 if self.last_udp_time else False,
                     "status_buffer": [self.status_map.get(s, 0) for s in range(max(0, self.latest_seq - 1000), self.latest_seq + 1)] if self.latest_seq != -1 else [],
                     "own_git_hash": self._own_git_hash,
-                    "car_git_hash": self._car_git_hash
+                    "car_git_hash": self._car_git_hash,
+                    "remote_ip": os.getenv("REMOTE_IP", "unknown"),
                 }
                 self.publish("system_stats", json.dumps(payload))
                 stats["received"] = 0

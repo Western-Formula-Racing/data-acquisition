@@ -1,8 +1,12 @@
 # Docker container requirements for sandbox execution environment
 # These are the dependencies needed inside the Docker container
 
-# WFR's own telemetry pipeline (wraps influxdb3-python, pandas, matplotlib)
+# WFR's telemetry analysis stack (pandas, matplotlib)
 slicks>=0.2.0
+
+# SQL access for TimescaleDB (explicitly listed — slicks dep is indirect)
+sqlalchemy
+psycopg2-binary
 
 # Data & visualization (extras beyond what slicks brings in)
 pyarrow

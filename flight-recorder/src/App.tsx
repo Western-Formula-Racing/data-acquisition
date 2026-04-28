@@ -61,8 +61,8 @@ const FlightDataRecorder: React.FC = () => {
 
   useEffect(() => {
     // Legacy cleanup
-    localStorage.removeItem('influx-cfClientId');
-    localStorage.removeItem('influx-cfClientSecret');
+    localStorage.removeItem('cfClientId');
+    localStorage.removeItem('cfClientSecret');
 
     const handleStatusChange = (status: ConnectionStatus) => setWsStatus(status);
     webSocketService.on('status', handleStatusChange);

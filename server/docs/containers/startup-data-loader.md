@@ -1,19 +1,19 @@
 # Startup data loader
 
-The startup data loader seeds InfluxDB 3 with a small, deterministic dataset on first boot. It can also backfill additional files if you mount them into the container.
+The startup data loader seeds TimescaleDB with a small, deterministic dataset on first boot. It can also backfill additional files if you mount them into the container.
 
 ## Responsibilities
 
 - Loads CSV files from `/data` (mounted from `installer/startup-data-loader/data/`; copy `2024-01-01-00-00-00.csv.md` to a `.csv` file for the bundled sample).
 - Uses `example.dbc` to decode CAN frames into human-readable metrics.
-- Writes decoded metrics directly to InfluxDB.
+- Writes decoded metrics directly to TimescaleDB.
 
 ## Environment variables
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `INFLUXDB_TOKEN` | Token used for direct writes. | `dev-influxdb-admin-token` |
-| `INFLUXDB_URL` | Target InfluxDB endpoint. | `http://influxdb3:8181` |
+| `POSTGRES_PASSWORD` | Database password used for direct writes. | `wfr_password` |
+| `POSTGRES_DSN` | Target TimescaleDB DSN. | `postgresql://wfr:wfr_password@timescaledb:5432/wfr` |
 
 ## Extending the dataset
 

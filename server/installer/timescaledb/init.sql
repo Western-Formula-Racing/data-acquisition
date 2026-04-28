@@ -69,7 +69,7 @@ SELECT create_season_table('wfr25');
 SELECT create_season_table('wfr26');
 
 -- ─────────────────────────────────────────────────────────────
--- Monitoring table (replaces the InfluxDB "monitoring" database)
+-- Monitoring table for telemetry health metrics
 -- Used by health-monitor to write container / service metrics.
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS monitoring (

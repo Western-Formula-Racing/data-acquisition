@@ -5,6 +5,8 @@ networks:
 volumes:
   grafana-storage:
   timescaledb-data:
+  code-generator-chroma:
+  code-generator-cache:
 
 services:
   # ── TimescaleDB (primary time-series store) ─────────────────────────────────
@@ -137,16 +139,12 @@ services:
       - "8084:8084"
     volumes:
       - ./file-uploader:/app
-      # Host DBC file → fixed container location
-      - ./${DBC_FILE_PATH:-example.dbc}:/installer/example.dbc:ro
     restart: unless-stopped
     networks:
       - datalink
     environment:
       - POSTGRES_DSN=${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}
       - FILE_UPLOADER_WEBHOOK_URL=${FILE_UPLOADER_WEBHOOK_URL:-}
-      # Fixed container path only
-      - DBC_FILE_PATH=/installer/example.dbc
       # Optional: PAT with repo read to list/download .dbc from GitHub (never sent to browser)
       - GITHUB_DBC_TOKEN=${GITHUB_DBC_TOKEN:-}
       - GITHUB_DBC_REPO=${GITHUB_DBC_REPO:-Western-Formula-Racing/DBC}
@@ -172,7 +170,7 @@ services:
       - .env
     environment:
       POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
-      SEASONS: "${SEASONS:-WFR26:2026}"
+      SEASONS: "${SEASONS:-}"
     ports:
       - "8000:8000"
     volumes:
@@ -198,7 +196,7 @@ services:
       - .env
     environment:
       POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
-      SEASONS: "${SEASONS:-WFR26:2026}"
+      SEASONS: "${SEASONS:-}"
       SCAN_DAILY_TIME: "${SCAN_DAILY_TIME}"
     command: [ "python", "-m", "backend.periodic_worker" ]
     volumes:
@@ -306,7 +304,7 @@ services:
         limits:
           memory: 256M
 
-  # Code generator - Cohere integration for AI-powered code generation
+  # Code generator - MiniMax/Anthropic + LangGraph + ChromaDB RAG
   code-generator:
     build:
       context: ./sandbox
@@ -314,22 +312,25 @@ services:
     container_name: code-generator
     restart: unless-stopped
     environment:
-      COHERE_API_KEY: ${COHERE_API_KEY}
-      COHERE_MODEL: ${COHERE_MODEL:-command-r-plus}
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      ANTHROPIC_BASE_URL: "${ANTHROPIC_BASE_URL:-https://api.minimaxi.com/anthropic}"
+      ANTHROPIC_MODEL: "${ANTHROPIC_MODEL:-MiniMax-M2.7}"
       SANDBOX_URL: "http://sandbox:8080"
-      MAX_RETRIES: ${MAX_RETRIES:-2}
+      MAX_RETRIES: "${MAX_RETRIES:-2}"
       CODE_GEN_PORT: 3030
-      # TimescaleDB connection for code generation context
+      DATA_DIR: "/app/data"
       POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
     depends_on:
       - sandbox
       - timescaledb
     volumes:
       - ./sandbox/generated:/app/generated
-      - ./sandbox/prompt-guide.txt:/app/prompt-guide.txt
+      - ./data-downloader/data:/app/data:ro
+      - code-generator-chroma:/app/chroma_db
+      - code-generator-cache:/app/cache
     networks:
       - datalink
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1024M

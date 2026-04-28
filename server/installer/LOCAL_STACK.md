@@ -1,6 +1,6 @@
 # Local Stack — Offline Testing Guide
 
-Minimal stack for testing without internet: InfluxDB3, Grafana, and file-uploader only.
+Minimal stack for testing without internet: TimescaleDB, Grafana, and file-uploader only.
 
 ## First-time setup (requires internet)
 
@@ -11,7 +11,7 @@ cd installer
 docker compose -f docker-compose.local.yml pull
 ```
 
-This fetches `influxdb:3-core` and `grafana/grafana:latest` from Docker Hub.
+This fetches `timescale/timescaledb:2.17.1-pg16` and `grafana/grafana:latest` from Docker Hub.
 Only needs to be done once, or when you want to update to newer images.
 
 ### 2. Build the file-uploader image
@@ -27,7 +27,7 @@ Re-run this if you change code in `file-uploader/`.
 
 Make sure these exist in `installer/`:
 
-- `influxdb3-admin-token.json` — InfluxDB admin token file
+- `timescaledb-admin-token.json` — TimescaleDB admin token file
 - A `.dbc` file (default: `example.dbc`, or set `DBC_FILE_PATH` in `.env`)
 
 The DBC file is the fallback used when no custom DBC is uploaded via the UI.
@@ -78,7 +78,7 @@ docker compose -f docker-compose.local.yml up
 |---------------|----------------------------|
 | Grafana       | http://localhost:8087       |
 | File Uploader | http://localhost:8084       |
-| InfluxDB      | http://localhost:9000       |
+| TimescaleDB      | http://localhost:9000       |
 
 Grafana credentials: `admin` / `password` (or `GRAFANA_ADMIN_PASSWORD` from `.env`)
 
@@ -87,7 +87,7 @@ Grafana credentials: `admin` / `password` (or `GRAFANA_ADMIN_PASSWORD` from `.en
 ## Uploading data
 
 1. Open http://localhost:8084
-2. Select a bucket from the dropdown (buckets are auto-listed from InfluxDB)
+2. Select a bucket from the dropdown (buckets are auto-listed from TimescaleDB)
 3. Optionally select a custom `.dbc` file — if omitted, the server-side DBC is used
 4. Drop or click to upload one or more `.csv` files
 5. Watch the progress bar — data appears in Grafana as rows are written
@@ -98,10 +98,10 @@ Grafana credentials: `admin` / `password` (or `GRAFANA_ADMIN_PASSWORD` from `.en
 
 Before going offline, verify:
 
-- [ ] `docker images | grep influxdb` shows `influxdb:3-core`
+- [ ] `docker images | grep timescaledb` shows `timescale/timescaledb:2.17.1-pg16`
 - [ ] `docker images | grep grafana` shows `grafana/grafana`
 - [ ] `docker images | grep file-uploader` shows the local build
-- [ ] `influxdb3-admin-token.json` exists
+- [ ] `timescaledb-admin-token.json` exists
 - [ ] A `.dbc` file is present (or you plan to upload one per-session via the UI)
 
 ---

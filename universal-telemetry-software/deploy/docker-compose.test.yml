@@ -76,12 +76,12 @@ services:
       - DBC_FILE_PATH=/app/example.dbc
       # TimescaleDB logging
       - ENABLE_TIMESCALE_LOGGING=true
-      - POSTGRES_DSN=postgresql://wfr:password@timescaledb:5432/wfr
+      - POSTGRES_DSN=postgresql://wfr:password@timescaledbtest:5432/wfr
       - TIMESCALE_TABLE=wfr26
     depends_on:
       base-redis:
         condition: service_healthy
-      timescaledb:
+      timescaledbtest:
         condition: service_healthy
     networks:
       - daq-network
@@ -133,7 +133,7 @@ services:
       start_period: 10s
 
   # TimescaleDB for testing the data pipeline
-  timescaledb:
+  timescaledbtest:
     image: timescale/timescaledb:2.17.1-pg16
     container_name: daq-test-timescaledb
     environment:
