@@ -25,19 +25,18 @@ docker compose -f deploy/docker-compose.yml up -d
 
 ## docker-compose.macbook-base.yml — MacBook full local stack
 
-Full local development stack on MacBook: telemetry + redis + timescaledb + pecan + mediamtx.
+Full local development stack on MacBook: telemetry + redis + timescaledb + pecan + grafana.
 TimescaleDB persists to `WFR26test` by default. Use this for development and testing
-with full telemetry recording and live video.
+with full telemetry recording and local dashboards.
 
 ```bash
-docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d --build
+docker compose -f deploy/docker-compose.macbook-base.yml up -d --build
 ```
 
 **Access points:**
 - Pecan dashboard: http://localhost:3000
-- Video feed (direct): http://localhost:8889/car-camera/
+- Grafana: http://localhost:8087
 - TimescaleDB: `postgresql://wfr:wfr_password@localhost:5432/wfr`
-- MediaMTX API: http://localhost:9997/v3/paths/list
 
 ---
 

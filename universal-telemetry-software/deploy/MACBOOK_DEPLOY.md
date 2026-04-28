@@ -49,22 +49,7 @@ All configuration is done through `deploy/.env.macbook`. Key variables:
 | telemetry | Base station receiver — UDP/TCP from car, WebSocket to Pecan |
 | redis | Message broker for CAN frames |
 | timescaledb | Local TimescaleDB — writes `WFR26test_base` table |
-| pecan | Live telemetry dashboard (built from local source) |
-| mediamtx | Video relay — accepts RTSP push from car Pi, serves WebRTC to Pecan |
-
-## Video Stack
-
-MediaMTX receives H.264 from the car Pi via RTSP and serves it to Pecan via WebRTC (WHEP).
-
-| Port | Purpose |
-|------|---------|
-| `8554` TCP/UDP | RTSP — car Pi pushes H.264 here |
-| `8889` TCP | WebRTC WHEP — Pecan pulls video here |
-| `9997` | MediaMTX API |
-
-Config: `universal-telemetry-software/mediamtx.yml`
-
-To watch the stream directly (without Pecan): `http://localhost:8889/car-camera/`
+| pecan | Live telemetry dashboard |
 
 ## Common Tasks
 
