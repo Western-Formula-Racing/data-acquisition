@@ -56,9 +56,9 @@ END;
 $$;
 
 -- ─────────────────────────────────────────────────────────────
--- Season table — WFR26test (no preloaded data)
+-- Season table — wfr26test_base (matches TIMESCALE_TABLE env var + _base suffix)
 -- ─────────────────────────────────────────────────────────────
-SELECT create_season_table('WFR26test');
+SELECT create_season_table('wfr26test_base');
 
 -- ─────────────────────────────────────────────────────────────
 -- Monitoring table
