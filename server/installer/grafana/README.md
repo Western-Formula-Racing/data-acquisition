@@ -14,11 +14,12 @@ Provisioned from `provisioning/datasources/postgres.yml`:
 
 | Setting | Value |
 | --- | --- |
-| URL | `${POSTGRES_DSN:-http://timescaledb:8181}` |
-| Organisation | `WFR` |
-| Bucket | `WFR25` |
-| Token | `${POSTGRES_PASSWORD}` (injected from `.env`) |
-| Query language | Flux |
+| Type | PostgreSQL |
+| URL | `timescaledb:5432` |
+| Database | `wfr` |
+| User | `$POSTGRES_USER` (from `.env`) |
+| Password | `$POSTGRES_PASSWORD` (from `.env`) |
+| TimescaleDB | enabled |
 
 The datasource is marked as the default, so new panels automatically target it.
 

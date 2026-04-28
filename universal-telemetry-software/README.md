@@ -130,13 +130,6 @@ Once `can0` is confirmed working, proceed to deployment.
 - CAN HAT set up (see Hardware Setup above)
 - Network connection between car and base (LAN cable or Ubiquiti radios)
 
-> ```
->
-> Then use the rpi5 override whenever starting the stack:
-> ```bash
-> docker compose -f deploy/docker-compose.yml up -d
-> ```
-
 ### Installation
 
 Clone the repository:
@@ -354,7 +347,6 @@ universal-telemetry-software/
 │   ├── docker-compose.test.yml         # Integration test stack (CI)
 │   ├── docker-compose.can-test.yml     # vCAN pipeline tests
 │   ├── docker-compose.jitsi.yml        # Optional Jitsi comms addon
-│   ├── docker-compose.rpi5.yml     # RPi5 QEMU override
 │   └── WHICH_ONE.md                # Compose file reference
 ├── Dockerfile
 └── requirements.txt

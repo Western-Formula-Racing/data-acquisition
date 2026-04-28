@@ -12,7 +12,6 @@ docker save \
   timescale/timescaledb:latest-pg16 \
   redis:8.2 \
   bluenviron/mediamtx:latest \
-  deploy-cloud-sync:latest \
   grafana/grafana:latest \
   -o offline/wfr-docker-images.tar
 ```
@@ -35,4 +34,3 @@ Then access at:
 - Pecan: http://localhost:3000
 - Grafana: http://localhost:8087 (admin / admin)
 - Status: http://localhost:8080
-- Cloud Sync: http://localhost:8092

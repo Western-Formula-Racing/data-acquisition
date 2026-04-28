@@ -6,9 +6,7 @@ This directory contains the Docker Compose deployment used to run the full telem
 
 - `docker-compose.yml` – Orchestrates all runtime containers.
 - `.env.example` – Template for environment variables required by the stack.
-- `postgresdb3-admin-token.json` – Development token consumed by the TimescaleDB server on first start.
-- `postgresdb3-explorer-config/` – Configuration for the optional TimescaleDB web explorer container.
-- Service folders (for example `file-uploader/`, `startup-data-loader/`, `slackbot/`) – Each contains the Docker context and service-specific source code.
+- Service folders (for example `file-uploader/`, `slackbot/`, `sandbox/`) – Each contains the Docker context and service-specific source code.
 
 ## Prerequisites
 
@@ -30,7 +28,7 @@ This directory contains the Docker Compose deployment used to run the full telem
 3. Verify the services:
    ```bash
    docker compose ps
-   docker compose logs postgresdb3 | tail
+   docker compose logs timescaledb | tail
    ```
 4. Tear the stack down when you are finished:
    ```bash
@@ -68,16 +66,18 @@ All secrets and tokens are defined in `.env`. The defaults provided in `.env.exa
 
 | Service | Ports | Description |
 | --- | --- | --- |
-| `postgresdb3` | `9000` (mapped to `8181` internally) | Core time-series database. Initialised with the admin token from `.env`. |
-| `postgresdb3-explorer` | `8888` | Lightweight UI for browsing data in TimescaleDB. |
-| `data-downloader` | `3000` | Periodically downloads CAN CSV archives from the DAQ server. Visual SQL query builder included. |
+| `timescaledb` | `5432` | Core time-series database (TimescaleDB on PostgreSQL). |
 | `grafana` | `8087` | Visualises telemetry with pre-provisioned dashboards. |
-| `slackbot` | n/a | Socket-mode Slack bot for notifications and automation (optional). Integrates with code-generator for AI queries. |
-| `lap-detector` | `8050` | Dash-based lap analysis web application. |
-| `startup-data-loader` | n/a | Seeds TimescaleDB with sample CAN frames on first boot. |
+| `data-downloader-api` | `8000` | FastAPI backend for telemetry queries with visual SQL query builder. |
+| `data-downloader-frontend` | `3000` | Vite frontend for the data downloader. |
+| `data-downloader-scanner` | n/a | Background scanner that indexes available data. |
 | `file-uploader` | `8084` | Web UI for uploading CAN CSV archives and streaming them into TimescaleDB. |
-| `sandbox` | n/a | Custom Python execution environment with internet access for running AI-generated code and TimescaleDB queries. |
+| `slackbot` | n/a | Socket-mode Slack bot for notifications and automation (optional). Integrates with code-generator for AI queries. |
+| `sandbox` | n/a | Custom Python execution environment for running AI-generated code and TimescaleDB queries. |
 | `code-generator` | `3030` (internal) | AI-powered code generation service using Cohere. Generates Python code from natural language. |
+| `health-monitor` | n/a | Monitors container health and scanner status. |
+| `lap-detector` | `8050` | Dash-based lap analysis web application (shelved). |
+| `startup-data-loader` | n/a | Seeds TimescaleDB with sample CAN frames on first boot. |
 
 ## Data and DBC files
 
@@ -90,7 +90,7 @@ All secrets and tokens are defined in `.env`. The defaults provided in `.env.exa
 
 ## Troubleshooting tips
 
-- **Service fails to connect to TimescaleDB** – Confirm the token in `.env` matches `postgresdb3-admin-token.json`. Regenerate the volumes with `docker compose down -v` if you rotate credentials.
+- **Service fails to connect to TimescaleDB** – Confirm `POSTGRES_DSN`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` in `.env` are correct. Regenerate the volumes with `docker compose down -v` if you rotate credentials.
 - **Re-import sample data** – Run `docker compose down -v` and restart the stack to re-trigger the data loader.
 - **Slack services are optional** – Leave Slack variables empty or set `ENABLE_SLACK=false` to skip starting the bot during development.
 - **AI code generation not working** – Ensure `COHERE_API_KEY` is set in `.env`. Check logs with `docker compose logs code-generator`.
