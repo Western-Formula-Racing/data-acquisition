@@ -863,6 +863,9 @@ function Dashboard() {
               <label className="text-gray-300 text-sm">
                 Time Window (seconds, max 120):
               </label>
+              {plotTimeWindow > 30000 && (
+                <p className="text-yellow-400 text-xs">Downsampling to 100ms bins (window &gt; 30s)</p>
+              )}
               <input
                 type="number"
                 min="1"
