@@ -203,6 +203,13 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [mode, source]);
 
+  // Keep the cursor tracking wall time in live mode regardless of data flow.
+  useEffect(() => {
+    if (source !== "live" || mode !== "live") return;
+    const id = setInterval(() => setSelectedTimeMs(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [source, mode]);
+
   useEffect(() => {
     if (skipNextCheckpointHydrationRef.current) {
       skipNextCheckpointHydrationRef.current = false;
