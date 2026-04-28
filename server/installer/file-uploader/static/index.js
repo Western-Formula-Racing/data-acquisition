@@ -165,6 +165,9 @@ function handleProgress(task_id, fileName, season) {
 	canSubmit = false;
 	localStorage.setItem(STORAGE_KEY, task_id);
 	setDropZoneState("uploading");
+	const errBox = document.getElementById("upload-error-box");
+	if (errBox) errBox.style.display = "none";
+	document.getElementById("progress-bar").style.background = "";
 
 	// Show safe-to-close banner immediately
 	if (fileName || season) showSafeToCloseBanner(fileName, season);
@@ -194,9 +197,24 @@ function handleProgress(task_id, fileName, season) {
 			localStorage.removeItem(STORAGE_KEY);
 			hideSafeToCloseBanner();
 
-			document.getElementById("progress-bar_pct").innerText = "Done ✓";
-			document.getElementById("progress-bar_count").innerText =
-				data.total ? `${data.total.toLocaleString()} rows written` : "Complete";
+			if (data.error) {
+				document.getElementById("progress-bar_pct").innerText = "Failed ✗";
+				document.getElementById("progress-bar").style.background = "#b91c1c";
+				document.getElementById("progress-bar_count").innerText = "";
+				const errBox = document.getElementById("upload-error-box") || (() => {
+					const el = document.createElement("div");
+					el.id = "upload-error-box";
+					el.style.cssText = "margin-top:10px;padding:10px 14px;background:#450a0a;border:1px solid #b91c1c;border-radius:6px;color:#fca5a5;font-size:0.85em;white-space:pre-wrap;word-break:break-word;";
+					document.querySelector(".progress-bar_parent").after(el);
+					return el;
+				})();
+				errBox.innerText = "❌ Upload failed:\n" + data.error;
+				errBox.style.display = "block";
+			} else {
+				document.getElementById("progress-bar_pct").innerText = "Done ✓";
+				document.getElementById("progress-bar_count").innerText =
+					data.total ? `${data.total.toLocaleString()} rows written` : "Complete";
+			}
 
 			["drop_zone-input", "season-select", "dbc-select", "dbc-input"].forEach((id) => {
 				const el = document.getElementById(id);

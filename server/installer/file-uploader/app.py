@@ -553,12 +553,13 @@ def upload_file():
                 pass
 
         def worker():
-            streamer = CANTimescaleStreamer(
-                postgres_dsn=POSTGRES_DSN,
-                table=season.lower(),
-                dbc_path=dbc_temp_path,
-            )
+            streamer = None
             try:
+                streamer = CANTimescaleStreamer(
+                    postgres_dsn=POSTGRES_DSN,
+                    table=season.lower(),
+                    dbc_path=dbc_temp_path,
+                )
                 asyncio.run(
                     streamer.stream_multiple_csvs(
                         file_data=file_data,
@@ -568,14 +569,16 @@ def upload_file():
                 )
             except Exception as e:
                 error_logger.error(traceback.format_exc())
-                PROGRESS[task_id]["msg"]  = f"Error: {e}"
-                PROGRESS[task_id]["done"] = True
+                PROGRESS[task_id]["msg"]   = f"Error: {e}"
+                PROGRESS[task_id]["error"] = str(e)
+                PROGRESS[task_id]["done"]  = True
                 slack.fail(str(e))
             finally:
-                try:
-                    streamer.close()
-                except Exception as e:
-                    print("error closing streamer", e)
+                if streamer:
+                    try:
+                        streamer.close()
+                    except Exception as e:
+                        print("error closing streamer", e)
                 if dbc_temp_path and os.path.exists(dbc_temp_path):
                     try:
                         os.unlink(dbc_temp_path)
