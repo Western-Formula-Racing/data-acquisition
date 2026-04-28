@@ -75,6 +75,32 @@ services:
     networks:
       - datalink
 
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: daq-mediamtx
+    restart: unless-stopped
+    ports:
+      - "8554:8554/tcp"   # RTSP — car Pi pushes here
+      - "8554:8554/udp"   # RTSP RTP/UDP
+      - "8889:8889/tcp"   # WebRTC WHEP (Pecan video)
+      - "8189:8189/udp"   # WebRTC ICE/UDP
+      - "9997:9997"       # API
+    volumes:
+      - ../mediamtx.yml:/mediamtx.yml:ro
+    networks:
+      - datalink
+
+  stream-overlay:
+    image: nginx:alpine
+    container_name: daq-stream-overlay
+    restart: unless-stopped
+    ports:
+      - "8085:80"
+    volumes:
+      - ../../livestream:/usr/share/nginx/html:ro
+    networks:
+      - datalink
+
   # ── TimescaleDB (local, for received telemetry hot-load) ─────────────────
   timescaledb:
     image: timescale/timescaledb:latest-pg16
