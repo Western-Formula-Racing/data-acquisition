@@ -6,6 +6,7 @@ import type { ReplayFrame, ReplayPlotLayout } from "../types/replay";
 import { parseReplayFile, REPLAY_FRAME_HARD_CAP } from "../utils/replayParser";
 import { serializePecanV2 } from "../utils/pecanSerializer";
 import { getActiveDbcText, usingCachedDBC } from "../utils/canProcessor";
+import { useMessageHistory } from "../lib/useDataStore";
 import ReplayImportClipModal from "./ReplayImportClipModal";
 
 interface TimelineBarProps {
@@ -13,6 +14,11 @@ interface TimelineBarProps {
 }
 
 const TIMELINE_COLLAPSED_KEY = "pecan:timeline:collapsed";
+
+const STATE_SIGNALS: Array<{ msgID: string; signalName: string; color: string; label: string }> = [
+  { msgID: "0x7D2", signalName: "State",      color: "#60a5fa", label: "VCU State" },
+  { msgID: "0x420", signalName: "PackStatus", color: "#f97316", label: "PackStatus" },
+];
 
 function formatClock(ts: number): string {
   const d = new Date(ts);
@@ -181,6 +187,51 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
       return Math.max(sliderMin, Math.min(sliderMax, prev));
     });
   }, [hasData, sliderMin, sliderMax, clipModeEnabled]);
+
+  // VCU State + PackStatus transitions for timeline overlay
+  const vcuStateHistory  = useMessageHistory(STATE_SIGNALS[0].msgID);
+  const packStatusHistory = useMessageHistory(STATE_SIGNALS[1].msgID);
+
+  const stateTransitions = useMemo(() => {
+    if (!hasData || durationMs <= 0) return [];
+    const start = collectionStartMs ?? 0;
+    const histories = [vcuStateHistory, packStatusHistory];
+    const out: Array<{
+      key: string;
+      pct: number;
+      direction: "up" | "down";
+      value: number;
+      color: string;
+      label: string;
+      timeMs: number;
+      lane: number;
+    }> = [];
+    histories.forEach((history, laneIdx) => {
+      const meta = STATE_SIGNALS[laneIdx];
+      let prev: number | null = null;
+      for (const sample of history) {
+        const sig = sample.data[meta.signalName];
+        if (!sig) continue;
+        const v = sig.sensorReading;
+        if (prev !== null && v !== prev) {
+          if (sample.timestamp >= sliderMin && sample.timestamp <= sliderMax) {
+            out.push({
+              key: `${meta.msgID}-${sample.timestamp}-${v}`,
+              pct: Math.max(0, Math.min(100, ((sample.timestamp - start) / durationMs) * 100)),
+              direction: v > prev ? "up" : "down",
+              value: v,
+              color: meta.color,
+              label: meta.label,
+              timeMs: sample.timestamp,
+              lane: laneIdx,
+            });
+          }
+        }
+        prev = v;
+      }
+    });
+    return out;
+  }, [vcuStateHistory, packStatusHistory, hasData, durationMs, collectionStartMs, sliderMin, sliderMax]);
 
   const checkpointPercents = useMemo(() => {
     if (!hasData || durationMs <= 0) return [];
@@ -673,6 +724,23 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
             {">"}
           </div>
         )}
+        {stateTransitions.map((t) => (
+          <div
+            key={t.key}
+            className="absolute -translate-x-1/2 pointer-events-none flex items-center gap-[1px] font-mono text-[8px] leading-none select-none"
+            style={{
+              left: `${t.pct}%`,
+              top: t.lane === 0 ? "2px" : "16px",
+              color: t.color,
+              userSelect: "none",
+              WebkitUserSelect: "none",
+            }}
+            title={`${t.label} → ${t.value} @ ${formatClock(t.timeMs)}`}
+          >
+            <span style={{ fontSize: "9px" }}>{t.direction === "up" ? "▲" : "▼"}</span>
+            <span>{t.value}</span>
+          </div>
+        ))}
       </div>
 
       {tickMarks.length > 0 && (

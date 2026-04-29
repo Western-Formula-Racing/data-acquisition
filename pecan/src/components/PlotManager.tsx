@@ -5,6 +5,9 @@ import { createGrafanaDashboard } from "../services/GrafanaService";
 import { useTimeline } from "../context/TimelineContext";
 import { getValueDefs } from "../utils/canProcessor";
 
+const STATE_OVERLAY_MSG_ID = "0x7D2";
+const STATE_OVERLAY_SIGNAL = "State";
+
 // Standard Nivo colors (or similar palette) to ensure consistency between plot and list
 const PLOT_COLORS = [
   "#e8c1a0",
@@ -160,6 +163,69 @@ function PlotManager({
           };
         });
 
+      // VCU state transitions — dashed vertical line + small label per state change
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const stateLines: any[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const stateAnnotations: any[] = [];
+      {
+        const stateHistory = dataStore.getHistoryAt(STATE_OVERLAY_MSG_ID, timeWindowMs, windowEndMs);
+        const stateDefs = getValueDefs(STATE_OVERLAY_SIGNAL);
+        const transitions: { x: number; label: string }[] = [];
+        let prevState: number | null = null;
+        for (const sample of stateHistory) {
+          const sd = sample.data[STATE_OVERLAY_SIGNAL];
+          if (sd === undefined) continue;
+          const v = sd.sensorReading;
+          if (prevState === null || v !== prevState) {
+            if (prevState !== null) {
+              transitions.push({
+                x: (sample.timestamp - windowEndMs) / 1000,
+                label: stateDefs?.[v] ?? `State ${v}`,
+              });
+            }
+            prevState = v;
+          }
+        }
+        // Stagger labels vertically when their x-positions cluster too close to read.
+        const windowSec = timeWindowMs / 1000;
+        const minGapSec = windowSec * 0.06;
+        const LANES = 4;
+        const laneLastX: number[] = new Array(LANES).fill(-Infinity);
+        for (const t of transitions) {
+          stateLines.push({
+            type: "line",
+            xref: "x",
+            yref: "paper",
+            x0: t.x,
+            x1: t.x,
+            y0: 0,
+            y1: 1,
+            line: { color: "rgba(96, 165, 250, 0.55)", width: 1, dash: "dash" },
+          });
+          let lane = 0;
+          for (let i = 0; i < LANES; i++) {
+            if (t.x - laneLastX[i] >= minGapSec) { lane = i; break; }
+            if (i === LANES - 1) lane = LANES - 1;
+          }
+          laneLastX[lane] = t.x;
+          stateAnnotations.push({
+            x: t.x,
+            y: lane * 0.11,
+            xref: "x",
+            yref: "paper",
+            text: t.label,
+            showarrow: false,
+            xanchor: "left",
+            yanchor: "bottom",
+            bgcolor: "rgba(96, 165, 250, 0.18)",
+            bordercolor: "rgba(96, 165, 250, 0.5)",
+            borderpad: 2,
+            font: { size: 9, color: "#bfdbfe" },
+          });
+        }
+      }
+
       signals.forEach((signal, index) => {
         const history = dataStore.getHistoryAt(signal.msgID, timeWindowMs, windowEndMs);
         const xData: number[] = [];
@@ -237,6 +303,9 @@ function PlotManager({
 
       let yaxisEnumConfig = {};
       let leftMargin = 60;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const enumAnnotations: any[] = [];
+
       if (signals.length === 1) {
         const valueDefs = getValueDefs(signals[0].signalName);
         if (valueDefs) {
@@ -248,6 +317,36 @@ function PlotManager({
             tickmode: "array",
             range: [entries[0][0] - 0.5, entries[entries.length - 1][0] + 0.5],
           };
+          leftMargin = 82;
+        }
+      } else if (signals.length > 1) {
+        // Multi-signal plot: shade y-axis with each signal's enum labels in legend color.
+        // Stack labels vertically (yshift) on the same column when multiple signals share a y-value.
+        const enumSignals = signals
+          .map((s, idx) => ({ signal: s, color: PLOT_COLORS[idx % PLOT_COLORS.length], defs: getValueDefs(s.signalName) }))
+          .filter((e) => e.defs);
+
+        if (enumSignals.length > 0) {
+          const ROW_PX = 9;
+          const n = enumSignals.length;
+          enumSignals.forEach((entry, idx) => {
+            const yshift = ((n - 1) / 2 - idx) * ROW_PX;
+            Object.entries(entry.defs!).forEach(([k, label]) => {
+              enumAnnotations.push({
+                xref: "paper",
+                yref: "y",
+                x: 0,
+                y: parseInt(k),
+                xshift: -8,
+                yshift,
+                text: truncate(label),
+                showarrow: false,
+                xanchor: "right",
+                yanchor: "middle",
+                font: { size: 9, color: entry.color, family: "monospace" },
+              });
+            });
+          });
           leftMargin = 82;
         }
       }
@@ -270,8 +369,8 @@ function PlotManager({
           plot_bgcolor: plotBg,
           font: { color: fontColor },
           showlegend: false,
-          shapes: visibleCheckpointLines,
-          annotations: checkpointAnnotations,
+          shapes: [...visibleCheckpointLines, ...stateLines],
+          annotations: [...checkpointAnnotations, ...stateAnnotations, ...enumAnnotations],
         };
         
         Plotly.react(plotRef.current, traces, updatedLayout);
