@@ -323,7 +323,21 @@
         .btn-amber:hover { background: rgba(251, 191, 36, 0.1); }
         .btn-green { border-color: #4ade80; color: #4ade80; }
         .btn-green:hover { background: rgba(74, 222, 128, 0.1); }
+        .btn-red { border-color: #ef4444; color: #fecaca; }
+        .btn-red:hover { background: rgba(239, 68, 68, 0.1); }
         .btn-sm { padding: 4px 10px; font-size: 0.75rem; }
+
+        .dbc-dropzone {
+            margin-top: 10px;
+            padding: 12px;
+            border: 1px dashed #ef4444;
+            background: rgba(239, 68, 68, 0.08);
+            color: #fecaca;
+            cursor: pointer;
+            text-align: center;
+            text-transform: none;
+        }
+        .dbc-dropzone.dragover { background: rgba(239, 68, 68, 0.18); }
 
         .performance-footer {
             position: fixed;
@@ -433,7 +447,12 @@
 
         <!-- DBC Warning Banner -->
         <div class="error-message" id="dbcWarningBanner" style="display: none; border: 2px solid #ef4444; margin-bottom: 15px; font-weight: 700; color: #fecaca; text-transform: uppercase;">
-            ⚠️ WARNING: USING PLACEHOLDER EXAMPLE.DBC! Telemetry is decoded with a fake schema. Raw CAN is saved, but DB will hold incorrect data! — Set DBC_HOST_PATH in deploy/.env and restart the telemetry container to fix.
+            <div>⚠️ Using bundled example DBC. Live data will be decoded incorrectly. Upload/select the current DBC.</div>
+            <input id="dbcUploadInput" type="file" accept=".dbc" style="display:none;" onchange="uploadSelectedDbc(this.files)">
+            <div id="dbcDropzone" class="dbc-dropzone" onclick="document.getElementById('dbcUploadInput').click()">
+                Drag and drop current .dbc here, or click to upload. Saved in the telemetry container; restart the container to apply.
+            </div>
+            <div id="dbcUploadStatus" style="margin-top:8px; font-size:0.75rem; color:#fecaca;"></div>
         </div>
 
         <!-- Version mismatch banner -->
@@ -1094,6 +1113,53 @@
             });
         }
 
+        async function uploadSelectedDbc(files) {
+            const file = files && files[0];
+            const status = document.getElementById('dbcUploadStatus');
+            if (!file) return;
+            if (!file.name.toLowerCase().endsWith('.dbc')) {
+                status.textContent = '✗ Select a .dbc file';
+                return;
+            }
+
+            status.textContent = `Uploading ${file.name}…`;
+            status.style.color = '#fecaca';
+            try {
+                const res = await fetch('/dbc-upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+                    body: await file.text(),
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    status.textContent = `✓ Saved to ${data.path}. Restart telemetry container to apply.`;
+                    status.style.color = '#4ade80';
+                } else {
+                    status.textContent = '✗ ' + (data.error || 'Upload failed');
+                    status.style.color = '#ef4444';
+                }
+            } catch (e) {
+                status.textContent = '✗ ' + e;
+                status.style.color = '#ef4444';
+            }
+        }
+
+        function initDbcDropzone() {
+            const zone = document.getElementById('dbcDropzone');
+            if (!zone) return;
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                zone.classList.add('dragover');
+            });
+            zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+            zone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                zone.classList.remove('dragover');
+                uploadSelectedDbc(e.dataTransfer.files);
+            });
+        }
+
+        initDbcDropzone();
         loadRelayInfo();
         connect();
         setInterval(updateUI, 100);

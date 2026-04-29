@@ -15,11 +15,15 @@ import os
 import json
 import subprocess
 import logging
+import shutil
+import tempfile
 
 logger = logging.getLogger("StatusServer")
 
 PORT = int(os.getenv("STATUS_PORT", 8080))
 TOKEN_FILE = "/app/relay_token"
+DBC_ACTIVE_PATH = os.getenv("DBC_FILE_PATH", "/app/active.dbc")
+DBC_UPLOAD_PATH = os.getenv("DBC_UPLOAD_PATH", DBC_ACTIVE_PATH)
 
 
 def _read_relay_token() -> str:
@@ -56,6 +60,14 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             port = int(os.getenv("RELAY_LISTEN_PORT", "9089"))
             self._json_response(200, {"token": token, "port": port, "enabled": True})
             return
+        if self.path == '/dbc-info':
+            self._json_response(200, {
+                "dbc_file": os.path.basename(DBC_ACTIVE_PATH),
+                "dbc_path": DBC_ACTIVE_PATH,
+                "using_example": os.path.basename(DBC_ACTIVE_PATH) == "example.dbc",
+                "uploaded_exists": os.path.exists(DBC_UPLOAD_PATH),
+            })
+            return
         super().do_GET()
 
     def do_OPTIONS(self):
@@ -68,6 +80,9 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/relay-token':
             self._handle_relay_token()
+            return
+        if self.path == '/dbc-upload':
+            self._handle_dbc_upload()
             return
         if self.path == '/set-time':
             if not SET_TIME_ENABLED:
@@ -117,6 +132,34 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._json_response(200, {"ok": True, "token": token})
         except Exception as e:
             logger.error(f"/relay-token error: {e}")
+            self._json_response(500, {"error": str(e)})
+
+    def _handle_dbc_upload(self):
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            if length <= 0:
+                self._json_response(400, {"error": "Missing DBC file body"})
+                return
+
+            with tempfile.NamedTemporaryFile('wb', delete=False, dir=os.path.dirname(DBC_UPLOAD_PATH)) as tmp:
+                remaining = length
+                while remaining > 0:
+                    chunk = self.rfile.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    tmp.write(chunk)
+                    remaining -= len(chunk)
+                tmp_path = tmp.name
+
+            shutil.move(tmp_path, DBC_UPLOAD_PATH)
+            logger.info("DBC uploaded via status UI: %s", DBC_UPLOAD_PATH)
+            self._json_response(200, {
+                "ok": True,
+                "path": DBC_UPLOAD_PATH,
+                "message": "Saved. Restart telemetry container to load this DBC.",
+            })
+        except Exception as e:
+            logger.error(f"/dbc-upload error: {e}")
             self._json_response(500, {"error": str(e)})
 
     def _json_response(self, code: int, payload: dict):

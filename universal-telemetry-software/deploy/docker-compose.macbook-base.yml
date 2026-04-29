@@ -39,14 +39,17 @@ services:
       - ENABLE_TIMESCALE_LOGGING=true
       - POSTGRES_DSN=postgresql://wfr:wfr_password@timescaledb:5432/wfr
       - TIMESCALE_TABLE=${TIMESCALE_TABLE:-WFR26test}_base
-      - DBC_FILE_PATH=/app/active.dbc
+      - DBC_FILE_PATH=/app/dbc_uploads/active.dbc
+      - DBC_UPLOAD_PATH=/app/dbc_uploads/active.dbc
       - ENABLE_WS_RELAY=true
       - RELAY_TOKEN=${RELAY_TOKEN:-}
       - RELAY_REQUIRE_TOKEN_ON_LAN=true
       - RELAY_UPSTREAM_WS=ws://127.0.0.1:9080
     volumes:
-      - ${DBC_HOST_PATH:-./example.dbc}:/app/active.dbc:ro
+      - ${DBC_HOST_PATH:-./example.dbc}:/app/default.dbc:ro
+      - uploaded_dbc:/app/dbc_uploads
       - raw_can_data:/app/raw_can_logs
+    command: sh -c 'if [ ! -s /app/dbc_uploads/active.dbc ]; then cp /app/default.dbc /app/dbc_uploads/active.dbc; fi; exec python main.py'
     logging:
       driver: "json-file"
       options:
@@ -149,4 +152,5 @@ services:
 volumes:
   redis_data:
   timescaledb_data:
+  uploaded_dbc:
   raw_can_data:
