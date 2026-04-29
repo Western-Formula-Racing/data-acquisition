@@ -39,12 +39,24 @@ def _env_bool(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).lower() == "true"
 
 
+TOKEN_FILE = "/app/relay_token"
+
+
+def _get_live_token() -> str | None:
+    try:
+        with open(TOKEN_FILE) as f:
+            val = f.read().strip()
+            return val or None
+    except FileNotFoundError:
+        pass
+    return os.getenv("RELAY_TOKEN") or None
+
+
 def _config() -> dict:
     return {
         "upstream": os.getenv("RELAY_UPSTREAM_WS", "ws://127.0.0.1:9080"),
         "listen_host": os.getenv("RELAY_LISTEN_HOST", "0.0.0.0"),
         "listen_port": int(os.getenv("RELAY_LISTEN_PORT", "9089")),
-        "token": os.getenv("RELAY_TOKEN") or None,
         "require_token_on_lan": _env_bool("RELAY_REQUIRE_TOKEN_ON_LAN", "false"),
         "reconnect_min": float(os.getenv("RELAY_UPSTREAM_RECONNECT_MIN", "1")),
         "reconnect_max": float(os.getenv("RELAY_UPSTREAM_RECONNECT_MAX", "30")),
@@ -98,11 +110,10 @@ def _reject_401() -> Response:
     return Response(401, "Unauthorized", Headers(), b"missing or invalid token\n")
 
 
-def _make_process_request(relay_token: str | None, require_on_lan: bool):
+def _make_process_request(get_token, require_on_lan: bool):
     async def process_request(connection: ServerConnection, request) -> Response | None:
-        host = ""
-        if connection.remote_address:
-            host = connection.remote_address[0]
+        host = connection.remote_address[0] if connection.remote_address else ""
+        relay_token = get_token()
         if not token_required_for_peer(host, relay_token, require_on_lan):
             return None
         provided = _token_from_request_path(request.path)
@@ -119,7 +130,6 @@ async def run_ws_relay(heartbeat_event=None) -> None:
     upstream_uri = cfg["upstream"]
     host = cfg["listen_host"]
     port = cfg["listen_port"]
-    relay_token = cfg["token"]
     require_on_lan = cfg["require_token_on_lan"]
     backoff_min = cfg["reconnect_min"]
     backoff_max = cfg["reconnect_max"]
@@ -129,7 +139,7 @@ async def run_ws_relay(heartbeat_event=None) -> None:
     utils.register_shutdown_signals(loop, shutdown_event, "WS relay")
 
     connected_clients: set = set()
-    process_request = _make_process_request(relay_token, require_on_lan)
+    process_request = _make_process_request(_get_live_token, require_on_lan)
 
     async def downstream_handler(connection: ServerConnection) -> None:
         peer = connection.remote_address
@@ -203,7 +213,7 @@ async def run_ws_relay(heartbeat_event=None) -> None:
         host,
         port,
         upstream_uri,
-        "set" if relay_token else "off",
+        "set" if _get_live_token() else "off",
         require_on_lan,
     )
 

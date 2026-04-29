@@ -20,6 +20,7 @@ services:
     restart: unless-stopped
     ports:
       - "9080:9080"   # WebSocket (Pecan connects here)
+      - "9089:9089"   # WS relay (external access via Cloudflare tunnel)
       - "8080:8080"   # Status page
       - "5005:5005/udp"
       - "5006:5006/tcp"
@@ -39,6 +40,10 @@ services:
       - POSTGRES_DSN=postgresql://wfr:wfr_password@timescaledb:5432/wfr
       - TIMESCALE_TABLE=${TIMESCALE_TABLE:-WFR26test}_base
       - DBC_FILE_PATH=/app/active.dbc
+      - ENABLE_WS_RELAY=true
+      - RELAY_TOKEN=${RELAY_TOKEN:-}
+      - RELAY_REQUIRE_TOKEN_ON_LAN=true
+      - RELAY_UPSTREAM_WS=ws://127.0.0.1:9080
     volumes:
       - ${DBC_HOST_PATH:-./example.dbc}:/app/active.dbc:ro
       - raw_can_data:/app/raw_can_logs
@@ -70,6 +75,19 @@ services:
     restart: unless-stopped
     ports:
       - "3000:80"   # Pecan dashboard — open http://localhost:3000
+    depends_on:
+      - telemetry
+    networks:
+      - datalink
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: daq-cloudflared
+    restart: unless-stopped
+    command: tunnel --config /etc/cloudflared/config.yml run daq-ws-relay
+    volumes:
+      - ${CLOUDFLARED_CONFIG:-./cloudflared/config.yml}:/etc/cloudflared/config.yml:ro
+      - ${CLOUDFLARED_CREDENTIALS:-./cloudflared/credentials.json}:/etc/cloudflared/credentials.json:ro
     depends_on:
       - telemetry
     networks:

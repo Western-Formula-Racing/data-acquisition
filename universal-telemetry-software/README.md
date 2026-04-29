@@ -202,6 +202,11 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 | `ENABLE_VIDEO` | `false` | Enable video streaming (car: push RTSP; base: unused) |
 | `ENABLE_AUDIO` | `false` | Enable audio streaming |
 | `ENABLE_TIMESCALE_LOGGING` | `false` | Log telemetry to server TimescaleDB (direct write) |
+| `ENABLE_WS_RELAY` | `false` | Enable downlink-only WebSocket relay for remote viewers |
+| `RELAY_TOKEN` | unset | Optional passcode for relay connections (`?token=...`) |
+| `RELAY_LISTEN_PORT` | `9089` | Local port for the relay WebSocket server |
+| `RELAY_UPSTREAM_WS` | `ws://127.0.0.1:9080` | Upstream base-station WebSocket consumed by the relay |
+| `RELAY_REQUIRE_TOKEN_ON_LAN` | `false` | Require token for LAN clients too, not just loopback/public clients |
 | `RTSP_PORT` | `8554` | Port on base station where MediaMTX accepts RTSP push |
 | `VIDEO_STREAM_NAME` | `car-camera` | RTSP/WebRTC stream path name |
 | `VIDEO_WIDTH` | `848` | Capture width (overridden by quality preset) |
@@ -219,6 +224,7 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 | 6379 | TCP | Redis (internal) |
 | 8080 | HTTP | Status monitoring page |
 | 9080 | WebSocket | PECAN dashboard feed |
+| 9089 | WebSocket | Downlink-only relay for remote viewers |
 | 3000 | HTTP | PECAN dashboard UI |
 | 8081 | HTTP | Video quality control (car only, when ENABLE_VIDEO=true) |
 | 8554 | TCP | RTSP — car pushes H.264 to MediaMTX on base |
@@ -280,6 +286,80 @@ v4l2-ctl --device /dev/video0 --set-ctrl focus_absolute=40
 **Status page** (`http://<ip>:8080`): real-time connection status, packet stats, live packet rate chart.
 
 **PECAN dashboard** (`http://<ip>:3000`): live CAN message visualization. Connects automatically to WebSocket on port 9080.
+
+---
+
+## Remote Viewing via WebSocket Relay
+
+The base station can publish the live telemetry WebSocket through a downlink-only relay on port `9089`. The relay connects upstream to the normal local WebSocket (`9080`) and rebroadcasts frames to viewers; downstream messages are not forwarded back to the car or base station.
+
+### Enable the relay
+
+For the MacBook base stack this is already enabled in `deploy/docker-compose.macbook-base.yml`:
+
+```yaml
+ENABLE_WS_RELAY=true
+RELAY_UPSTREAM_WS=ws://127.0.0.1:9080
+RELAY_LISTEN_PORT=9089
+RELAY_TOKEN=<optional passcode>
+```
+
+You can set or change the token from the status page at `http://localhost:8080`. Tokens saved from the UI take effect for new relay connections immediately.
+
+Local viewers can connect to:
+
+```text
+ws://<base-station-ip>:9089?token=<token>
+```
+
+### Forward with Cloudflare Tunnel
+
+Cloudflare Tunnel is the recommended way to expose the relay as secure `wss://` without opening inbound firewall ports.
+
+Install and log in:
+
+```bash
+brew install cloudflared
+cloudflared tunnel login
+```
+
+Create a tunnel:
+
+```bash
+cloudflared tunnel create daq-ws-relay
+```
+
+Create `~/.cloudflared/config.yml`:
+
+```yaml
+tunnel: <tunnel-id-or-name>
+credentials-file: /Users/<you>/.cloudflared/<tunnel-id>.json
+
+ingress:
+  - hostname: daq-relay.example.com
+    service: http://localhost:9089
+  - service: http_status:404
+```
+
+Route DNS:
+
+```bash
+cloudflared tunnel route dns daq-ws-relay daq-relay.example.com
+```
+
+Run the tunnel while the base station stack is up:
+
+```bash
+cloudflared tunnel run daq-ws-relay
+```
+
+Remote viewers connect with:
+
+```text
+wss://daq-relay.example.com?token=<token>
+```
+
+This same relay can be published by any reverse tunnel provider; Cloudflare is only the documented default.
 
 ---
 

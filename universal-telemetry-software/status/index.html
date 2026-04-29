@@ -526,6 +526,35 @@
             </div>
 
             <div class="card">
+                <div class="card-title">[WS_RELAY]</div>
+                <div class="metric">
+                    <span class="metric-label">Status</span>
+                    <span class="metric-value" id="relayStatus" style="color:#4ade80;">Running</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Port</span>
+                    <span class="metric-value" id="relayPort">9089</span>
+                </div>
+                <div class="metric" style="flex-direction:column; align-items:flex-start; gap:6px;">
+                    <span class="metric-label">Token</span>
+                    <div style="display:flex; gap:6px; width:100%; align-items:center;">
+                        <input id="relayTokenInput" type="text" placeholder="Enter token…"
+                            style="flex:1; background:#111; border:1px solid #333; color:#fff; padding:4px 8px; font-family:'JetBrains Mono',monospace; font-size:0.8rem; border-radius:2px;" />
+                        <button class="btn btn-green btn-sm" onclick="saveRelayToken()">Save</button>
+                        <button class="btn btn-green btn-sm" onclick="copyRelayToken()">Copy</button>
+                    </div>
+                    <span id="relayTokenStatus" style="font-family:'JetBrains Mono',monospace; font-size:0.75rem; color:#6b7280;"></span>
+                </div>
+                <div class="metric" style="flex-direction:column; align-items:flex-start; gap:6px;">
+                    <span class="metric-label">WS URL (LAN)</span>
+                    <span class="metric-value" id="relayUrl" style="font-size:0.72rem; word-break:break-all; color:#8e8eab;">--</span>
+                </div>
+                <div style="margin-top:8px; font-size:0.75rem; color:#4b5563; font-family:'JetBrains Mono',monospace;">
+                    For remote access: point a Cloudflare tunnel at localhost:9089 → use wss://
+                </div>
+            </div>
+
+            <div class="card">
                 <div class="card-title">[TIMESCALEDB]</div>
                 <div class="metric">
                     <span class="metric-label">Write Status</span>
@@ -547,17 +576,18 @@
         </div>
 
         <div class="chart-container">
-            <div class="card-title">[PACKET_RATE_60s]</div>
-            <canvas id="rateChart" class="sparkline"></canvas>
-        </div>
-
-        <div class="seq-tape-container">
-            <div class="card-title">[PACKET_SEQUENCE_TAPE]</div>
-            <canvas id="seqTape" class="seq-tape"></canvas>
+            <div class="card-title">[LINK_HEALTH_MOSAIC] 60s AGO → NOW</div>
+            <canvas id="healthMosaic" class="seq-tape" style="height: 180px;"></canvas>
+            <div class="seq-legend" style="justify-content: space-between;">
+                <span>60s ago</span>
+                <span>50 UDP batches/sec</span>
+                <span>now</span>
+            </div>
             <div class="seq-legend">
                 <div class="legend-item"><div class="legend-dot" style="background: #4ade80;"></div> UDP_OK</div>
-                <div class="legend-item"><div class="legend-dot" style="background: #fbbf24;"></div> MISSED</div>
                 <div class="legend-item"><div class="legend-dot" style="background: #3b82f6;"></div> RECOVERED</div>
+                <div class="legend-item"><div class="legend-dot" style="background: #fbbf24;"></div> MISSED</div>
+                <div class="legend-item"><div class="legend-dot" style="background: #1a1a1a;"></div> IDLE</div>
             </div>
         </div>
 
@@ -590,24 +620,21 @@
         let lastMessageTime = null;
         let lastCarDataTime = null;
         let lastUdpPacketTime = null;
-        let seqBuffer = [];
         let totalReceived = 0;
         let totalMissing = 0;
         let totalRecovered = 0;
-        let rateHistory = [];
-        const MAX_HISTORY = 60;
+        let packetHistory = [];
+        const MOSAIC_SECONDS = 60;
+        const UDP_BATCHES_PER_SECOND = 50;
+        const MOSAIC_CELLS = MOSAIC_SECONDS * UDP_BATCHES_PER_SECOND;
         let ecuSynced = false;
 
-        const canvas = document.getElementById('rateChart');
-        const ctx = canvas.getContext('2d');
-        const tapeCanvas = document.getElementById('seqTape');
-        const tapeCtx = tapeCanvas.getContext('2d');
+        const mosaicCanvas = document.getElementById('healthMosaic');
+        const mosaicCtx = mosaicCanvas.getContext('2d');
 
         function resizeCanvas() {
-            canvas.width = canvas.offsetWidth;
-            canvas.height = canvas.offsetHeight;
-            tapeCanvas.width = tapeCanvas.offsetWidth;
-            tapeCanvas.height = tapeCanvas.offsetHeight;
+            mosaicCanvas.width = mosaicCanvas.offsetWidth;
+            mosaicCanvas.height = mosaicCanvas.offsetHeight;
         }
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
@@ -727,9 +754,6 @@
                 lastCarDataTime = Date.now();
             }
 
-            if (status_buffer) {
-                seqBuffer = status_buffer;
-            }
 
             if (stats.dbc_file) {
                 const dbcWarning = document.getElementById('dbcWarningBanner');
@@ -809,14 +833,12 @@
                 : 0;
             document.getElementById('lossPercent').textContent = lossPercent + '%';
 
-            rateHistory.push(messages || 0);
-            if (rateHistory.length > MAX_HISTORY) {
-                rateHistory.shift();
+            if (status_buffer) {
+                packetHistory = status_buffer.slice(-MOSAIC_CELLS);
             }
 
             updateTimescale(stats.timescale);
-            drawChart();
-            drawSeqTape();
+            drawHealthMosaic();
         }
 
         function updateTimescale(timescale) {
@@ -889,47 +911,34 @@
             sep.className = 'pipe-sep' + (state ? ' ' + state : '');
         }
 
-        function drawChart() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        function drawHealthMosaic() {
+            mosaicCtx.clearRect(0, 0, mosaicCanvas.width, mosaicCanvas.height);
 
-            if (rateHistory.length === 0) return;
+            const cols = MOSAIC_SECONDS;
+            const rows = UDP_BATCHES_PER_SECOND;
+            const colGap = 2;
+            const rowGap = 1;
+            const colWidth = mosaicCanvas.width / cols;
+            const cellWidth = Math.max(1, colWidth - colGap);
+            const cellHeight = Math.max(1, (mosaicCanvas.height - rowGap * (rows - 1)) / rows);
+            const start = MOSAIC_CELLS - packetHistory.length;
 
-            const max = Math.max(...rateHistory, 10);
-            const width = canvas.width;
-            const height = canvas.height;
-            const barWidth = width / MAX_HISTORY;
-
-            ctx.fillStyle = '#4ade80';
-            rateHistory.forEach((value, index) => {
-                const barHeight = (value / max) * height;
-                const x = index * barWidth;
-                const y = height - barHeight;
-                ctx.fillRect(x, y, barWidth - 2, barHeight);
-            });
-
-            ctx.strokeStyle = 'rgba(142, 142, 171, 0.3)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(0, height);
-            ctx.lineTo(width, height);
-            ctx.stroke();
+            for (let cell = 0; cell < MOSAIC_CELLS; cell++) {
+                const status = packetHistory[cell - start];
+                const second = Math.floor(cell / rows);
+                const row = cell % rows;
+                const x = second * colWidth;
+                const y = row * (cellHeight + rowGap);
+                mosaicCtx.fillStyle = packetStatusColor(status);
+                mosaicCtx.fillRect(x + 1, y, cellWidth, cellHeight);
+            }
         }
 
-        function drawSeqTape() {
-            tapeCtx.clearRect(0, 0, tapeCanvas.width, tapeCanvas.height);
-            if (!seqBuffer || seqBuffer.length === 0) return;
-
-            const pixelWidth = tapeCanvas.width / seqBuffer.length;
-            const colors = {
-                0: '#fbbf24', // Missing
-                1: '#4ade80', // UDP OK
-                2: '#3b82f6'  // Recovered (TCP)
-            };
-
-            seqBuffer.forEach((status, i) => {
-                tapeCtx.fillStyle = colors[status] || '#1a1a1a';
-                tapeCtx.fillRect(i * pixelWidth, 0, Math.ceil(pixelWidth), tapeCanvas.height);
-            });
+        function packetStatusColor(status) {
+            if (status === 0) return '#fbbf24';
+            if (status === 1) return '#4ade80';
+            if (status === 2) return '#3b82f6';
+            return '#1a1a1a';
         }
 
         function updateUI() {
@@ -1028,6 +1037,64 @@
             }
         }
 
+        async function loadRelayInfo() {
+            try {
+                const res = await fetch('/relay-info');
+                const data = await res.json();
+                const token = data.token || '';
+                const port = data.port || 9089;
+                document.getElementById('relayPort').textContent = port;
+                document.getElementById('relayTokenInput').value = token;
+                updateRelayUrl(token);
+            } catch (e) {
+                document.getElementById('relayStatus').textContent = 'Unavailable';
+                document.getElementById('relayStatus').style.color = '#ef4444';
+            }
+        }
+
+        async function saveRelayToken() {
+            const token = document.getElementById('relayTokenInput').value.trim();
+            const status = document.getElementById('relayTokenStatus');
+            status.textContent = 'Saving…'; status.style.color = '#6b7280';
+            try {
+                const res = await fetch('/relay-token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token }),
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    status.textContent = '✓ Saved'; status.style.color = '#4ade80';
+                    updateRelayUrl(token);
+                    setTimeout(() => { status.textContent = ''; }, 2000);
+                } else {
+                    status.textContent = '✗ ' + (data.error || 'Failed'); status.style.color = '#ef4444';
+                }
+            } catch (e) {
+                status.textContent = '✗ ' + e; status.style.color = '#ef4444';
+            }
+        }
+
+        function updateRelayUrl(token) {
+            const host = window.location.hostname;
+            const port = document.getElementById('relayPort').textContent;
+            const url = token ? `ws://${host}:${port}?token=${token}` : `ws://${host}:${port}`;
+            document.getElementById('relayUrl').textContent = url;
+            document.getElementById('relayUrl').style.color = token ? '#4ade80' : '#fbbf24';
+        }
+
+        function copyRelayToken() {
+            const val = document.getElementById('relayTokenInput').value;
+            if (!val) return;
+            navigator.clipboard.writeText(val).then(() => {
+                const btn = document.querySelector('[onclick="copyRelayToken()"]');
+                const orig = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(() => { btn.textContent = orig; }, 1500);
+            });
+        }
+
+        loadRelayInfo();
         connect();
         setInterval(updateUI, 100);
     </script>
