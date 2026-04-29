@@ -217,6 +217,27 @@ async def run_ws_relay(heartbeat_event=None) -> None:
         require_on_lan,
     )
 
+    async def relay_heartbeat_loop() -> None:
+        while not shutdown_event.is_set():
+            try:
+                await asyncio.wait_for(shutdown_event.wait(), timeout=1.0)
+                break
+            except asyncio.TimeoutError:
+                pass
+            if not connected_clients:
+                continue
+            # Send as a CAN frame so it flows through the standard ingest path.
+            # canId 0x7FE is reserved for relay heartbeat; data hex reads "DA DA AA AA DA DA AA AA".
+            payload = json.dumps({
+                "time": int(time.time() * 1000),
+                "canId": 0x7FE,
+                "data": [0xDA, 0xDA, 0xAA, 0xAA, 0xDA, 0xDA, 0xAA, 0xAA],
+            })
+            await asyncio.gather(
+                *[c.send(payload) for c in list(connected_clients)],
+                return_exceptions=True,
+            )
+
     async with websockets.serve(
         downstream_handler,
         host,
@@ -225,13 +246,17 @@ async def run_ws_relay(heartbeat_event=None) -> None:
         process_request=process_request,
     ):
         upstream_task = asyncio.create_task(upstream_loop())
+        heartbeat_task = asyncio.create_task(relay_heartbeat_loop())
         try:
             await utils.heartbeat_coro(heartbeat_event, shutdown_event)
         finally:
             shutdown_event.set()
             upstream_task.cancel()
+            heartbeat_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await upstream_task
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat_task
 
 
 def main() -> None:

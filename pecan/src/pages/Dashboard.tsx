@@ -175,6 +175,19 @@ function Dashboard() {
     } catch { /* ignore */ }
   }, [plots]);
 
+  // Live-apply plot layout when imported via "Import Config Only" from ReplayViewer.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<Plot[]>).detail;
+      if (Array.isArray(detail) && detail.length > 0) {
+        setPlots(detail);
+        setNextPlotId(nextPlotCounter(detail));
+      }
+    };
+    window.addEventListener("pecan:plots-imported", handler);
+    return () => window.removeEventListener("pecan:plots-imported", handler);
+  }, []);
+
   // Data
   // =====================================================================
 

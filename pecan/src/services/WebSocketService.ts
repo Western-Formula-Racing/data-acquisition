@@ -121,6 +121,27 @@ export class WebSocketService {
     if (out && !out.startsWith('ws://') && !out.startsWith('wss://')) {
       out = `${protocol}://${out}`;
     }
+    // On HTTPS pages, ws:// is blocked by mixed-content. Upgrade to wss://.
+    // For public hostnames behind a proxy (e.g. Cloudflare tunnel), strip the
+    // relay's internal port (:9089) since edge serves on 443.
+    if (isSecure && out.startsWith('ws://')) {
+      out = 'wss://' + out.slice('ws://'.length);
+    }
+    if (isSecure && out.startsWith('wss://')) {
+      try {
+        const u = new URL(out);
+        const isLan =
+          u.hostname === 'localhost' ||
+          /^\d+\.\d+\.\d+\.\d+$/.test(u.hostname) ||
+          u.hostname.endsWith('.local');
+        if (!isLan && u.port === '9089') {
+          u.port = '';
+          out = u.toString();
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
     return out;
   }
 

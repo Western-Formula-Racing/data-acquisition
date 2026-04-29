@@ -5,7 +5,7 @@ import { coldStore } from "../lib/ColdStore";
 import type { ReplayFrame, ReplayPlotLayout } from "../types/replay";
 import { parseReplayFile, REPLAY_FRAME_HARD_CAP } from "../utils/replayParser";
 import { serializePecanV2 } from "../utils/pecanSerializer";
-import { getActiveDbcText, usingCachedDBC } from "../utils/canProcessor";
+import { getActiveDbcText, setActiveDbcText, usingCachedDBC } from "../utils/canProcessor";
 import { useMessageHistory } from "../lib/useDataStore";
 import ReplayImportClipModal from "./ReplayImportClipModal";
 
@@ -152,6 +152,53 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
     decodeMeta?: Parameters<typeof loadReplayFrames>[4];
   } | null>(null);
   const replayFileInputRef = useRef<HTMLInputElement | null>(null);
+  const configFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImportConfigOnly = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const parseResult = await parseReplayFile(file);
+      const meta = parseResult.sessionMeta;
+      const layouts = meta?.plots?.layouts ?? [];
+      const applied: string[] = [];
+
+      if (layouts.length > 0) {
+        const plotsForStorage = layouts
+          .map((layout) => ({
+            id: String(layout.id),
+            signals: (layout.series ?? []).map((s) => ({
+              msgID: s.msgId,
+              signalName: s.signalName,
+              messageName: `CAN_${s.msgId}`,
+              unit: "",
+            })),
+          }))
+          .filter((p) => p.signals.length > 0);
+        if (plotsForStorage.length > 0) {
+          localStorage.setItem("dash:plots", JSON.stringify(plotsForStorage));
+          window.dispatchEvent(new CustomEvent("pecan:plots-imported", { detail: plotsForStorage }));
+          applied.push(`${plotsForStorage.length} plot${plotsForStorage.length === 1 ? "" : "s"}`);
+        }
+      }
+
+      const embedded = meta?.decode?.dbcEmbedded;
+      if (embedded?.format === "dbc" && embedded.content) {
+        setActiveDbcText(embedded.content);
+        applied.push("DBC");
+      }
+
+      window.alert(
+        applied.length > 0
+          ? `Config imported: ${applied.join(", ")}`
+          : "No plot/DBC config found in file."
+      );
+    } catch (err) {
+      window.alert(`Config import failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    } finally {
+      event.target.value = "";
+    }
+  };
   const showColdStoreSupportHint = source === "live" && !dataStore.isColdStoreSupported();
 
   const hasData = collectionStartMs !== null && collectionEndMs !== null;
@@ -654,6 +701,21 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
           className="hidden"
           onChange={handleImportReplay}
           disabled={isImportingReplay}
+        />
+        <button
+          type="button"
+          className="trace-btn trace-btn-subtle !text-[10px] !px-2 !py-1"
+          onClick={() => configFileInputRef.current?.click()}
+          title="Apply plot layout & DBC from a .pecan file without loading its frames"
+        >
+          Import Config
+        </button>
+        <input
+          ref={configFileInputRef}
+          type="file"
+          accept=".pecan,application/json"
+          className="hidden"
+          onChange={handleImportConfigOnly}
         />
       </div>
 
