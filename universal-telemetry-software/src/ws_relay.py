@@ -113,7 +113,7 @@ def _reject_401() -> Response:
 def _make_process_request(get_token, require_on_lan: bool):
     async def process_request(connection: ServerConnection, request) -> Response | None:
         host = connection.remote_address[0] if connection.remote_address else ""
-        relay_token = get_token()
+        relay_token = get_token() if callable(get_token) else get_token
         if not token_required_for_peer(host, relay_token, require_on_lan):
             return None
         provided = _token_from_request_path(request.path)
