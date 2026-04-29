@@ -153,7 +153,9 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
   const sliderMin = collectionStartMs ?? 0;
   const sliderMax = collectionEndMs ?? 0;
   const sliderValue = hasData
-    ? Math.max(sliderMin, Math.min(sliderMax, selectedTimeMs))
+    ? (mode === "live" && source === "live"
+        ? sliderMax
+        : Math.max(sliderMin, Math.min(sliderMax, selectedTimeMs)))
     : 0;
 
   useEffect(() => {
@@ -254,11 +256,7 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
   }, [source, mode, latestLiveDataMs, collectionEndMs]);
 
   const hasLiveTail = liveTailMs > 0;
-  const isAtCurrentLiveTime =
-    source === "live" &&
-    mode === "live" &&
-    latestLiveDataMs !== null &&
-    Math.abs(sliderValue - latestLiveDataMs) <= 50;
+  const isAtCurrentLiveTime = source === "live" && mode === "live";
 
   const handleExportStartChange = (value: number) => {
     if (!hasData || !clipModeEnabled || exportEndMs === null) return;
