@@ -3,7 +3,7 @@ import Plotly from "plotly.js-dist-min";
 import { dataStore } from "../lib/DataStore";
 import { createGrafanaDashboard } from "../services/GrafanaService";
 import { useTimeline } from "../context/TimelineContext";
-import { getValueDefs } from "../utils/canProcessor";
+import { getSignalAxisDef, getValueDefs } from "../utils/canProcessor";
 
 const STATE_OVERLAY_MSG_ID = "0x7D2";
 const STATE_OVERLAY_SIGNAL = "State";
@@ -307,6 +307,7 @@ function PlotManager({
       const enumAnnotations: any[] = [];
 
       if (signals.length === 1) {
+        const axisDef = getSignalAxisDef(signals[0].signalName);
         const valueDefs = getValueDefs(signals[0].signalName);
         if (valueDefs) {
           const entries = Object.entries(valueDefs).map(([k, v]) => [parseInt(k), v] as [number, string]);
@@ -315,9 +316,11 @@ function PlotManager({
             tickvals: entries.map(([k]) => k),
             ticktext: entries.map(([, v]) => truncate(v)),
             tickmode: "array",
-            range: [entries[0][0] - 0.5, entries[entries.length - 1][0] + 0.5],
+            range: [axisDef?.min ?? entries[0][0] - 0.5, axisDef?.max ?? entries[entries.length - 1][0] + 0.5],
           };
           leftMargin = 82;
+        } else if (axisDef?.min !== undefined && axisDef?.max !== undefined && axisDef.min < axisDef.max) {
+          yaxisEnumConfig = { range: [axisDef.min, axisDef.max] };
         }
       } else if (signals.length > 1) {
         // Multi-signal plot: shade y-axis with each signal's enum labels in legend color.
@@ -360,7 +363,7 @@ function PlotManager({
             range: [-(timeWindowMs / 1000), 0],
           },
           yaxis: {
-            title: "Value",
+            title: signals.length === 1 ? (getSignalAxisDef(signals[0].signalName)?.unit || signals[0].unit || "Value") : "Value",
             autorange: !Object.keys(yaxisEnumConfig).length,
             ...yaxisEnumConfig,
           },

@@ -42,6 +42,24 @@ def _env_bool(name: str, default: str = "false") -> bool:
 TOKEN_FILE = "/app/relay_token"
 
 
+def _active_dbc_payload() -> str | None:
+    path = os.getenv("DBC_FILE_PATH", "/app/active.dbc")
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            content = f.read()
+    except OSError as e:
+        logger.warning("Could not read active DBC for relay: %s", e)
+        return None
+    if not content.strip():
+        return None
+    return json.dumps({
+        "type": "dbc_update",
+        "format": "dbc",
+        "fileName": os.path.basename(path),
+        "content": content,
+    })
+
+
 def _get_live_token() -> str | None:
     try:
         with open(TOKEN_FILE) as f:
@@ -145,6 +163,9 @@ async def run_ws_relay(heartbeat_event=None) -> None:
         peer = connection.remote_address
         connected_clients.add(connection)
         logger.info("Downstream client connected: %s (total=%s)", peer, len(connected_clients))
+        dbc_payload = _active_dbc_payload()
+        if dbc_payload:
+            await connection.send(dbc_payload)
         try:
             async for raw in connection:
                 if isinstance(raw, bytes):

@@ -1,4 +1,4 @@
-import { createCanProcessor } from '../utils/canProcessor';
+import { createCanProcessor, setActiveDbcText } from '../utils/canProcessor';
 import { listDBCFiles, fetchAndApplyDBC } from './DbcService';
 
 export type MessageHandler = (data: any) => void;
@@ -282,7 +282,7 @@ export class WebSocketService {
       this.notify('status', { connected: true, url: wsUrl });
     };
 
-    socket.onmessage = (event) => {
+    socket.onmessage = async (event) => {
       try {
         if (this.messageCount < 3) {
           console.log(`[WebSocket] Message #${this.messageCount + 1}:`, event.data);
@@ -297,6 +297,11 @@ export class WebSocketService {
         }
 
         const messageData = JSON.parse(event.data);
+
+        if (messageData?.type === 'dbc_update' && messageData.format === 'dbc' && typeof messageData.content === 'string') {
+          setActiveDbcText(messageData.content);
+          this.processor = await createCanProcessor();
+        }
 
         if (messageData?.type) {
           this.notify(messageData.type, messageData);

@@ -286,6 +286,21 @@ export function getValueDefs(signalName: string): Record<number, string> | null 
   return Object.keys(defs).length > 0 ? defs : null;
 }
 
+export function getSignalAxisDef(signalName: string): { min?: number; max?: number; unit?: string } | null {
+  const escaped = signalName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`^\\s*SG_\\s+${escaped}\\s*:[^\\n]*\\[([^|\\]]+)\\|([^\\]]+)\\]\\s*"([^"]*)"`, "m");
+  const match = dbcFile.match(regex);
+  if (!match) return null;
+
+  const min = Number(match[1]);
+  const max = Number(match[2]);
+  return {
+    min: Number.isFinite(min) ? min : undefined,
+    max: Number.isFinite(max) ? max : undefined,
+    unit: match[3] || undefined,
+  };
+}
+
 export async function clearDbcCache() {
   // Clear Cache API if available
   try {
