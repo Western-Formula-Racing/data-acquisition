@@ -232,7 +232,11 @@ function PlotManager({
       });
 
       // Build enum tick labels if there's a single signal with VAL_ definitions
+      const TICK_MAX_CHARS = 10;
+      const truncate = (s: string) => s.length > TICK_MAX_CHARS ? s.slice(0, TICK_MAX_CHARS - 1) + "…" : s;
+
       let yaxisEnumConfig = {};
+      let leftMargin = 60;
       if (signals.length === 1) {
         const valueDefs = getValueDefs(signals[0].signalName);
         if (valueDefs) {
@@ -240,10 +244,11 @@ function PlotManager({
           entries.sort((a, b) => a[0] - b[0]);
           yaxisEnumConfig = {
             tickvals: entries.map(([k]) => k),
-            ticktext: entries.map(([, v]) => v),
+            ticktext: entries.map(([, v]) => truncate(v)),
             tickmode: "array",
             range: [entries[0][0] - 0.5, entries[entries.length - 1][0] + 0.5],
           };
+          leftMargin = 82;
         }
       }
 
@@ -260,7 +265,7 @@ function PlotManager({
             autorange: !Object.keys(yaxisEnumConfig).length,
             ...yaxisEnumConfig,
           },
-          margin: { t: 40, r: 20, b: 40, l: 60 },
+          margin: { t: 40, r: 20, b: 40, l: leftMargin },
           paper_bgcolor: paperBg,
           plot_bgcolor: plotBg,
           font: { color: fontColor },
