@@ -3,6 +3,7 @@ import Plotly from "plotly.js-dist-min";
 import { dataStore } from "../lib/DataStore";
 import { createGrafanaDashboard } from "../services/GrafanaService";
 import { useTimeline } from "../context/TimelineContext";
+import { getValueDefs } from "../utils/canProcessor";
 
 // Standard Nivo colors (or similar palette) to ensure consistency between plot and list
 const PLOT_COLORS = [
@@ -207,19 +208,44 @@ function PlotManager({
         }
 
         if (xData.length > 0) {
+          const valueDefs = getValueDefs(signal.signalName);
+          const traceExtras = valueDefs
+            ? {
+                text: yData.map((v) => valueDefs[v] ?? String(v)),
+                hovertemplate: `%{text}<br>t=%{x:.1f}s<extra>${signal.messageName} - ${signal.signalName}</extra>`,
+              }
+            : {};
+
           traces.push({
             x: xData,
             y: yData,
-            type: "scatter", // Can switch to scattergl for performance if needed
+            type: "scatter",
             mode: "lines",
             name: `${signal.messageName} - ${signal.signalName}`,
-            line: { 
+            line: {
                 width: 2,
-                color: PLOT_COLORS[index % PLOT_COLORS.length] // Sync color
+                color: PLOT_COLORS[index % PLOT_COLORS.length],
             },
+            ...traceExtras,
           });
         }
       });
+
+      // Build enum tick labels if there's a single signal with VAL_ definitions
+      let yaxisEnumConfig = {};
+      if (signals.length === 1) {
+        const valueDefs = getValueDefs(signals[0].signalName);
+        if (valueDefs) {
+          const entries = Object.entries(valueDefs).map(([k, v]) => [parseInt(k), v] as [number, string]);
+          entries.sort((a, b) => a[0] - b[0]);
+          yaxisEnumConfig = {
+            tickvals: entries.map(([k]) => k),
+            ticktext: entries.map(([, v]) => v),
+            tickmode: "array",
+            range: [entries[0][0] - 0.5, entries[entries.length - 1][0] + 0.5],
+          };
+        }
+      }
 
       if (traces.length > 0 && plotRef.current) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -231,7 +257,8 @@ function PlotManager({
           },
           yaxis: {
             title: "Value",
-            autorange: true,
+            autorange: !Object.keys(yaxisEnumConfig).length,
+            ...yaxisEnumConfig,
           },
           margin: { t: 40, r: 20, b: 40, l: 60 },
           paper_bgcolor: paperBg,

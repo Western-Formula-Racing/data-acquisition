@@ -257,10 +257,33 @@ export function forceCache(force: boolean) {
   usingCache = force;
 }
 
+/** Return the currently active DBC text. */
+export function getActiveDbcText(): string {
+  return dbcFile;
+}
+
 /** Update the active DBC text used by the next createCanProcessor() call. */
 export function setActiveDbcText(text: string): void {
   dbcFile = text;
   usingCache = true;
+}
+
+/**
+ * Parse VAL_ definitions for a signal from the active DBC text.
+ * Returns a map of { numericValue -> label } or null if no definitions exist.
+ */
+export function getValueDefs(signalName: string): Record<number, string> | null {
+  // VAL_ <msgId> <signalName> <val> "<label>" ... ;
+  const escaped = signalName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`VAL_\\s+\\d+\\s+${escaped}\\s+((?:\\d+\\s+"[^"]*"\\s*)+);`);
+  const match = dbcFile.match(regex);
+  if (!match) return null;
+
+  const defs: Record<number, string> = {};
+  for (const [, num, label] of match[1].matchAll(/(\d+)\s+"([^"]*)"/g)) {
+    defs[parseInt(num)] = label;
+  }
+  return Object.keys(defs).length > 0 ? defs : null;
 }
 
 export async function clearDbcCache() {

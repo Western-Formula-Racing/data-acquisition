@@ -10,6 +10,7 @@ import { Play, Pause, Trash2, HelpCircle } from "lucide-react";
 import { useTraceBuffer } from "../lib/useDataStore";
 import type { TelemetrySample } from "../lib/DataStore";
 import { serializePecanV2 } from "../utils/pecanSerializer";
+import { getActiveDbcText, usingCachedDBC } from "../utils/canProcessor";
 import TourGuide, { type TourStep } from "../components/TourGuide";
 import RaceCarGame from "../components/RaceCarGame";
 import TimelineBar from "../components/TimelineBar";
@@ -126,8 +127,14 @@ function exportPecanSession(
 ): void {
   const baseTimestamp = frames[0]?.timestamp ?? Date.now();
 
+  const dbcText = getActiveDbcText();
+  const selectedFile = localStorage.getItem('dbc-selected-file') ?? undefined;
   const blob = new Blob([serializePecanV2({
     epochBaseMs: baseTimestamp,
+    decode: usingCachedDBC() ? {
+      dbcName: selectedFile,
+      dbcEmbedded: { format: "dbc", encoding: "utf-8", content: dbcText },
+    } : undefined,
     frames: frames.map((frame) => {
       const canIdNumeric = parseCanIdToNumber(frame.msgID);
       const dataHex = rawDataToHex(frame.rawData);

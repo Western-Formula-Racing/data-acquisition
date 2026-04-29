@@ -3,7 +3,7 @@ import { Upload, AlertTriangle, FileJson } from "lucide-react";
 import TimelineBar from "../components/TimelineBar";
 import ReplayImportClipModal from "../components/ReplayImportClipModal";
 import { parseReplayFile, REPLAY_FRAME_HARD_CAP } from "../utils/replayParser";
-import type { ReplayFrame, ReplayParseResult, ReplayPlotsMetadata, ReplayTimelineMetadata } from "../types/replay";
+import type { ReplayDecodeMetadata, ReplayFrame, ReplayParseResult, ReplayPlotsMetadata, ReplayTimelineMetadata } from "../types/replay";
 import { useTimeline } from "../context/TimelineContext";
 
 function ReplayViewer() {
@@ -16,6 +16,7 @@ function ReplayViewer() {
     fileName: string;
     timelineMeta?: ReplayTimelineMetadata;
     plotsMeta?: ReplayPlotsMetadata;
+    decodeMeta?: ReplayDecodeMetadata;
   } | null>(null);
 
   const handleFilePick = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,13 +36,15 @@ function ReplayViewer() {
             fileName: file.name,
             timelineMeta: parseResult.sessionMeta?.timeline,
             plotsMeta: parseResult.sessionMeta?.plots,
+            decodeMeta: parseResult.sessionMeta?.decode,
           });
         } else {
           await loadReplayFrames(
             parseResult.frames,
             file.name,
             parseResult.sessionMeta?.timeline,
-            parseResult.sessionMeta?.plots
+            parseResult.sessionMeta?.plots,
+            parseResult.sessionMeta?.decode
           );
         }
       }
@@ -72,7 +75,8 @@ function ReplayViewer() {
                 framesToLoad,
                 pendingClipImport.fileName,
                 pendingClipImport.timelineMeta,
-                pendingClipImport.plotsMeta
+                pendingClipImport.plotsMeta,
+                pendingClipImport.decodeMeta
               );
               setPendingClipImport(null);
             }}

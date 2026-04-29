@@ -5,6 +5,7 @@ import { coldStore } from "../lib/ColdStore";
 import type { ReplayFrame, ReplayPlotLayout } from "../types/replay";
 import { parseReplayFile, REPLAY_FRAME_HARD_CAP } from "../utils/replayParser";
 import { serializePecanV2 } from "../utils/pecanSerializer";
+import { getActiveDbcText, usingCachedDBC } from "../utils/canProcessor";
 import ReplayImportClipModal from "./ReplayImportClipModal";
 
 interface TimelineBarProps {
@@ -142,6 +143,7 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
     fileName: string;
     timelineMeta?: Parameters<typeof loadReplayFrames>[2];
     plotsMeta?: Parameters<typeof loadReplayFrames>[3];
+    decodeMeta?: Parameters<typeof loadReplayFrames>[4];
   } | null>(null);
   const replayFileInputRef = useRef<HTMLInputElement | null>(null);
   const showColdStoreSupportHint = source === "live" && !dataStore.isColdStoreSupported();
@@ -334,9 +336,15 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
         );
       }
 
+      const dbcText = getActiveDbcText();
+      const selectedFile = localStorage.getItem('dbc-selected-file') ?? undefined;
       const blob = new Blob([serializePecanV2({
         frames,
         epochBaseMs,
+        decode: usingCachedDBC() ? {
+          dbcName: selectedFile,
+          dbcEmbedded: { format: "dbc", encoding: "utf-8", content: dbcText },
+        } : undefined,
         timeline: {
           windowMs,
           lastCursorMs: Math.max(0, sliderValue - rangeStart),
@@ -383,13 +391,15 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
           fileName: file.name,
           timelineMeta: parseResult.sessionMeta?.timeline,
           plotsMeta: parseResult.sessionMeta?.plots,
+          decodeMeta: parseResult.sessionMeta?.decode,
         });
       } else {
         await loadReplayFrames(
           parseResult.frames,
           file.name,
           parseResult.sessionMeta?.timeline,
-          parseResult.sessionMeta?.plots
+          parseResult.sessionMeta?.plots,
+          parseResult.sessionMeta?.decode
         );
       }
 
@@ -480,7 +490,8 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
               framesToLoad,
               pendingClipImport.fileName,
               pendingClipImport.timelineMeta,
-              pendingClipImport.plotsMeta
+              pendingClipImport.plotsMeta,
+              pendingClipImport.decodeMeta
             );
             setPendingClipImport(null);
           }}
