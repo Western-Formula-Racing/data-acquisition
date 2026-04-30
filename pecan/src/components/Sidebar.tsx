@@ -63,7 +63,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
       )}
 
       <div
-        className={`sidebar-scroll-none fixed top-0 left-0 h-full lg:w-2/9 md:w-2/5 sm:w-3/5 w-full flex flex-col z-[80] transform transition-all duration-450 overflow-y-auto overscroll-contain ${isOpen
+        className={`sidebar-scroll-none fixed top-0 left-0 bottom-12 lg:w-2/9 md:w-2/5 sm:w-3/5 w-full flex flex-col z-[80] transform transition-all duration-450 overflow-y-auto overscroll-contain ${isOpen
           ? "translate-x-0 opacity-100"
           : "-translate-x-full opacity-0 pointer-events-none"
           }`}
@@ -110,10 +110,10 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 onClose={onClose}
                 isPending={true}
               />
-              <li className="sidebar-group-shell px-3 pb-2">
+              <li>
                 <button
                   onClick={() => setIsControlOpen(!isControlOpen)}
-                  className="sidebar-group-header flex w-full gap-3 h-14 items-center justify-between box-border px-3 transition-colors cursor-pointer"
+                  className="sidebar-group-header flex w-full gap-3 h-20 items-center justify-between box-border px-3 transition-colors cursor-pointer bg-option hover:bg-option-select/80"
                 >
                   <span className="flex items-center gap-2">
                     <span className="sidebar-group-title text-left">
@@ -126,7 +126,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                   <ChevronDown className={`text-sidebarfg transition-transform duration-300 ${isControlOpen ? 'rotate-180' : ''}`} />
                 </button>
                 <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isControlOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
-                  <ul className="list-none p-0 mt-2 m-0 bg-option/40 border border-white/10 rounded-md">
+                  <ul className="list-none p-0 m-0">
                     <SidebarOption
                       option="Throttle Mapper"
                       path="/throttle-mapper"
