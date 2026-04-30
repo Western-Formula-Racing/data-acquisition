@@ -103,10 +103,62 @@
 
     --font-heading: "ZipSonik", sans-serif;
     --font-footer: "Days One", sans-serif;
+
+    /* Pill / button accent tokens (dark defaults).
+       Each variant has bg, border, fg used by .timeline-btn-* / .trace-btn-* / .timeline-chip-*.
+       Light mode overrides these inside .theme-light. */
+    --pill-primary-bg:   rgba(168, 85, 247, 0.16);
+    --pill-primary-border: rgba(168, 85, 247, 0.45);
+    --pill-primary-fg:   #e9d5ff;
+
+    --pill-success-bg:   rgba(34, 197, 94, 0.14);
+    --pill-success-border: rgba(34, 197, 94, 0.35);
+    --pill-success-fg:   #bbf7d0;
+
+    --pill-warning-bg:   rgba(234, 179, 8, 0.16);
+    --pill-warning-border: rgba(250, 204, 21, 0.4);
+    --pill-warning-fg:   #fde047;
+
+    --pill-danger-bg:    rgba(239, 68, 68, 0.14);
+    --pill-danger-border: rgba(248, 113, 113, 0.38);
+    --pill-danger-fg:    #fda4af;
+
+    --pill-active-bg:    rgba(147, 51, 234, 0.3);
+    --pill-active-border: rgba(192, 132, 252, 0.5);
+    --pill-active-fg:    #e9d5ff;
+
+    --pill-subtle-bg:    rgba(255, 255, 255, 0.04);
+
+    /* Live/paused chip gradients */
+    --chip-live-bg:      linear-gradient(135deg, rgba(20, 83, 45, 0.5) 0%, rgba(22, 101, 52, 0.36) 100%);
+    --chip-live-border:  rgba(74, 222, 128, 0.42);
+    --chip-live-fg:      #86efac;
+    --chip-paused-bg:    linear-gradient(135deg, rgba(120, 53, 15, 0.48) 0%, rgba(146, 64, 14, 0.34) 100%);
+    --chip-paused-border: rgba(251, 191, 36, 0.44);
+    --chip-paused-fg:    #fcd34d;
+
+    /* Range slider track + thumb */
+    --range-track-bg:    linear-gradient(90deg, rgba(71, 85, 105, 0.5) 0%, rgba(88, 28, 135, 0.55) 100%);
+    --range-thumb-bg:    radial-gradient(circle at 35% 35%, #c4b5fd 0%, #a855f7 45%, #7e22ce 100%);
+    --range-thumb-border: rgba(255, 255, 255, 0.9);
+    --range-thumb-shadow: 0 0 0 4px rgba(168, 85, 247, 0.2), 0 4px 10px rgba(0, 0, 0, 0.35);
+
+    /* Checkpoint dot — amber default, magenta for trace */
+    --checkpoint-bg:     radial-gradient(circle at 35% 35%, #fde68a 0%, #f59e0b 65%, #b45309 100%);
+    --checkpoint-border: rgba(255, 243, 205, 0.95);
+    --checkpoint-shadow: rgba(245, 158, 11, 0.2);
+    --checkpoint-trace-bg: radial-gradient(circle at 35% 35%, #f0abfc 0%, #d946ef 55%, #86198f 100%);
+    --checkpoint-trace-border: rgba(217, 70, 239, 0.92);
+    --checkpoint-trace-shadow: rgba(217, 70, 239, 0.2);
+
+    /* Clip-range orange thumbs */
+    --clip-thumb-bg:     linear-gradient(180deg, rgba(251, 146, 60, 0.95) 0%, rgba(249, 115, 22, 0.92) 100%);
+    --clip-thumb-border: rgba(253, 186, 116, 0.95);
+    --clip-thumb-shadow: rgba(249, 115, 22, 0.2);
 }
 
 /* Local CAN Mode Mid-Blue Theme */
-body.theme-local-can {
+.theme-local-can {
     --color-background: #0c0e11;
     --color-sidebar: #171c26;
     --color-sidebarfg: #8aa1c9;
@@ -143,7 +195,7 @@ body.theme-local-can {
 }
 
 /* Light Mode Theme */
-body.theme-light {
+.theme-light {
     /* Page background — medium gray so elevated cards visually "lift" off it */
     --color-background: #dde1e8;
     /* Sidebar and nav — slightly lighter than page */
@@ -161,10 +213,10 @@ body.theme-light {
     --color-banner-button: #475569;
     --color-banner-button-hover: #334155;
 
-    --color-text-primary: #1e293b;
+    --color-text-primary: #334155;
     --color-text-secondary: #475569;
     --color-text-muted: #94a3b8;
-    --color-text-heading: #0f172a;
+    --color-text-heading: #1e293b;
     --color-border: rgba(0, 0, 0, 0.1);
     --color-border-strong: rgba(0, 0, 0, 0.18);
     --color-border-subtle: rgba(0, 0, 0, 0.06);
@@ -185,6 +237,53 @@ body.theme-light {
 
     --color-floating-bg: #eaecf0;
     --color-floating-bg-hover: #dde1e8;
+
+    /* Pill / chip tokens — light mode: stronger tint, darker text for AA contrast on white cards */
+    --pill-primary-bg:    rgba(168, 85, 247, 0.12);
+    --pill-primary-border: rgba(126, 34, 206, 0.45);
+    --pill-primary-fg:    #6b21a8;
+
+    --pill-success-bg:    rgba(34, 197, 94, 0.14);
+    --pill-success-border: rgba(21, 128, 61, 0.45);
+    --pill-success-fg:    #166534;
+
+    --pill-warning-bg:    rgba(234, 179, 8, 0.18);
+    --pill-warning-border: rgba(180, 83, 9, 0.45);
+    --pill-warning-fg:    #854d0e;
+
+    --pill-danger-bg:     rgba(239, 68, 68, 0.14);
+    --pill-danger-border: rgba(185, 28, 28, 0.45);
+    --pill-danger-fg:     #991b1b;
+
+    --pill-active-bg:     rgba(147, 51, 234, 0.22);
+    --pill-active-border: rgba(126, 34, 206, 0.6);
+    --pill-active-fg:     #581c87;
+
+    --pill-subtle-bg:     rgba(15, 23, 42, 0.04);
+
+    --chip-live-bg:       linear-gradient(135deg, rgba(187, 247, 208, 0.85) 0%, rgba(134, 239, 172, 0.7) 100%);
+    --chip-live-border:   rgba(21, 128, 61, 0.55);
+    --chip-live-fg:       #14532d;
+    --chip-paused-bg:     linear-gradient(135deg, rgba(254, 215, 170, 0.85) 0%, rgba(253, 186, 116, 0.7) 100%);
+    --chip-paused-border: rgba(180, 83, 9, 0.55);
+    --chip-paused-fg:     #7c2d12;
+
+    /* Range — keep purple thumb but lighter track and stronger thumb edge */
+    --range-track-bg:     linear-gradient(90deg, rgba(148, 163, 184, 0.45) 0%, rgba(168, 85, 247, 0.45) 100%);
+    --range-thumb-bg:     radial-gradient(circle at 35% 35%, #c4b5fd 0%, #a855f7 45%, #6b21a8 100%);
+    --range-thumb-border: #ffffff;
+    --range-thumb-shadow: 0 0 0 4px rgba(168, 85, 247, 0.18), 0 2px 6px rgba(0, 0, 0, 0.18);
+
+    --checkpoint-bg:      radial-gradient(circle at 35% 35%, #fde68a 0%, #f59e0b 65%, #92400e 100%);
+    --checkpoint-border:  #92400e;
+    --checkpoint-shadow:  rgba(245, 158, 11, 0.28);
+    --checkpoint-trace-bg: radial-gradient(circle at 35% 35%, #f0abfc 0%, #d946ef 55%, #6b21a8 100%);
+    --checkpoint-trace-border: #6b21a8;
+    --checkpoint-trace-shadow: rgba(217, 70, 239, 0.28);
+
+    --clip-thumb-bg:      linear-gradient(180deg, rgba(249, 115, 22, 0.95) 0%, rgba(194, 65, 12, 0.95) 100%);
+    --clip-thumb-border:  #7c2d12;
+    --clip-thumb-shadow:  rgba(249, 115, 22, 0.28);
 }
 
 body {
@@ -432,39 +531,12 @@ p {
     transform: none;
 }
 
-.trace-btn-primary {
-    background: rgba(168, 85, 247, 0.16);
-    border-color: rgba(168, 85, 247, 0.45);
-    color: #e9d5ff;
-}
-
-.trace-btn-success {
-    background: rgba(34, 197, 94, 0.14);
-    border-color: rgba(34, 197, 94, 0.35);
-    color: #bbf7d0;
-}
-
-.trace-btn-subtle {
-    background: rgba(255, 255, 255, 0.04);
-}
-
-.trace-btn-active {
-    background: rgba(147, 51, 234, 0.3);
-    border-color: rgba(192, 132, 252, 0.5);
-    color: #e9d5ff;
-}
-
-.trace-btn-warning {
-    background: rgba(234, 179, 8, 0.16);
-    border-color: rgba(250, 204, 21, 0.4);
-    color: #fde047;
-}
-
-.trace-btn-danger {
-    background: rgba(239, 68, 68, 0.14);
-    border-color: rgba(248, 113, 113, 0.38);
-    color: #fda4af;
-}
+.trace-btn-primary { background: var(--pill-primary-bg); border-color: var(--pill-primary-border); color: var(--pill-primary-fg); }
+.trace-btn-success { background: var(--pill-success-bg); border-color: var(--pill-success-border); color: var(--pill-success-fg); }
+.trace-btn-subtle  { background: var(--pill-subtle-bg); }
+.trace-btn-active  { background: var(--pill-active-bg); border-color: var(--pill-active-border); color: var(--pill-active-fg); }
+.trace-btn-warning { background: var(--pill-warning-bg); border-color: var(--pill-warning-border); color: var(--pill-warning-fg); }
+.trace-btn-danger  { background: var(--pill-danger-bg); border-color: var(--pill-danger-border); color: var(--pill-danger-fg); }
 
 /* Backward-compatible aliases while transitioning existing components */
 .timeline-btn {
@@ -495,21 +567,12 @@ p {
     transform: none;
 }
 
-.timeline-btn-primary {
-    background: rgba(168, 85, 247, 0.16);
-    border-color: rgba(168, 85, 247, 0.45);
-    color: #e9d5ff;
-}
-
-.timeline-btn-success {
-    background: rgba(34, 197, 94, 0.14);
-    border-color: rgba(34, 197, 94, 0.35);
-    color: #bbf7d0;
-}
-
-.timeline-btn-subtle {
-    background: rgba(255, 255, 255, 0.04);
-}
+.timeline-btn-primary { background: var(--pill-primary-bg); border-color: var(--pill-primary-border); color: var(--pill-primary-fg); }
+.timeline-btn-success { background: var(--pill-success-bg); border-color: var(--pill-success-border); color: var(--pill-success-fg); }
+.timeline-btn-warning { background: var(--pill-warning-bg); border-color: var(--pill-warning-border); color: var(--pill-warning-fg); }
+.timeline-btn-danger  { background: var(--pill-danger-bg); border-color: var(--pill-danger-border); color: var(--pill-danger-fg); }
+.timeline-btn-active  { background: var(--pill-active-bg); border-color: var(--pill-active-border); color: var(--pill-active-fg); }
+.timeline-btn-subtle  { background: var(--pill-subtle-bg); }
 
 .timeline-chip {
     border-radius: 9999px;
@@ -521,17 +584,8 @@ p {
     text-transform: uppercase;
 }
 
-.timeline-chip-live {
-    color: #86efac;
-    border-color: rgba(74, 222, 128, 0.42);
-    background: linear-gradient(135deg, rgba(20, 83, 45, 0.5) 0%, rgba(22, 101, 52, 0.36) 100%);
-}
-
-.timeline-chip-paused {
-    color: #fcd34d;
-    border-color: rgba(251, 191, 36, 0.44);
-    background: linear-gradient(135deg, rgba(120, 53, 15, 0.48) 0%, rgba(146, 64, 14, 0.34) 100%);
-}
+.timeline-chip-live   { color: var(--chip-live-fg);   border-color: var(--chip-live-border);   background: var(--chip-live-bg); }
+.timeline-chip-paused { color: var(--chip-paused-fg); border-color: var(--chip-paused-border); background: var(--chip-paused-bg); }
 
 .timeline-range {
     -webkit-appearance: none;
@@ -551,7 +605,7 @@ p {
 .timeline-range::-webkit-slider-runnable-track {
     height: 22px;
     border-radius: 9999px;
-    background: linear-gradient(90deg, rgba(71, 85, 105, 0.5) 0%, rgba(88, 28, 135, 0.55) 100%);
+    background: var(--range-track-bg);
 }
 
 .timeline-range::-webkit-slider-thumb {
@@ -559,34 +613,34 @@ p {
     width: 16px;
     height: 16px;
     border-radius: 9999px;
-    border: 2px solid rgba(255, 255, 255, 0.9);
-    background: radial-gradient(circle at 35% 35%, #c4b5fd 0%, #a855f7 45%, #7e22ce 100%);
+    border: 2px solid var(--range-thumb-border);
+    background: var(--range-thumb-bg);
     margin-top: 3px;
-    box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.2), 0 4px 10px rgba(0, 0, 0, 0.35);
+    box-shadow: var(--range-thumb-shadow);
 }
 
 .timeline-range::-moz-range-track {
     height: 22px;
     border-radius: 9999px;
-    background: linear-gradient(90deg, rgba(71, 85, 105, 0.5) 0%, rgba(88, 28, 135, 0.55) 100%);
+    background: var(--range-track-bg);
 }
 
 .timeline-range::-moz-range-thumb {
     width: 16px;
     height: 16px;
     border-radius: 9999px;
-    border: 2px solid rgba(255, 255, 255, 0.9);
-    background: radial-gradient(circle at 35% 35%, #c4b5fd 0%, #a855f7 45%, #7e22ce 100%);
-    box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.2), 0 4px 10px rgba(0, 0, 0, 0.35);
+    border: 2px solid var(--range-thumb-border);
+    background: var(--range-thumb-bg);
+    box-shadow: var(--range-thumb-shadow);
 }
 
 .timeline-checkpoint {
     width: 12px;
     height: 12px;
     border-radius: 9999px;
-    border: 1px solid rgba(255, 243, 205, 0.95);
-    background: radial-gradient(circle at 35% 35%, #fde68a 0%, #f59e0b 65%, #b45309 100%);
-    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+    border: 1px solid var(--checkpoint-border);
+    background: var(--checkpoint-bg);
+    box-shadow: 0 0 0 3px var(--checkpoint-shadow);
     transition: transform 120ms ease, box-shadow 120ms ease;
 }
 
@@ -621,9 +675,9 @@ p {
     height: 20px;
     margin-top: 1px;
     border-radius: 4px 2px 2px 4px;
-    border: 1px solid rgba(253, 186, 116, 0.95);
-    background: linear-gradient(180deg, rgba(251, 146, 60, 0.95) 0%, rgba(249, 115, 22, 0.92) 100%);
-    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
+    border: 1px solid var(--clip-thumb-border);
+    background: var(--clip-thumb-bg);
+    box-shadow: 0 0 0 3px var(--clip-thumb-shadow);
 }
 
 .timeline-range-clip-end::-webkit-slider-thumb {
@@ -633,9 +687,9 @@ p {
     height: 20px;
     margin-top: 1px;
     border-radius: 2px 4px 4px 2px;
-    border: 1px solid rgba(253, 186, 116, 0.95);
-    background: linear-gradient(180deg, rgba(251, 146, 60, 0.95) 0%, rgba(249, 115, 22, 0.92) 100%);
-    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
+    border: 1px solid var(--clip-thumb-border);
+    background: var(--clip-thumb-bg);
+    box-shadow: 0 0 0 3px var(--clip-thumb-shadow);
 }
 
 .timeline-range-clip-start::-moz-range-thumb,
@@ -644,17 +698,17 @@ p {
     width: 12px;
     height: 20px;
     border-radius: 3px;
-    border: 1px solid rgba(253, 186, 116, 0.95);
-    background: linear-gradient(180deg, rgba(251, 146, 60, 0.95) 0%, rgba(249, 115, 22, 0.92) 100%);
-    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
+    border: 1px solid var(--clip-thumb-border);
+    background: var(--clip-thumb-bg);
+    box-shadow: 0 0 0 3px var(--clip-thumb-shadow);
 }
 
 .timeline-checkpoint-trace {
     width: 10px;
     height: 10px;
-    border-color: rgba(217, 70, 239, 0.92);
-    background: radial-gradient(circle at 35% 35%, #f0abfc 0%, #d946ef 55%, #86198f 100%);
-    box-shadow: 0 0 0 3px rgba(217, 70, 239, 0.2);
+    border-color: var(--checkpoint-trace-border);
+    background: var(--checkpoint-trace-bg);
+    box-shadow: 0 0 0 3px var(--checkpoint-trace-shadow);
 }
 
 .timeline-checkpoint-active {
@@ -663,9 +717,9 @@ p {
 }
 
 .timeline-checkpoint-chip-active {
-    background: rgba(147, 51, 234, 0.28);
-    color: #f5d0fe;
-    border-color: rgba(217, 70, 239, 0.55);
+    background: var(--pill-active-bg);
+    color: var(--pill-active-fg);
+    border-color: var(--pill-active-border);
 }
 
 .timeline-checkpoint:hover {
@@ -700,93 +754,95 @@ p {
    ========================================================= */
 
 /* Default body text color */
-body.theme-light { color: var(--color-text-primary); }
+.theme-light { color: var(--color-text-primary); }
 
 /* --- Text overrides (0,2,0 specificity + !important) --- */
-body.theme-light .text-white     { color: var(--color-text-primary) !important; }
-body.theme-light .text-slate-50,
-body.theme-light .text-slate-100 { color: var(--color-slate-100) !important; }
-body.theme-light .text-slate-200 { color: var(--color-slate-200) !important; }
-body.theme-light .text-slate-300 { color: var(--color-slate-300) !important; }
-body.theme-light .text-slate-400 { color: var(--color-slate-400) !important; }
-body.theme-light .text-slate-500 { color: var(--color-slate-500) !important; }
-body.theme-light .text-gray-100  { color: var(--color-gray-100) !important; }
-body.theme-light .text-gray-200  { color: var(--color-gray-200) !important; }
-body.theme-light .text-gray-300  { color: var(--color-gray-300) !important; }
-body.theme-light .text-gray-400  { color: var(--color-gray-400) !important; }
-body.theme-light .text-gray-500  { color: var(--color-gray-500) !important; }
-body.theme-light .text-zinc-700  { color: var(--color-gray-700) !important; }
-body.theme-light .text-zinc-800  { color: var(--color-gray-800) !important; }
-body.theme-light .text-neutral-300 { color: var(--color-neutral-300) !important; }
-body.theme-light .text-neutral-400 { color: var(--color-neutral-400) !important; }
-body.theme-light .text-stone-300 { color: var(--color-stone-300) !important; }
-body.theme-light .text-stone-400 { color: var(--color-stone-400) !important; }
+.theme-light .text-white     { color: var(--color-text-primary) !important; }
+.theme-light .text-slate-50,
+.theme-light .text-slate-100 { color: var(--color-slate-100) !important; }
+.theme-light .text-slate-200 { color: var(--color-slate-200) !important; }
+.theme-light .text-slate-300 { color: var(--color-slate-300) !important; }
+.theme-light .text-slate-400 { color: var(--color-slate-400) !important; }
+.theme-light .text-slate-500 { color: var(--color-slate-500) !important; }
+.theme-light .text-gray-100  { color: var(--color-gray-100) !important; }
+.theme-light .text-gray-200  { color: var(--color-gray-200) !important; }
+.theme-light .text-gray-300  { color: var(--color-gray-300) !important; }
+.theme-light .text-gray-400  { color: var(--color-gray-400) !important; }
+.theme-light .text-gray-500  { color: var(--color-gray-500) !important; }
+.theme-light .text-zinc-700  { color: var(--color-gray-700) !important; }
+.theme-light .text-zinc-800  { color: var(--color-gray-800) !important; }
+.theme-light .text-neutral-300 { color: var(--color-neutral-300) !important; }
+.theme-light .text-neutral-400 { color: var(--color-neutral-400) !important; }
+.theme-light .text-stone-300 { color: var(--color-stone-300) !important; }
+.theme-light .text-stone-400 { color: var(--color-stone-400) !important; }
 
 /* --- White text restoration for intentionally dark containers ---
    Specificity 0,3,0 beats the 0,2,0 overrides above, even with
    both !important. Higher specificity wins at equal importance level. */
-body.theme-light .bg-dropdown-menu-bg.text-white,
-body.theme-light .bg-dropdown-menu-bg .text-white,
-body.theme-light .bg-dropdown-menu-bg .text-gray-300,
-body.theme-light .bg-dropdown-menu-bg .text-slate-100,
-body.theme-light .bg-dropdown-menu-bg .text-slate-200,
-body.theme-light .bg-dropdown-menu-bg .text-slate-300 { color: white !important; }
-body.theme-light .bg-dropdown-menu-secondary.text-white,
-body.theme-light .bg-dropdown-menu-secondary .text-white { color: white !important; }
-body.theme-light .bg-banner-button.text-white,
-body.theme-light .bg-banner-button .text-white           { color: white !important; }
+.theme-light .bg-dropdown-menu-bg.text-white,
+.theme-light .bg-dropdown-menu-bg .text-white,
+.theme-light .bg-dropdown-menu-bg .text-gray-300,
+.theme-light .bg-dropdown-menu-bg .text-slate-100,
+.theme-light .bg-dropdown-menu-bg .text-slate-200,
+.theme-light .bg-dropdown-menu-bg .text-slate-300 { color: white !important; }
+.theme-light .bg-dropdown-menu-secondary.text-white,
+.theme-light .bg-dropdown-menu-secondary .text-white { color: white !important; }
+.theme-light .bg-banner-button.text-white,
+.theme-light .bg-banner-button .text-white           { color: white !important; }
 
 /* --- Background overrides (0,2,0 + !important) --- */
-body.theme-light .bg-slate-900 { background-color: var(--color-slate-800) !important; }
-body.theme-light .bg-slate-800 { background-color: var(--color-slate-700) !important; }
-body.theme-light .bg-slate-700 { background-color: var(--color-slate-600) !important; }
-body.theme-light .bg-gray-900  { background-color: var(--color-gray-800) !important; }
-body.theme-light .bg-gray-800  { background-color: var(--color-gray-700) !important; }
-body.theme-light .bg-gray-700  { background-color: var(--color-gray-600) !important; }
-body.theme-light .bg-zinc-800  { background-color: var(--color-zinc-700) !important; }
-body.theme-light .bg-zinc-700  { background-color: var(--color-zinc-600) !important; }
-body.theme-light .bg-black\/60 { background-color: rgba(0,0,0,0.4) !important; }
-body.theme-light .bg-black\/80 { background-color: rgba(0,0,0,0.5) !important; }
-body.theme-light .bg-black\/40 { background-color: rgba(0,0,0,0.2) !important; }
-body.theme-light .bg-black\/20 { background-color: rgba(0,0,0,0.1) !important; }
-body.theme-light .bg-black\/50 { background-color: rgba(0,0,0,0.25) !important; }
+.theme-light .bg-slate-900 { background-color: var(--color-slate-800) !important; }
+.theme-light .bg-slate-800 { background-color: var(--color-slate-700) !important; }
+.theme-light .bg-slate-700 { background-color: var(--color-slate-600) !important; }
+.theme-light .bg-gray-900  { background-color: var(--color-gray-800) !important; }
+.theme-light .bg-gray-800  { background-color: var(--color-gray-700) !important; }
+.theme-light .bg-gray-700  { background-color: var(--color-gray-600) !important; }
+.theme-light .bg-zinc-800  { background-color: var(--color-zinc-700) !important; }
+.theme-light .bg-zinc-700  { background-color: var(--color-zinc-600) !important; }
+.theme-light .bg-black\/60 { background-color: rgba(0,0,0,0.4) !important; }
+.theme-light .bg-black\/80 { background-color: rgba(0,0,0,0.5) !important; }
+.theme-light .bg-black\/40 { background-color: rgba(0,0,0,0.2) !important; }
+.theme-light .bg-black\/20 { background-color: rgba(0,0,0,0.1) !important; }
+.theme-light .bg-black\/50 { background-color: rgba(0,0,0,0.25) !important; }
 
 /* --- Border overrides (0,2,0 + !important) --- */
-body.theme-light .border-slate-700  { border-color: var(--color-slate-300) !important; }
-body.theme-light .border-gray-700   { border-color: var(--color-gray-400) !important; }
-body.theme-light .border-gray-600   { border-color: var(--color-gray-400) !important; }
-body.theme-light .border-zinc-700   { border-color: var(--color-zinc-400) !important; }
-body.theme-light .border-white      { border-color: var(--color-gray-300) !important; }
-body.theme-light .border-white\/10  { border-color: rgba(0,0,0,0.15) !important; }
-body.theme-light .border-white\/20  { border-color: rgba(0,0,0,0.2) !important; }
-body.theme-light .border-white\/5   { border-color: rgba(0,0,0,0.08) !important; }
+.theme-light .border-slate-700  { border-color: var(--color-slate-300) !important; }
+.theme-light .border-gray-700   { border-color: var(--color-gray-400) !important; }
+.theme-light .border-gray-600   { border-color: var(--color-gray-400) !important; }
+.theme-light .border-zinc-700   { border-color: var(--color-zinc-400) !important; }
+.theme-light .border-white      { border-color: var(--color-gray-300) !important; }
+.theme-light .border-white\/10  { border-color: rgba(0,0,0,0.15) !important; }
+.theme-light .border-white\/20  { border-color: rgba(0,0,0,0.2) !important; }
+.theme-light .border-white\/5   { border-color: rgba(0,0,0,0.08) !important; }
 
 /* Divider pseudo-element */
-body.theme-light .after\:bg-white::after { background-color: var(--color-border) !important; }
+.theme-light .after\:bg-white::after { background-color: var(--color-border) !important; }
 
 /* --- Elevated card feel in light mode ---
    bg-data-module-bg and bg-sidebar are the main container classes.
    Give them a white background + subtle shadow so they lift off the
    gray page background. Rounded containers also get a border. */
-body.theme-light .bg-data-module-bg {
+.theme-light .bg-data-module-bg {
     box-shadow: var(--shadow-card);
 }
-body.theme-light .bg-sidebar {
+.theme-light .bg-sidebar {
     box-shadow: var(--shadow-card-sm);
 }
 /* Timeline, toolbar, and panel wrappers that use rounded-md / rounded-lg */
-body.theme-light .bg-data-module-bg.rounded-md,
-body.theme-light .bg-data-module-bg.rounded-lg,
-body.theme-light .bg-data-module-bg.rounded-xl {
+.theme-light .bg-data-module-bg.rounded-md,
+.theme-light .bg-data-module-bg.rounded-lg,
+.theme-light .bg-data-module-bg.rounded-xl {
     border: 1px solid rgba(0,0,0,0.07);
 }
-body.theme-light .bg-sidebar.rounded-sm,
-body.theme-light .bg-sidebar.rounded-md,
-body.theme-light .bg-sidebar.rounded-lg {
+.theme-light .bg-sidebar.rounded-sm,
+.theme-light .bg-sidebar.rounded-md,
+.theme-light .bg-sidebar.rounded-lg {
     border: 1px solid rgba(0,0,0,0.07);
 }
 
-/* Timeline box should have a faint blue-grey tint in light mode */
-body.theme-light .timeline-box {
-    background-color: rgba(71, 85, 105, 0.10) !important; /* slate-600 with alpha */
+/* Timeline card: white with shadow so it lifts off the gray page */
+.theme-light .timeline-box {
+    background-color: #ffffff !important;
+    border: 1px solid rgba(15, 23, 42, 0.08) !important;
+    box-shadow: var(--shadow-card) !important;
 }

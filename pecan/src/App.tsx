@@ -45,15 +45,6 @@ function App() {
   const { session, loadConfig } = useRemoteConfig();
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem("pecan:theme");
-    if (savedTheme === "light") {
-      document.body.classList.add("theme-light");
-    } else if (savedTheme === "internal" || (!savedTheme && import.meta.env.VITE_INTERNAL)) {
-      document.body.classList.add("theme-internal");
-    }
-  }, []);
-
-  useEffect(() => {
     const fetchConfig = async () => {
       if (session?.user) {
         const cloudConfig = await loadConfig();

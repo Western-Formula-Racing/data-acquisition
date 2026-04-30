@@ -1,10 +1,21 @@
-import banner from "../assets/banner.png";
+import logo from "../assets/logo.png";
+import logoLight from "../assets/logo_light.png";
 import settings from "../assets/settings.png";
 import avatar from "../assets/avatar.png";
 import SidebarOption from "./SidebarOption";
 import { NavLink } from "react-router";
-import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
+
+function useThemeLogo() {
+  const { theme, resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return logo;
+  const active = resolvedTheme ?? theme;
+  return active === "light" ? logoLight : logo;
+}
 
 interface InputProps {
   isOpen: boolean;
@@ -14,6 +25,7 @@ interface InputProps {
 }
 
 function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<InputProps>) {
+  const logoSrc = useThemeLogo();
 
   // Define the paths that belong to the Vehicle Control group
   const controlPaths = ["/throttle-mapper", "/sensor-validator", "/can-transmitter", "/tx"];
@@ -61,7 +73,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
             {/* When clicking the image the sidebar collapses, we'll see if we'll keep it that */}
             {/* NavLink for semantic purposes, clicking image goes home and closes sidebar */}
             <NavLink onClick={onClose} to={"/"}>
-              <img className="my-10 cursor-pointer" src={banner} alt="banner" />
+              <img className="my-10 cursor-pointer" src={logoSrc} alt="logo" />
             </NavLink>
             {/* Could create a global function to close the sidebar and use it in the component rather than passing onClose in every time */}
             <ul className="p-0">

@@ -16,9 +16,9 @@ import { useSerialStatus } from "../lib/useSerialStatus";
 import NotNotGame from "./NotNotGame";
 import { useDataStoreControls } from "../lib/useDataStore";
 import { DbcSelector } from "./DbcSelector";
+import { useTheme } from "next-themes";
 
 const RETENTION_STORAGE_KEY = "pecan:retention-window-ms";
-const THEME_STORAGE_KEY = "pecan:theme";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -155,10 +155,8 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
         return Number.isFinite(parsed) ? parsed : 30 * 60 * 1000;
     });
 
-    const [theme, setTheme] = useState<"dark" | "light">(() => {
-        const saved = localStorage.getItem(THEME_STORAGE_KEY);
-        return saved === "light" ? "light" : "dark";
-    });
+    const { theme: nextTheme, setTheme } = useTheme();
+    const theme: "dark" | "light" = nextTheme === "light" ? "light" : "dark";
 
     const { session, loadConfig, saveConfig } = useRemoteConfig();
     const [categoryText, setCategoryText] = useState("");
@@ -437,32 +435,16 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button
-                                        onClick={() => {
-                                            const next = "dark";
-                                            setTheme(next);
-                                            localStorage.setItem(THEME_STORAGE_KEY, next);
-                                            document.body.classList.remove("theme-light");
-                                        }}
+                                        onClick={() => setTheme("dark")}
                                         className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${theme === "dark" ? "bg-blue-600 border-blue-500 text-white" : "border-gray-500 text-gray-400 hover:border-gray-300 hover:text-gray-200"}`}
                                     >
                                         Dark
                                     </button>
                                     <button
-                                        onClick={() => {
-                                            const next = "light";
-                                            setTheme(next);
-                                            localStorage.setItem(THEME_STORAGE_KEY, next);
-                                            document.body.classList.remove("theme-dark");
-                                            document.body.classList.add("theme-light");
-                                        }}
+                                        onClick={() => setTheme("light")}
                                         className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${theme === "light" ? "bg-blue-600 border-blue-500 text-white" : "border-gray-500 text-gray-400 hover:border-gray-300 hover:text-gray-200"}`}
                                     >
-                                        <span className="flex items-center gap-2">
-                                            Light
-                                            <span className="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/40 font-mono tracking-wider">
-                                                DEV
-                                            </span>
-                                        </span>
+                                        Light
                                     </button>
                                 </div>
                             </div>
