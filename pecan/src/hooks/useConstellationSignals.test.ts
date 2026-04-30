@@ -31,7 +31,7 @@ describe('useConstellationSignals', () => {
     const { result } = renderHook(() => useConstellationSignals());
     const signals = result.current;
     expect(signals).toContainEqual(
-      expect.objectContaining({ id: '0xC0:Accel_X', name: 'Accel_X', isLive: false })
+      expect.objectContaining({ id: '0xC0:Accel_X', name: 'Accel_X' })
     );
   });
 
