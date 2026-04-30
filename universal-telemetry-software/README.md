@@ -291,20 +291,21 @@ v4l2-ctl --device /dev/video0 --set-ctrl focus_absolute=40
 
 ## Remote Viewing via WebSocket Relay
 
-The base station can publish the live telemetry WebSocket through a downlink-only relay on port `9089`. The relay connects upstream to the normal local WebSocket (`9080`) and rebroadcasts frames to viewers; downstream messages are not forwarded back to the car or base station.
+The base station or car can publish the live telemetry WebSocket through a downlink-only relay on port `9089`. The relay connects upstream to the normal local WebSocket (`9080`) and rebroadcasts frames to viewers; downstream messages are not forwarded back to the car or base station.
 
 ### Enable the relay
 
-For the MacBook base stack this is already enabled in `deploy/docker-compose.macbook-base.yml`:
+For the MacBook base stack this is already enabled in `deploy/docker-compose.macbook-base.yml`. For the car, `deploy/car-telemetry.service` enables the same relay on loopback port `9089` so Cloudflared can publish it over LTE as `wss://`.
 
 ```yaml
 ENABLE_WS_RELAY=true
 RELAY_UPSTREAM_WS=ws://127.0.0.1:9080
+RELAY_LISTEN_HOST=127.0.0.1
 RELAY_LISTEN_PORT=9089
 RELAY_TOKEN=<optional passcode>
 ```
 
-You can set or change the token from the status page at `http://localhost:8080`. Tokens saved from the UI take effect for new relay connections immediately.
+You can set or change the MacBook token from the status page at `http://localhost:8080`. On the car, leave `RELAY_TOKEN` unset unless you want a query-string token for the Cloudflare URL.
 
 Local viewers can connect to:
 
@@ -316,24 +317,29 @@ ws://<base-station-ip>:9089?token=<token>
 
 Cloudflare Tunnel is the recommended way to expose the relay as secure `wss://` without opening inbound firewall ports.
 
-Install and log in:
+Install and log in. On the car Pi, `setup.sh` installs `cloudflared`; initial tunnel setup is interactive:
 
 ```bash
-brew install cloudflared
 cloudflared tunnel login
 ```
 
-Create a tunnel:
+On the car Pi, the helper creates/routes the tunnel, installs the service, prints the final URL, and saves it to `~/Desktop/daq-car-lte-wss-url.txt`:
+
+```bash
+sudo deploy/setup-car-lte-cloudflare.sh daq-car-lte.example.com
+```
+
+Create a tunnel manually:
 
 ```bash
 cloudflared tunnel create daq-ws-relay
 ```
 
-Create `~/.cloudflared/config.yml`:
+Create `~/.cloudflared/config.yml` on Mac, or `/etc/cloudflared/config.yml` on the car Pi:
 
 ```yaml
 tunnel: <tunnel-id-or-name>
-credentials-file: /Users/<you>/.cloudflared/<tunnel-id>.json
+credentials-file: /home/car/.cloudflared/<tunnel-id>.json
 
 ingress:
   - hostname: daq-relay.example.com

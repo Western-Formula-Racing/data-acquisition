@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+from pathlib import Path
 
 import pytest
 import websockets
@@ -49,6 +50,15 @@ def test_token_ok():
 def test_token_from_path():
     assert _token_from_request_path("/?token=hello") == "hello"
     assert _token_from_request_path("/chat?token=sekret&x=1") == "sekret"
+
+
+def test_car_lte_relay_env_contract():
+    service = (Path(__file__).resolve().parents[1] / "deploy/car-telemetry.service").read_text(encoding="utf-8")
+
+    assert "Environment=ENABLE_WS_RELAY=true" in service
+    assert "Environment=RELAY_UPSTREAM_WS=ws://127.0.0.1:9080" in service
+    assert "Environment=RELAY_LISTEN_HOST=127.0.0.1" in service
+    assert "Environment=RELAY_LISTEN_PORT=9089" in service
 
 
 @pytest.mark.asyncio

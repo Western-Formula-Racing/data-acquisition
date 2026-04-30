@@ -3,6 +3,7 @@
 # Runs the Python telemetry stack directly on the car Pi (no Docker, no Redis).
 # Car reads CAN, sends UDP to base, serves TCP resend buffer, and runs a local
 # WebSocket bridge (port 9080) for direct PECAN connections when hotspotted.
+# Also starts a downlink-only relay on port 9089 for Cloudflared/LTE WSS access.
 #
 # Off-the-shelf CAN HAT mode: set OFF_THE_SHELF=true to disable PoE and LED
 # services that depend on custom hardware (our PoE injection board / status LEDs).
@@ -29,6 +30,11 @@ Environment=UDP_PORT=5005
 Environment=TCP_PORT=5006
 Environment=REDIS_URL=redis://127.0.0.1:6379/0
 Environment=WS_PORT=9080
+Environment=ENABLE_WS_RELAY=true
+Environment=RELAY_UPSTREAM_WS=ws://127.0.0.1:9080
+Environment=RELAY_LISTEN_HOST=127.0.0.1
+Environment=RELAY_LISTEN_PORT=9089
+Environment=RELAY_REQUIRE_TOKEN_ON_LAN=false
 Environment=STATUS_PORT=8080
 Environment=SIMULATE=false
 Environment=ENABLE_VIDEO=true

@@ -23,7 +23,7 @@ The PECAN frontend auto-selects the URL based on `window.location`:
 
 ---
 
-## WebSocket relay (optional, laptop / base station)
+## WebSocket relay (optional, laptop base station / car LTE)
 
 **Module**: `universal-telemetry-software/src/ws_relay.py`  
 **Default listen**: `ws://0.0.0.0:9089`  
@@ -49,7 +49,7 @@ Or set **`ENABLE_WS_RELAY=true`** so `main.py` starts the relay as a child proce
 
 **Downlink-only**: the relay does not forward `can_send` / `can_send_batch` (or other uplink) to the upstream server; it only republishes upstream text frames to all downstream clients. Clients may send `{"type":"ping",...}` and receive `pong`.
 
-**Cloudflare Tunnel**: map `wss://ws-relay.example.com` to `http://127.0.0.1:9089`. Browsers use `wss://ws-relay.example.com/?token=...`. LAN viewers can use `ws://<laptop-LAN>:9089` with no token (default).
+**Cloudflare Tunnel**: map `wss://ws-relay.example.com` to `http://127.0.0.1:9089`. On the car, `car-telemetry.service` enables this relay by default for LTE. Browsers use `wss://ws-relay.example.com` when no `RELAY_TOKEN` is set, or `wss://ws-relay.example.com/?token=...` when a token is configured.
 
 ---
 

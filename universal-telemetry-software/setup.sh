@@ -4,7 +4,7 @@
 # Covers: system packages, GStreamer/gi bindings, CAN kernel modules,
 # MCP2517FD device tree overlay (20 MHz crystal), can0 boot service,
 # uv install, Python venv, car-telemetry systemd service,
-# static IP on eth0, WiFi routing priority, Tailscale, NoMachine.
+# static IP on eth0, WiFi routing priority, Cloudflared, Tailscale, NoMachine.
 #
 # Usage: sudo ./setup.sh [--car | --base]
 #   --car   non-interactive car setup  (10.71.1.10, remote 10.71.1.20)
@@ -80,6 +80,18 @@ apt-get install -y \
     gstreamer1.0-plugins-good \
     curl
 ok "System packages installed"
+
+if ! command -v cloudflared &>/dev/null; then
+    hdr "Cloudflared"
+    mkdir -p /usr/share/keyrings
+    curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+    echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main" > /etc/apt/sources.list.d/cloudflared.list
+    apt-get update -qq
+    apt-get install -y cloudflared
+    ok "Cloudflared installed"
+else
+    ok "Cloudflared already installed ($(cloudflared --version | head -1))"
+fi
 
 # ── 2. CAN kernel modules ─────────────────────────────────────────────────────
 hdr "CAN kernel modules"
@@ -258,8 +270,9 @@ echo -e "  WiFi:          default route (eth0 has no gateway)"
 echo -e "  Git hash:      $GIT_HASH"
 echo ""
 echo -e "  ${YELLOW}Next steps:${NC}"
-echo -e "    sudo tailscale up          # authenticate Tailscale"
-echo -e "    sudo reboot                # activates MCP2517FD overlay"
+echo -e "    sudo deploy/setup-car-lte-cloudflare.sh <hostname>  # prints and saves WSS relay URL"
+echo -e "    sudo tailscale up                                   # authenticate Tailscale"
+echo -e "    sudo reboot                                    # activates MCP2517FD overlay"
 echo ""
 echo -e "  After reboot:"
 echo -e "    ip link show can0"

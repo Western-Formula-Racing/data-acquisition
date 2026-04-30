@@ -3,7 +3,8 @@
 The car runs the telemetry stack **natively via systemd** — no Docker, no Redis required.
 
 Minimal footprint: reads `can0`, batches UDP to the base station, serves a TCP resend buffer,
-and runs a local WebSocket bridge on port 9080 for direct PECAN connections when hotspotted.
+runs a local WebSocket bridge on port 9080, and relays that stream on loopback port 9089
+for Cloudflared/LTE `wss://` access.
 
 ---
 
@@ -28,6 +29,11 @@ sudo cp deploy/car-telemetry.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable car-telemetry
 sudo systemctl start car-telemetry
+
+# 6. Optional LTE/WSS relay through Cloudflare Tunnel
+cloudflared tunnel login
+cloudflared tunnel create daq-car-lte
+sudo cloudflared service install
 ```
 
 ---
@@ -85,6 +91,7 @@ The car sends UDP to `REMOTE_IP=10.71.1.20` (hardcoded in `car-telemetry.service
 | 8080 | HTTP | Status page (`/`, `/version`, `/set-time`) |
 | 8081 | HTTP | Video quality control — `POST /video/quality` (when `ENABLE_VIDEO=true`) |
 | 9080 | WS | PECAN WebSocket (direct connection when hotspotted) |
+| 9089 | WS | Loopback LTE relay target for Cloudflared |
 
 ## Video
 
@@ -113,19 +120,46 @@ in-process queue — no Redis needed.
 
 ---
 
+## LTE relay through Cloudflared
+
+The car service also starts a downlink-only relay on `ws://127.0.0.1:9089`. Cloudflared
+runs separately as a systemd service, connects outbound through the phone hotspot/LTE link,
+and publishes that local relay as a public `wss://` URL.
+
+Example config at `/etc/cloudflared/config.yml`:
+
+```yaml
+tunnel: daq-car-lte
+credentials-file: /home/car/.cloudflared/<tunnel-id>.json
+
+ingress:
+  - hostname: daq-car-lte.example.com
+    service: http://127.0.0.1:9089
+  - service: http_status:404
+```
+
+Initial setup is interactive:
+
+```bash
+sudo deploy/setup-car-lte-cloudflare.sh daq-car-lte.example.com
+```
+
+The script prints the final `wss://` URL and saves it to `~/Desktop/daq-car-lte-wss-url.txt` for copy/paste.
+
+PECAN can then use `wss://daq-car-lte.example.com` as its WebSocket URL. The car does not
+choose WiFi vs LAN in code; Linux routes `10.71.1.0/24` over eth0/radio and Cloudflared's
+internet connection over the phone hotspot default route.
+
+---
+
 ## Base station
 
 The base station runs via Docker. Use `docker-compose.macbook-base.yml` on a MacBook
-(full stack with TimescaleDB) or `docker-compose.rpi-base.yml` on a Pi (ephemeral, no DB):
+(full stack with TimescaleDB):
 
 ```bash
 cd universal-telemetry-software
-
-# MacBook — full stack
 docker compose -f deploy/docker-compose.macbook-base.yml up -d
-
-# Pi — lightweight
-docker compose -f deploy/docker-compose.rpi-base.yml up -d
 ```
 
 ---
