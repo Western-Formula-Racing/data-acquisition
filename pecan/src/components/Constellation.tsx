@@ -302,7 +302,7 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
 
         if (isHovered || isSelected) {
           ctx.fillStyle = '#fff';
-          ctx.font = `${Math.round(Math.max(1, 12 * s.scale))}px "Inter", sans-serif`;
+          ctx.font = `${Math.round(Math.max(1, 12 * s.scale))}px ZipSonik, system-ui, sans-serif`;
           ctx.fillText(s.name, s.sx + 14 * s.scale, s.sy - 8 * s.scale);
         }
       });
@@ -455,10 +455,10 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
   };
 
   return (
-    <div className="relative w-full h-screen bg-slate-950 overflow-hidden font-sans text-white select-none">
+    <div className="relative w-full h-screen overflow-hidden select-none" style={{ background: '#020617' }}>
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 z-0 bg-[#020617]"
+        className="absolute inset-0 z-0"
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
@@ -470,85 +470,86 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
       <div className="absolute top-0 left-0 right-0 p-8 z-10 pointer-events-none flex justify-between items-start">
         <div className="space-y-4">
           <div className="space-y-1">
-            <h1 className="text-3xl font-black tracking-tighter flex items-center gap-3 italic">
-              <Share2 className="text-blue-500" strokeWidth={3} />
-              CONSTELLATION <span className="text-blue-500/50 not-italic">V2</span>
+            <h1 className="app-menu-title flex items-center gap-3 font-[family-name:var(--font-heading)]">
+              <Share2 className="text-blue-500" strokeWidth={2.5} size={26} />
+              CONSTELLATION <span className="text-blue-500/50">V2</span>
             </h1>
-            <p className="text-slate-500 text-[10px] font-bold tracking-widest uppercase ml-11">
+            <p className="text-[10px] font-bold tracking-widest uppercase ml-[38px]" style={{ color: 'var(--color-sidebarfg)' }}>
               Western Formula Racing • Data Acquisition
             </p>
           </div>
-          
-          <div className="pointer-events-auto ml-11 flex items-center gap-6">
+
+          <div className="pointer-events-auto ml-[38px] flex items-center gap-4">
             <div className="flex items-center gap-3">
-              <button 
+              <button
                 onClick={() => setIsAutoMode(!isAutoMode)}
-                className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-[10px] font-bold tracking-widest uppercase transition-all active:scale-95 group ${isAutoMode ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_20px_rgba(37,99,235,0.4)]' : 'bg-white/5 border-white/10 text-slate-400'}`}
+                className={`trace-btn ${isAutoMode ? 'trace-btn-active' : 'trace-btn-subtle'}`}
               >
-                <Zap size={14} className={isAutoMode ? 'animate-pulse' : ''} />
+                <Zap size={13} className={isAutoMode ? 'animate-pulse' : ''} />
                 {isAutoMode ? 'Smart Discovery On' : 'Manual Mode'}
               </button>
 
               {isAutoMode && (
-                <div className="flex items-center gap-4 px-4 py-2 bg-slate-900/60 backdrop-blur-md border border-white/10 rounded-xl animate-in fade-in slide-in-from-left-2 duration-300">
+                <div className="flex items-center gap-4 px-4 py-2 backdrop-blur-md rounded-md border" style={{ background: 'var(--color-sidebar)', borderColor: 'var(--color-border)' }}>
                   <div className="flex flex-col gap-1">
-                    <div className="flex justify-between text-[8px] font-bold text-slate-500 uppercase tracking-tighter">
+                    <div className="flex justify-between text-[8px] font-bold uppercase tracking-tighter" style={{ color: 'var(--color-text-muted)' }}>
                       <span>Sensitivity</span>
                       <span>{(threshold * 100).toFixed(0)}%</span>
                     </div>
-                    <input 
-                      type="range" 
-                      min="0.5" 
-                      max="0.99" 
-                      step="0.01" 
-                      value={threshold} 
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="0.99"
+                      step="0.01"
+                      value={threshold}
                       onChange={(e) => setThreshold(parseFloat(e.target.value))}
-                      className="w-32 h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-blue-500"
+                      className="w-32 h-1 rounded-full appearance-none cursor-pointer accent-blue-500"
+                      style={{ background: 'var(--color-border)' }}
                     />
                   </div>
-                  <div className="h-4 w-px bg-white/10" />
+                  <div className="h-4 w-px" style={{ background: 'var(--color-border)' }} />
                   <div className="flex flex-col">
-                    <span className="text-[8px] font-bold text-slate-500 uppercase tracking-tighter">Matches</span>
+                    <span className="text-[8px] font-bold uppercase tracking-tighter" style={{ color: 'var(--color-text-muted)' }}>Matches</span>
                     <span className="text-xs font-mono font-bold text-blue-400">{links.length}</span>
                   </div>
                 </div>
               )}
             </div>
-            
-            <button 
+
+            <button
               onClick={() => { setLinks([]); setSelectedIds([]); setShowSidebar(false); setIsAutoMode(false); }}
-              className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] font-bold tracking-widest uppercase transition-all active:scale-95"
+              className="trace-btn"
             >
-              <RefreshCw size={14} className="text-blue-400" />
+              <RefreshCw size={13} className="text-blue-400" />
               Clear Constellation
             </button>
           </div>
         </div>
 
         {/* Legend */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-white/10 p-5 rounded-2xl pointer-events-auto shadow-2xl">
+        <div className="backdrop-blur-xl p-5 rounded-xl pointer-events-auto shadow-2xl border" style={{ background: 'var(--color-sidebar)', borderColor: 'var(--color-border)' }}>
           <div className="flex items-center gap-2 mb-4">
-            <Info size={14} className="text-slate-400" />
-            <h3 className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">System Categories</h3>
+            <Info size={13} style={{ color: 'var(--color-text-muted)' }} />
+            <h3 className="text-[10px] font-bold tracking-widest uppercase" style={{ color: 'var(--color-text-muted)' }}>System Categories</h3>
           </div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-3">
             {[...new Set(sensors.map(s => s.category))].map(cat => {
               const color = sensors.find(s => s.category === cat)?.color;
               const isDisabled = disabledCategories.has(cat);
               return (
-                <div 
-                  key={cat} 
+                <div
+                  key={cat}
                   onClick={() => toggleCategory(cat)}
                   className={`flex items-center gap-3 group cursor-pointer transition-opacity duration-300 ${isDisabled ? 'opacity-30 hover:opacity-50' : 'opacity-100'}`}
                 >
-                  <div 
-                    className="w-2.5 h-2.5 rounded-full transition-transform group-hover:scale-125" 
-                    style={{ 
-                      backgroundColor: isDisabled ? '#64748b' : color, 
-                      boxShadow: isDisabled ? 'none' : `0 0 12px ${color}` 
-                    }} 
+                  <div
+                    className="w-2.5 h-2.5 rounded-full transition-transform group-hover:scale-125 shrink-0"
+                    style={{
+                      backgroundColor: isDisabled ? 'var(--color-sidebarfg)' : color,
+                      boxShadow: isDisabled ? 'none' : `0 0 10px ${color}`
+                    }}
                   />
-                  <span className={`text-[11px] font-semibold transition-colors ${isDisabled ? 'text-slate-500' : 'text-slate-300 group-hover:text-white'}`}>
+                  <span className="text-[11px] font-semibold transition-colors" style={{ color: isDisabled ? 'var(--color-text-muted)' : 'var(--color-text-secondary)' }}>
                     {cat}
                   </span>
                 </div>
@@ -567,10 +568,10 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
         onClose={() => { setShowSidebar(false); setSelectedIds([]); }}
         onExport={onExport}
       />
-      
+
       {/* Help Interaction Prompt */}
       {!selectedIds.length && (
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 px-6 py-3 bg-white/5 backdrop-blur-md border border-white/10 rounded-full text-xs text-slate-400 font-medium tracking-wide animate-bounce">
+        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 px-6 py-3 backdrop-blur-md rounded-full text-xs font-medium tracking-wide animate-bounce border" style={{ background: 'var(--color-sidebar)', borderColor: 'var(--color-border)', color: 'var(--color-text-muted)' }}>
           Drag between stars to link systems • Click to inspect
         </div>
       )}

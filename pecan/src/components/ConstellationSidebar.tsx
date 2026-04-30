@@ -73,80 +73,84 @@ export const ConstellationSidebar: React.FC<Props> = ({
   }, [selectedNodeIds, tick]);
 
   return (
-    <div 
-      className={`fixed top-0 right-0 h-screen w-96 bg-slate-900/40 backdrop-blur-2xl border-l border-white/10 transition-transform duration-500 ease-in-out z-40 flex flex-col shadow-2xl ${isSelected ? 'translate-x-0' : 'translate-x-full'}`}
+    <div
+      className={`fixed top-0 right-0 h-screen w-96 backdrop-blur-2xl transition-transform duration-500 ease-in-out z-40 flex flex-col shadow-2xl border-l ${isSelected ? 'translate-x-0' : 'translate-x-full'}`}
+      style={{ background: 'var(--color-sidebar)', borderColor: 'var(--color-border)' }}
     >
       {/* Header */}
-      <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/5">
+      <div className="p-6 flex items-center justify-between border-b" style={{ background: 'var(--color-data-module-bg)', borderColor: 'var(--color-border-subtle)' }}>
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-blue-500/20 text-blue-400">
             <Cpu size={20} />
           </div>
           <div>
-            <h2 className="text-lg font-bold tracking-tight text-white">Node Inspector</h2>
-            <p className="text-xs text-slate-400 font-mono">
+            <h2 className="app-section-title">Node Inspector</h2>
+            <p className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>
               {selectedNodeIds.length} Linked Signals
             </p>
           </div>
         </div>
-        <button 
+        <button
           onClick={onClose}
-          className="p-2 hover:bg-white/10 rounded-full transition-colors text-slate-400 hover:text-white"
+          className="p-2 rounded-full transition-colors"
+          style={{ color: 'var(--color-text-muted)' }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--color-border)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
         >
           <X size={20} />
         </button>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-8 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+      <div className="flex-1 overflow-y-auto p-6 space-y-8 sidebar-scroll-none">
         {primaryNode && (
           <section className="space-y-4">
-            <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest text-slate-400 uppercase">
+            <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase" style={{ color: 'var(--color-text-muted)' }}>
               <Database size={12} />
               <span>Primary selection</span>
             </div>
-            <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
+            <div className="p-4 rounded-lg border space-y-3" style={{ background: 'var(--color-data-module-bg)', borderColor: 'var(--color-border)' }}>
               <div className="flex justify-between items-center">
-                <span className="text-2xl font-bold tracking-tight text-white">{primaryNode.name}</span>
-                <div 
-                  className="w-3 h-3 rounded-full animate-pulse shadow-[0_0_10px_rgba(255,255,255,0.5)]"
-                  style={{ backgroundColor: primaryNode.color, boxShadow: `0 0 15px ${primaryNode.color}` }}
+                <span className="text-xl font-bold tracking-tight" style={{ color: 'var(--color-text-primary)' }}>{primaryNode.name}</span>
+                <div
+                  className="w-3 h-3 rounded-full animate-pulse"
+                  style={{ backgroundColor: primaryNode.color, boxShadow: `0 0 12px ${primaryNode.color}` }}
                 />
               </div>
               <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
-                <div className="text-slate-500">CATEGORY</div>
-                <div className="text-white text-right">{primaryNode.category}</div>
-                <div className="text-slate-500">CAN ID</div>
-                <div className="text-white text-right">{primaryNode.id.split(':')[0]}</div>
-                <div className="text-slate-500">SIGNAL</div>
-                <div className="text-white text-right">{primaryNode.id.split(':')[1]}</div>
+                <div style={{ color: 'var(--color-text-muted)' }}>CATEGORY</div>
+                <div className="text-right" style={{ color: 'var(--color-text-primary)' }}>{primaryNode.category}</div>
+                <div style={{ color: 'var(--color-text-muted)' }}>CAN ID</div>
+                <div className="text-right" style={{ color: 'var(--color-text-primary)' }}>{primaryNode.id.split(':')[0]}</div>
+                <div style={{ color: 'var(--color-text-muted)' }}>SIGNAL</div>
+                <div className="text-right" style={{ color: 'var(--color-text-primary)' }}>{primaryNode.id.split(':')[1]}</div>
               </div>
             </div>
           </section>
         )}
 
         <section className="space-y-4">
-          <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest text-slate-400 uppercase">
+          <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase" style={{ color: 'var(--color-text-muted)' }}>
             <BarChart3 size={12} />
             <span>Telemetry Stats</span>
           </div>
-          
+
           <div className="space-y-3">
             {stats?.map((stat) => {
               const sensor = sensors.find(s => s.id === stat.id);
               return (
-                <div key={stat.id} className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-4 transition-all hover:bg-white/10 group">
+                <div key={stat.id} className="p-4 rounded-lg border space-y-4 transition-all group" style={{ background: 'var(--color-data-module-bg)', borderColor: 'var(--color-border)' }}>
                   <div className="flex justify-between items-start">
                     <div className="space-y-1">
-                      <span className="text-sm font-medium text-slate-300 group-hover:text-white transition-colors block">
+                      <span className="text-sm font-medium transition-colors block" style={{ color: 'var(--color-text-secondary)' }}>
                         {sensor?.name || stat.id}
                       </span>
                       <div className="h-10 flex items-end">
-                        <TelemetrySparkline 
-                          data={stat.history} 
-                          color={sensor?.color} 
-                          width={140} 
-                          height={30} 
+                        <TelemetrySparkline
+                          data={stat.history}
+                          color={sensor?.color}
+                          width={140}
+                          height={30}
                         />
                       </div>
                     </div>
@@ -154,23 +158,19 @@ export const ConstellationSidebar: React.FC<Props> = ({
                       <span className="text-xl font-mono font-bold block" style={{ color: sensor?.color }}>
                         {stat.current.toFixed(2)}
                       </span>
-                      <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">LIVE VALUE</span>
+                      <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'var(--color-text-muted)' }}>LIVE VALUE</span>
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="bg-white/5 rounded-lg p-2 text-center">
-                      <div className="text-[8px] text-slate-500 uppercase mb-1">Min</div>
-                      <div className="text-xs font-mono text-white">{stat.min.toFixed(1)}</div>
-                    </div>
-                    <div className="bg-white/5 rounded-lg p-2 text-center">
-                      <div className="text-[8px] text-slate-500 uppercase mb-1">Max</div>
-                      <div className="text-xs font-mono text-white">{stat.max.toFixed(1)}</div>
-                    </div>
-                    <div className="bg-white/5 rounded-lg p-2 text-center">
-                      <div className="text-[8px] text-slate-500 uppercase mb-1">Avg</div>
-                      <div className="text-xs font-mono text-white">{stat.avg.toFixed(1)}</div>
-                    </div>
+                    {(['Min', 'Max', 'Avg'] as const).map((label, i) => (
+                      <div key={label} className="rounded-md p-2 text-center" style={{ background: 'var(--color-data-textbox-bg)' }}>
+                        <div className="text-[8px] uppercase mb-1" style={{ color: 'var(--color-text-muted)' }}>{label}</div>
+                        <div className="text-xs font-mono" style={{ color: 'var(--color-text-primary)' }}>
+                          {[stat.min, stat.max, stat.avg][i].toFixed(1)}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               );
@@ -180,7 +180,7 @@ export const ConstellationSidebar: React.FC<Props> = ({
 
         {correlations.length > 0 && (
           <section className="space-y-4">
-            <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest text-slate-400 uppercase">
+            <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase" style={{ color: 'var(--color-text-muted)' }}>
               <Zap size={12} className="text-yellow-400" />
               <span>System Insights</span>
             </div>
@@ -190,28 +190,28 @@ export const ConstellationSidebar: React.FC<Props> = ({
                 const s2 = sensors.find(s => s.id === corr.id2);
                 const meta = getCorrelationMeta(corr.r);
                 return (
-                  <div key={idx} className="p-3 rounded-xl bg-white/5 border border-white/5 flex flex-col gap-2">
+                  <div key={idx} className="p-3 rounded-lg border flex flex-col gap-2" style={{ background: 'var(--color-data-module-bg)', borderColor: 'var(--color-border-subtle)' }}>
                     <div className="flex justify-between items-center text-[10px] font-mono">
-                      <span className="text-slate-400 truncate max-w-[100px]">{s1?.name}</span>
-                      <span className="text-slate-600">↔</span>
-                      <span className="text-slate-400 truncate max-w-[100px]">{s2?.name}</span>
+                      <span className="truncate max-w-[100px]" style={{ color: 'var(--color-text-muted)' }}>{s1?.name}</span>
+                      <span style={{ color: 'var(--color-border-strong)' }}>↔</span>
+                      <span className="truncate max-w-[100px]" style={{ color: 'var(--color-text-muted)' }}>{s2?.name}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-white/5 text-slate-300 uppercase tracking-tighter">
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-tighter" style={{ background: 'var(--color-data-textbox-bg)', color: 'var(--color-text-secondary)' }}>
                         {meta.label}
                       </span>
                       <span className="text-xs font-bold font-mono" style={{ color: meta.color }}>
                         {corr.r > 0 ? '+' : ''}{corr.r.toFixed(2)}
                       </span>
                     </div>
-                    <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full transition-all duration-500" 
-                        style={{ 
-                          width: `${Math.abs(corr.r) * 100}%`, 
+                    <div className="w-full h-1 rounded-full overflow-hidden" style={{ background: 'var(--color-border)' }}>
+                      <div
+                        className="h-full transition-all duration-500"
+                        style={{
+                          width: `${Math.abs(corr.r) * 100}%`,
                           backgroundColor: meta.color,
-                          boxShadow: `0 0 10px ${meta.color}`
-                        }} 
+                          boxShadow: `0 0 8px ${meta.color}`
+                        }}
                       />
                     </div>
                   </div>
@@ -223,15 +223,15 @@ export const ConstellationSidebar: React.FC<Props> = ({
 
         {selectedNodeIds.length > 0 && (
           <section className="space-y-4">
-            <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest text-slate-400 uppercase">
+            <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase" style={{ color: 'var(--color-text-muted)' }}>
               <Activity size={12} />
               <span>Actions</span>
             </div>
-            <button 
+            <button
               onClick={() => onExport(selectedNodeIds)}
-              className="w-full flex items-center justify-center gap-3 p-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-900/20 active:scale-[0.98]"
+              className="trace-btn trace-btn-primary w-full py-3 justify-center"
             >
-              <Zap size={18} />
+              <Zap size={15} />
               Export to TimescaleDB
             </button>
           </section>
@@ -239,7 +239,7 @@ export const ConstellationSidebar: React.FC<Props> = ({
       </div>
 
       {/* Footer */}
-      <div className="p-6 border-t border-white/5 bg-black/20 text-[10px] text-slate-500 flex items-center gap-4">
+      <div className="p-6 border-t text-[10px] flex items-center gap-4" style={{ borderColor: 'var(--color-border-subtle)', background: 'var(--color-background)', color: 'var(--color-text-muted)' }}>
         <div className="flex items-center gap-1">
           <Clock size={10} />
           <span>Real-time Stream</span>

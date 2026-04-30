@@ -106,21 +106,28 @@ export function ConstellationExportModal({ signalIds, onClose }: Props) {
 
   const totalProgress = progress.total > 0 ? (progress.current / progress.total) * 100 : 0;
 
+  const inputStyle = {
+    background: 'var(--color-data-textbox-bg)',
+    borderColor: 'var(--color-border)',
+    color: 'var(--color-text-primary)',
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700">
-          <h2 className="text-lg font-semibold">Export Constellation</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20} /></button>
+      <div className="rounded-xl w-full max-w-lg shadow-2xl overflow-hidden border" style={{ background: 'var(--color-sidebar)', borderColor: 'var(--color-border)' }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
+          <h2 className="app-modal-title">Export Constellation</h2>
+          <button onClick={onClose} className="trace-btn"><X size={16} /></button>
         </div>
 
         <div className="p-6 space-y-5">
           <div>
-            <label className="block text-xs text-slate-400 uppercase tracking-wider mb-1">Season</label>
+            <label className="block text-[10px] uppercase tracking-widest font-bold mb-1" style={{ color: 'var(--color-text-muted)' }}>Season</label>
             <select
               value={selectedSeason}
               onChange={e => { setSelectedSeason(e.target.value); setSelectedRun(null); }}
-              className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
+              className="w-full rounded-md px-3 py-2 text-sm border"
+              style={inputStyle}
             >
               <option value="">Select season…</option>
               {seasons.map(s => <option key={s.name} value={s.name}>{s.name} ({s.year})</option>)}
@@ -129,16 +136,21 @@ export function ConstellationExportModal({ signalIds, onClose }: Props) {
 
           {selectedSeason && (
             <div>
-              <label className="block text-xs text-slate-400 uppercase tracking-wider mb-1">Run</label>
-              <div className="max-h-40 overflow-y-auto border border-slate-600 rounded-lg">
+              <label className="block text-[10px] uppercase tracking-widest font-bold mb-1" style={{ color: 'var(--color-text-muted)' }}>Run</label>
+              <div className="max-h-40 overflow-y-auto rounded-md border" style={{ borderColor: 'var(--color-border)' }}>
                 {runs.map(run => (
                   <button
                     key={run.key}
                     onClick={() => handleRunSelect(run)}
-                    className={`w-full text-left px-3 py-2 text-sm border-b border-slate-700 last:border-0 hover:bg-slate-800 ${selectedRun?.key === run.key ? 'bg-sky-900/40' : ''}`}
+                    className="w-full text-left px-3 py-2 text-sm border-b last:border-0 transition-colors"
+                    style={{
+                      borderColor: 'var(--color-border-subtle)',
+                      background: selectedRun?.key === run.key ? 'var(--color-option-select)' : 'transparent',
+                      color: 'var(--color-text-primary)',
+                    }}
                   >
-                    <span className="text-white">{run.key}</span>
-                    <span className="ml-2 text-slate-400 text-xs">{run.start_local} → {run.end_local}</span>
+                    {run.key}
+                    <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{run.start_local} → {run.end_local}</span>
                   </button>
                 ))}
               </div>
@@ -147,27 +159,27 @@ export function ConstellationExportModal({ signalIds, onClose }: Props) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 uppercase tracking-wider mb-1">Start (UTC)</label>
-              <input type="datetime-local" value={start.slice(0, 16)} onChange={e => setStart(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white" />
+              <label className="block text-[10px] uppercase tracking-widest font-bold mb-1" style={{ color: 'var(--color-text-muted)' }}>Start (UTC)</label>
+              <input type="datetime-local" value={start.slice(0, 16)} onChange={e => setStart(e.target.value)} className="w-full rounded-md px-3 py-2 text-sm border" style={inputStyle} />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 uppercase tracking-wider mb-1">End (UTC)</label>
-              <input type="datetime-local" value={end.slice(0, 16)} onChange={e => setEnd(e.target.value)} className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white" />
+              <label className="block text-[10px] uppercase tracking-widest font-bold mb-1" style={{ color: 'var(--color-text-muted)' }}>End (UTC)</label>
+              <input type="datetime-local" value={end.slice(0, 16)} onChange={e => setEnd(e.target.value)} className="w-full rounded-md px-3 py-2 text-sm border" style={inputStyle} />
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-            <input type="checkbox" checked={noLimit} onChange={e => setNoLimit(e.target.checked)} className="rounded border-slate-500" />
+          <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--color-text-secondary)' }}>
+            <input type="checkbox" checked={noLimit} onChange={e => setNoLimit(e.target.checked)} className="rounded" style={{ accentColor: 'var(--pill-primary-fg)' }} />
             Full resolution (no row limit — may be large)
           </label>
 
           {status === 'querying' && (
             <div>
-              <div className="flex justify-between text-xs text-slate-400 mb-1">
+              <div className="flex justify-between text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>
                 <span>Fetching signals…</span>
                 <span>{progress.current} / {progress.total}</span>
               </div>
-              <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+              <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--color-border)' }}>
                 <div className="h-full bg-sky-400 transition-all duration-200" style={{ width: `${totalProgress}%` }} />
               </div>
             </div>
@@ -181,18 +193,18 @@ export function ConstellationExportModal({ signalIds, onClose }: Props) {
 
           {errors.length > 0 && (
             <div className="flex items-start gap-2 text-sm text-red-400">
-              <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+              <AlertCircle size={16} className="mt-0.5 shrink-0" />
               <div>{errors.length} signal(s) failed: {errors.join('; ')}</div>
             </div>
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-700 flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-300 hover:text-white transition-colors">Cancel</button>
+        <div className="px-6 py-4 border-t flex justify-end gap-3" style={{ borderColor: 'var(--color-border)' }}>
+          <button onClick={onClose} className="trace-btn">Cancel</button>
           <button
             onClick={handleDownload}
             disabled={!selectedSeason || !start || !end || status === 'querying'}
-            className="flex items-center gap-2 px-4 py-2 bg-sky-500 hover:bg-sky-400 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-40"
+            className="trace-btn trace-btn-primary"
           >
             <Download size={14} /> Download CSV
           </button>
