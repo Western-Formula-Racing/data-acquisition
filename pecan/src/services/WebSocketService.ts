@@ -9,9 +9,19 @@ export const PECAN_WS_CANDIDATES_KEY = 'pecan-ws-candidates';
 /**
  * Used when `pecan-ws-candidates` is unset/empty and there is no custom / Vite URL:
  * try track base station first, then the public demo relay.
+ *
+ * The relay URL appends `?token=` from VITE_RELAY_TOKEN at build time. The
+ * token is injected by CI from a GitHub Actions secret; without it the relay
+ * candidate is omitted (LAN base + demo only).
  */
+const RELAY_TOKEN = import.meta.env.VITE_RELAY_TOKEN as string | undefined;
+const RELAY_URL = RELAY_TOKEN
+  ? `wss://ws-relay.westernformularacing.org?token=${encodeURIComponent(RELAY_TOKEN)}`
+  : null;
+
 export const DEFAULT_WS_FAILOVER_URLS: readonly string[] = [
   'ws://10.71.1.10:9080',
+  ...(RELAY_URL ? [RELAY_URL] : []),
   'wss://ws-demo.westernformularacing.org',
 ];
 

@@ -677,6 +677,7 @@ jobs:
         env:
           VITE_INTERNAL: 'true'
           VITE_GITHUB_DBC_READONLY_TOKEN: ${{ secrets.VITE_GITHUB_DBC_READONLY_TOKEN }}
+          VITE_RELAY_TOKEN: ${{ secrets.VITE_RELAY_TOKEN }}
           VITE_GRAFANA_BRIDGE_URL: https://grafana-proxy.westernformularacing.workers.dev/grafana-bridge/api/grafana
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}

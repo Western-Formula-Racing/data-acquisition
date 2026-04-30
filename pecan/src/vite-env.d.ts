@@ -6,6 +6,7 @@ declare const __GIT_COMMIT__: string;
 interface ImportMetaEnv {
   readonly VITE_INTERNAL?: string;
   readonly VITE_GITHUB_DBC_READONLY_TOKEN?: string;
+  readonly VITE_RELAY_TOKEN?: string;
   readonly VITE_GRAFANA_BRIDGE_URL?: string;
   readonly VITE_WS_URL?: string;
   readonly VITE_WS_PRESETS?: string;
