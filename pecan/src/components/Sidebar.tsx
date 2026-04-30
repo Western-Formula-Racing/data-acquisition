@@ -1,10 +1,21 @@
-import banner from "../assets/banner.png";
+import logo from "../assets/logo.png";
+import logoLight from "../assets/logo_light.png";
 import settings from "../assets/settings.png";
 import avatar from "../assets/avatar.png";
 import SidebarOption from "./SidebarOption";
 import { NavLink } from "react-router";
-import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useTheme } from "next-themes";
+
+function useThemeLogo() {
+  const { theme, resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return logo;
+  const active = resolvedTheme ?? theme;
+  return active === "light" ? logoLight : logo;
+}
 
 interface InputProps {
   isOpen: boolean;
@@ -14,6 +25,7 @@ interface InputProps {
 }
 
 function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<InputProps>) {
+  const logoSrc = useThemeLogo();
 
   // Define the paths that belong to the Vehicle Control group
   const controlPaths = ["/throttle-mapper", "/sensor-validator", "/can-transmitter", "/tx"];
@@ -51,7 +63,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
       )}
 
       <div
-        className={`sidebar-scroll-none fixed top-0 left-0 h-full lg:w-2/9 md:w-2/5 sm:w-3/5 w-full flex flex-col z-[80] transform transition-all duration-450 overflow-y-auto overscroll-contain ${isOpen
+        className={`sidebar-scroll-none fixed top-0 left-0 bottom-12 lg:w-2/9 md:w-2/5 sm:w-3/5 w-full flex flex-col z-[80] transform transition-all duration-450 overflow-y-auto overscroll-contain ${isOpen
           ? "translate-x-0 opacity-100"
           : "-translate-x-full opacity-0 pointer-events-none"
           }`}
@@ -61,7 +73,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
             {/* When clicking the image the sidebar collapses, we'll see if we'll keep it that */}
             {/* NavLink for semantic purposes, clicking image goes home and closes sidebar */}
             <NavLink onClick={onClose} to={"/"}>
-              <img className="my-10 cursor-pointer" src={banner} alt="banner" />
+              <img className="my-10 cursor-pointer" src={logoSrc} alt="logo" />
             </NavLink>
             {/* Could create a global function to close the sidebar and use it in the component rather than passing onClose in every time */}
             <ul className="p-0">
@@ -103,10 +115,10 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 onClose={onClose}
                 isPending={true}
               />
-              <li className="sidebar-group-shell px-3 pb-2">
+              <li>
                 <button
                   onClick={() => setIsControlOpen(!isControlOpen)}
-                  className="sidebar-group-header flex w-full gap-3 h-14 items-center justify-between box-border px-3 transition-colors cursor-pointer"
+                  className="sidebar-group-header flex w-full gap-3 h-20 items-center justify-between box-border px-3 transition-colors cursor-pointer bg-option hover:bg-option-select/80"
                 >
                   <span className="flex items-center gap-2">
                     <span className="sidebar-group-title text-left">
@@ -119,7 +131,7 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                   <ChevronDown className={`text-sidebarfg transition-transform duration-300 ${isControlOpen ? 'rotate-180' : ''}`} />
                 </button>
                 <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isControlOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'}`}>
-                  <ul className="list-none p-0 mt-2 m-0 bg-option/40 border border-white/10 rounded-md">
+                  <ul className="list-none p-0 m-0">
                     <SidebarOption
                       option="Throttle Mapper"
                       path="/throttle-mapper"

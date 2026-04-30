@@ -143,7 +143,7 @@ const DROP_SVG = `<svg id="file-upload-img" aria-hidden="true"
 	d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137
 	5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
 </svg>
-<h3>Click to upload CSV or ZIP, or drag and drop</h3>`;
+<h3>Click to upload CSV, ZIP, or .pecan, or drag and drop</h3>`;
 
 const SPINNER_HTML = `<svg class="spinner" viewBox="0 0 50 50">
 	<circle class="path" cx="25" cy="25" r="20" fill="none" stroke-width="5"></circle>
@@ -165,6 +165,9 @@ function handleProgress(task_id, fileName, season) {
 	canSubmit = false;
 	localStorage.setItem(STORAGE_KEY, task_id);
 	setDropZoneState("uploading");
+	const errBox = document.getElementById("upload-error-box");
+	if (errBox) errBox.style.display = "none";
+	document.getElementById("progress-bar").style.background = "";
 
 	// Show safe-to-close banner immediately
 	if (fileName || season) showSafeToCloseBanner(fileName, season);
@@ -194,9 +197,24 @@ function handleProgress(task_id, fileName, season) {
 			localStorage.removeItem(STORAGE_KEY);
 			hideSafeToCloseBanner();
 
-			document.getElementById("progress-bar_pct").innerText = "Done ✓";
-			document.getElementById("progress-bar_count").innerText =
-				data.total ? `${data.total.toLocaleString()} rows written` : "Complete";
+			if (data.error) {
+				document.getElementById("progress-bar_pct").innerText = "Failed ✗";
+				document.getElementById("progress-bar").style.background = "#b91c1c";
+				document.getElementById("progress-bar_count").innerText = "";
+				const errBox = document.getElementById("upload-error-box") || (() => {
+					const el = document.createElement("div");
+					el.id = "upload-error-box";
+					el.style.cssText = "margin-top:10px;padding:10px 14px;background:#450a0a;border:1px solid #b91c1c;border-radius:6px;color:#fca5a5;font-size:0.85em;white-space:pre-wrap;word-break:break-word;";
+					document.querySelector(".progress-bar_parent").after(el);
+					return el;
+				})();
+				errBox.innerText = "❌ Upload failed:\n" + data.error;
+				errBox.style.display = "block";
+			} else {
+				document.getElementById("progress-bar_pct").innerText = "Done ✓";
+				document.getElementById("progress-bar_count").innerText =
+					data.total ? `${data.total.toLocaleString()} rows written` : "Complete";
+			}
 
 			["drop_zone-input", "season-select", "dbc-select", "dbc-input"].forEach((id) => {
 				const el = document.getElementById(id);
@@ -264,8 +282,9 @@ function submitCsvUpload(files) {
 		const n = file.name.toLowerCase();
 		const okCsv = file.type === "text/csv" || n.endsWith(".csv") || file.type === "application/csv";
 		const okZip = n.endsWith(".zip") || file.type === "application/zip" || file.type === "application/x-zip-compressed";
-		if (!okCsv && !okZip) {
-			alert(`${file.name} must be .csv or .zip`);
+		const okPecan = n.endsWith(".pecan");
+		if (!okCsv && !okZip && !okPecan) {
+			alert(`${file.name} must be .csv, .zip, or .pecan`);
 			return;
 		}
 	}

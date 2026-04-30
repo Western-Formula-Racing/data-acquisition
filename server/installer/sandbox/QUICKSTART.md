@@ -25,7 +25,7 @@ SLACK_DEFAULT_CHANNEL=C0123456789
 COHERE_API_KEY=your-cohere-api-key-here
 COHERE_MODEL=command-r-plus
 MAX_RETRIES=2
-INFLUXDB_DATABASE=telemetry
+DEFAULT_SEASON_TABLE=telemetry
 ```
 
 ### 1.5. Set Up Custom Prompt (Recommended)
@@ -175,9 +175,9 @@ docker compose exec code-generator cat generated_sandbox_code.py
 - View the system prompt: `cat installer/sandbox/prompt-guide.txt`
 
 **"No data returned from TimescaleDB"**
-- Verify database name: `INFLUXDB_DATABASE=telemetry` in `.env`
+- Verify database name: `DEFAULT_SEASON_TABLE=telemetry` in `.env`
 - Check TimescaleDB has data: http://localhost:8888
-- Verify token is correct: `INFLUXDB_ADMIN_TOKEN` in `.env`
+- Verify token is correct: `POSTGRES_PASSWORD` in `.env`
 
 ## Architecture
 

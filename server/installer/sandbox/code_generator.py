@@ -1,298 +1,560 @@
 """
-Code Generation Service - Orchestrator for Cohere + Sandbox execution.
-Receives requests from Slackbot, generates code using Cohere, and executes in sandbox.
+Code Generation Service
+MiniMax (Anthropic-compatible) + LangGraph StateGraph + ChromaDB RAG + diskcache
 """
-
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 import os
+import time as _time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any
+from typing import List, TypedDict
 
-from dotenv import load_dotenv
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import cohere
+import chromadb
+import diskcache
 import requests
+from flask import Flask, jsonify, request
+from flask_cors import CORS
 
-# Load environment variables
-load_dotenv()
+from stats_report import init_metrics, record_metrics, stats_response
+from langchain_anthropic import ChatAnthropic
+from langchain_chroma import Chroma
+from langchain_community.embeddings import FastEmbedEmbeddings
+from langchain_core.messages import HumanMessage, SystemMessage
+from langgraph.graph import END, StateGraph
 
-# ---------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------
-COHERE_API_KEY = os.getenv("COHERE_API_KEY")
-if not COHERE_API_KEY:
-    raise RuntimeError(
-        "COHERE_API_KEY not found in environment. Add it to your .env or export it as an env var."
-    )
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
 
-COHERE_MODEL = os.getenv("COHERE_MODEL", "command-a-reasoning-08-2025")
-SANDBOX_URL = os.getenv("SANDBOX_URL", "http://sandbox-runner:9090")
+# ── Config ─────────────────────────────────────────────────────────────────────
+ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "MiniMax-M2.7")
+SANDBOX_URL = os.getenv("SANDBOX_URL", "http://sandbox:8080")
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "2"))
+DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
+CACHE_DIR = Path(os.getenv("CACHE_DIR", "/app/cache"))
+CHROMA_DIR = Path(os.getenv("CHROMA_DIR", "/app/chroma_db"))
+RAG_SENSOR_K = int(os.getenv("RAG_SENSOR_K", "20"))
+RAG_RUN_K = int(os.getenv("RAG_RUN_K", "5"))
+RAG_SOLUTION_K = int(os.getenv("RAG_SOLUTION_K", "3"))
+LLM_CACHE_TTL = 24 * 3600
+EXEC_CACHE_TTL = 3600
 
-# Configure Cohere client
-co = cohere.Client(COHERE_API_KEY)
+PROMPT_GUIDE_PATH = Path(__file__).parent / "prompt-guide.txt"
 
-# Paths
-BASE_DIR = Path(__file__).resolve().parent
-PROMPT_GUIDE_PATH = BASE_DIR / "prompt-guide.txt"
-GENERATED_CODE_PATH = BASE_DIR / "generated_sandbox_code.py"
+# Expose to env so langchain-anthropic picks them up via the underlying anthropic SDK
+os.environ["ANTHROPIC_API_KEY"] = ANTHROPIC_API_KEY
+os.environ["ANTHROPIC_BASE_URL"] = ANTHROPIC_BASE_URL
 
-# ---------------------------------------------------------------------
-# Flask App Setup
-# ---------------------------------------------------------------------
-app = Flask(__name__)
-CORS(app)
+# ── LLM ────────────────────────────────────────────────────────────────────────
+llm = ChatAnthropic(model=ANTHROPIC_MODEL, temperature=0.2, max_tokens=8192)
 
-# ---------------------------------------------------------------------
-# Helper Functions
-# ---------------------------------------------------------------------
-def load_prompt_guide() -> str:
-    """Reads the prompt guide file."""
+# ── Embeddings + ChromaDB ──────────────────────────────────────────────────────
+logger.info("Loading FastEmbed embeddings (BAAI/bge-small-en-v1.5)...")
+embeddings = FastEmbedEmbeddings()
+
+CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+_chroma_client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+_sensors_raw = _chroma_client.get_or_create_collection("sensors")
+_runs_raw = _chroma_client.get_or_create_collection("runs")
+
+sensors_store = Chroma(client=_chroma_client, collection_name="sensors", embedding_function=embeddings)
+runs_store = Chroma(client=_chroma_client, collection_name="runs", embedding_function=embeddings)
+_solutions_raw = _chroma_client.get_or_create_collection("verified_solutions")
+solutions_store = Chroma(client=_chroma_client, collection_name="verified_solutions", embedding_function=embeddings)
+
+# ── Disk Cache ─────────────────────────────────────────────────────────────────
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+cache = diskcache.Cache(str(CACHE_DIR))
+
+# ── DuckDB Metrics ─────────────────────────────────────────────────────────────
+init_metrics(CACHE_DIR / "metrics.duckdb")
+
+# ── Indexing ───────────────────────────────────────────────────────────────────
+_indexed_mtimes: dict[str, float] = {}
+
+
+def _upsert(raw_col: chromadb.Collection, texts: list[str], metas: list[dict], ids: list[str]) -> None:
+    """Upsert with pre-computed embeddings so both storage and retrieval use the same model."""
+    embs = embeddings.embed_documents(texts)
+    raw_col.upsert(ids=ids, embeddings=embs, documents=texts, metadatas=metas)
+
+
+def index_data_dir() -> None:
+    """Index sensors and runs from data-downloader JSON files. Skips unchanged files."""
+    if not DATA_DIR.exists():
+        logger.warning("DATA_DIR %s not found — skipping indexing", DATA_DIR)
+        return
+
+    for sensors_file in sorted(DATA_DIR.glob("sensors_*.json")):
+        mtime = sensors_file.stat().st_mtime
+        if _indexed_mtimes.get(str(sensors_file)) == mtime:
+            continue
+        season = sensors_file.stem[len("sensors_"):]
+        try:
+            sensor_names: list[str] = json.loads(sensors_file.read_text()).get("sensors", [])
+            if sensor_names:
+                _upsert(
+                    _sensors_raw,
+                    texts=sensor_names,
+                    metas=[{"season": season, "name": s} for s in sensor_names],
+                    ids=[f"{season}_{s}" for s in sensor_names],
+                )
+                logger.info("Indexed %d sensors for %s", len(sensor_names), season)
+            _indexed_mtimes[str(sensors_file)] = mtime
+        except Exception:
+            logger.exception("Failed to index sensors from %s", sensors_file)
+
+    for runs_file in sorted(DATA_DIR.glob("runs_*.json")):
+        mtime = runs_file.stat().st_mtime
+        if _indexed_mtimes.get(str(runs_file)) == mtime:
+            continue
+        season = runs_file.stem[len("runs_"):]
+        try:
+            runs: list[dict] = json.loads(runs_file.read_text()).get("runs", [])
+            if runs:
+                texts, metas, ids = [], [], []
+                for r in runs:
+                    key = r.get("key", "")
+                    note = r.get("note") or ""
+                    texts.append(
+                        f"{season} run {key}: "
+                        f"{r.get('start_local', '?')} to {r.get('end_local', '?')}, "
+                        f"{r.get('row_count', 0):,} rows"
+                        + (f", note: {note}" if note else "")
+                    )
+                    metas.append({
+                        "season": season,
+                        "key": key,
+                        "start_utc": r.get("start_utc", ""),
+                        "end_utc": r.get("end_utc", ""),
+                    })
+                    ids.append(f"{season}_{key}")
+                _upsert(_runs_raw, texts=texts, metas=metas, ids=ids)
+                logger.info("Indexed %d runs for %s", len(runs), season)
+            _indexed_mtimes[str(runs_file)] = mtime
+        except Exception:
+            logger.exception("Failed to index runs from %s", runs_file)
+
+
+# ── LangGraph state ────────────────────────────────────────────────────────────
+class AgentState(TypedDict):
+    prompt: str
+    rag_context: str
+    code: str
+    sandbox_result: dict
+    error: str
+    retries: int
+    retry_history: List[dict]
+    llm_cache_hit: bool
+    exec_cache_hit: bool
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+def _load_guide() -> str:
     if PROMPT_GUIDE_PATH.exists():
         return PROMPT_GUIDE_PATH.read_text().strip()
-    
-    # Minimal fallback if file doesn't exist
-    return """You are an expert Python data analyst. Generate clean, executable Python code.
-Rules:
-- No user input (no input(), sys.stdin)
-- Save visualizations to files (plt.savefig())
-- Include all necessary imports
-- Return only executable code"""
+    return "You are an expert Python data analyst. Return only executable Python code."
 
 
-def extract_python_code(raw_output: str) -> str:
-    """
-    Extract ```python ...``` fenced code if present.
-    Falls back to raw text if no fence.
-    """
-    text = raw_output.strip()
+def _extract_python(content) -> str:
+    # ChatAnthropic may return a list of content blocks
+    if isinstance(content, list):
+        text = "\n".join(
+            b.get("text", "") if isinstance(b, dict) else str(b)
+            for b in content
+        )
+    else:
+        text = str(content)
+    text = text.strip()
     if "```" not in text:
         return text
-
-    segments = text.split("```")
-    for idx, segment in enumerate(segments):
-        if idx % 2 == 0:
-            continue
+    for segment in text.split("```")[1::2]:
         stripped = segment.strip()
-        if not stripped:
-            continue
         if stripped.lower().startswith("python"):
             lines = stripped.splitlines()
-            return "\n".join(lines[1:]) if len(lines) > 1 else ""
-        return stripped
-
+            return "\n".join(lines[1:])
+        if stripped:
+            return stripped
     return text
 
 
-def request_python_code(guide: str, prompt: str) -> str:
-    """Request Python code from Cohere."""
-    # Combine guide and user prompt
-    full_prompt = f"{guide}\n\n{prompt}"
+# ── LangGraph nodes ────────────────────────────────────────────────────────────
+def retrieve_context_node(state: AgentState) -> dict:
+    index_data_dir()
+    prompt = state["prompt"]
+    parts: list[str] = []
 
-    response = co.chat(
-        message=full_prompt,
-        model=COHERE_MODEL,
-        temperature=0.2,
-    )
-
-    # Extract Python code from response
-    raw_output = response.text
-    python_code = extract_python_code(raw_output)
-
-    # Save generated code
-    GENERATED_CODE_PATH.write_text(python_code, encoding="utf-8")
-    print(f"Generated code written to {GENERATED_CODE_PATH}")
-
-    return python_code
-
-
-def submit_code_to_sandbox(code: str) -> Dict[str, Any]:
-    """Submit code to the custom sandbox for execution."""
     try:
-        response = requests.post(
-            SANDBOX_URL,
-            json={"code": code},
-            timeout=60
+        sensor_docs = sensors_store.similarity_search(prompt, k=RAG_SENSOR_K)
+        if sensor_docs:
+            names = [d.page_content for d in sensor_docs]
+            parts.append("RELEVANT SENSORS:\n" + "\n".join(f"  - {n}" for n in names))
+    except Exception:
+        logger.warning("Sensor RAG query failed", exc_info=True)
+
+    try:
+        run_docs = runs_store.similarity_search(prompt, k=RAG_RUN_K)
+        if run_docs:
+            descs = [d.page_content for d in run_docs]
+            parts.append("RELEVANT RUNS:\n" + "\n".join(f"  - {d}" for d in descs))
+    except Exception:
+        logger.warning("Runs RAG query failed", exc_info=True)
+
+    try:
+        solution_docs = solutions_store.similarity_search(prompt, k=RAG_SOLUTION_K)
+        if solution_docs:
+            summaries = [d.page_content for d in solution_docs]
+            parts.append("SUCCESSFUL EXAMPLES:\n" + "\n".join(f"  - {s}" for s in summaries))
+    except Exception:
+        logger.warning("Solutions RAG query failed", exc_info=True)
+
+    return {"rag_context": "\n\n".join(parts)}
+
+
+def generate_code_node(state: AgentState) -> dict:
+    guide = _load_guide()
+    rag_context = state.get("rag_context", "")
+    retry_history = state.get("retry_history", [])
+
+    system_content = guide
+    if rag_context:
+        system_content += f"\n\n--- RETRIEVED CONTEXT ---\n{rag_context}"
+
+    user_content = state["prompt"]
+    if retry_history:
+        last = retry_history[-1]
+        user_content += (
+            f"\n\nATTEMPT {last['attempt']} FAILED:\n{last['error']}\n\nFix the error above."
         )
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error submitting to sandbox: {e}")
-        return {
-            "ok": False,
-            "std_err": str(e),
-            "std_out": "",
-            "return_code": -1,
-            "output_files": []
-        }
+
+    cache_key = "llm:" + hashlib.sha256(
+        f"{ANTHROPIC_MODEL}|{system_content}|{user_content}".encode()
+    ).hexdigest()
+
+    cached = cache.get(cache_key)
+    if cached:
+        logger.info("LLM cache hit")
+        return {"code": cached, "llm_cache_hit": True}
+
+    response = llm.invoke([
+        SystemMessage(content=system_content),
+        HumanMessage(content=user_content),
+    ])
+    raw_content = response.content
+    if isinstance(raw_content, list):
+        text_parts = [b.get("text", "") if isinstance(b, dict) else str(b) for b in raw_content]
+        raw_text = "\n".join(text_parts)
+    else:
+        raw_text = str(raw_content)
+    logger.info("LLM raw response (%d chars, stop=%s)",
+                 len(raw_text), getattr(response, "stop_reason", "?"))
+    code = _extract_python(response.content)
+    cache.set(cache_key, code, expire=LLM_CACHE_TTL)
+    return {"code": code, "llm_cache_hit": False}
 
 
-def format_error_for_retry(sandbox_result: Dict[str, Any]) -> str:
-    """Format sandbox error for retry prompt."""
-    error_parts = []
-    
-    if sandbox_result.get("std_err"):
-        error_parts.append(f"ERROR_TRACE: {sandbox_result['std_err'].strip()}")
-    
-    if sandbox_result.get("std_out"):
-        error_parts.append(f"OUTPUT: {sandbox_result['std_out'].strip()}")
-    
-    return_code = sandbox_result.get("return_code")
-    if return_code != 0:
-        error_parts.insert(0, f"STATUS: ERROR (return code: {return_code})")
-    
-    return "\n".join(error_parts)
+def execute_code_node(state: AgentState) -> dict:
+    code = state["code"]
+    retries = state.get("retries", 0)
+    retry_history = state.get("retry_history", [])
 
+    # Only check execution cache on the first (non-retry) attempt
+    exec_cache_hit = False
+    if retries == 0:
+        exec_key = "exec:" + hashlib.sha256(code.encode()).hexdigest()
+        cached = cache.get(exec_key)
+        if cached:
+            logger.info("Execution cache hit")
+            return {"sandbox_result": cached, "error": "", "exec_cache_hit": True}
 
-def format_sandbox_result(sandbox_result: Dict[str, Any]) -> Dict[str, Any]:
-    """Format sandbox result for response."""
-    # Process output files from custom sandbox
-    files_info = []
-    for file_data in sandbox_result.get("output_files", []):
-        file_info = {
-            "name": file_data.get("filename"),
-            "data": file_data.get("b64_data"),
-            "type": "image" if file_data.get("filename", "").endswith((".png", ".jpg", ".jpeg", ".gif", ".svg")) else "file"
-        }
-        files_info.append(file_info)
-    
-    result = {
-        "status": "success" if sandbox_result.get("ok") else "error",
-        "output": sandbox_result.get("std_out", "").strip(),
-        "error": sandbox_result.get("std_err", "").strip(),
-        "return_code": sandbox_result.get("return_code"),
-        "files": files_info
-    }
-    return result
-
-
-# ---------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------
-@app.route('/api/health', methods=['GET'])
-def health():
-    """Health check endpoint."""
-    return jsonify({"status": "ok", "service": "code-generator"})
-
-
-@app.route('/api/generate-code', methods=['POST'])
-def generate_code():
-    """Generate and execute Python code based on user prompt with automatic retries on failure."""
     try:
-        data = request.get_json()
-        user_prompt = data.get('prompt', '').strip()
-        
-        if not user_prompt:
-            return jsonify({"error": "Prompt is required"}), 400
-
-        # Load the prompt guide
-        guide = load_prompt_guide()
-        
-        retry_info = []
-        current_prompt = user_prompt
-        python_code = None
-        
-        # Try up to MAX_RETRIES + 1 times (initial attempt + retries)
-        for attempt in range(MAX_RETRIES + 1):
-            print(f"\n{'='*60}")
-            print(f"Attempt {attempt + 1}/{MAX_RETRIES + 1}")
-            print(f"{'='*60}\n")
-            
-            # Generate Python code using Cohere
-            python_code = request_python_code(guide, current_prompt)
-
-            # Execute the code in sandbox
-            sandbox_result = submit_code_to_sandbox(python_code)
-            
-            # Check if execution was successful
-            if sandbox_result.get("ok"):
-                # Success! Format and return result
-                result = format_sandbox_result(sandbox_result)
-                
-                response = {
-                    "code": python_code,
-                    "result": result
-                }
-                
-                # Include retry information if any retries were made
-                if retry_info:
-                    response["retries"] = retry_info
-                    print(f"✅ Success after {len(retry_info)} retry/retries")
-                
-                return jsonify(response)
-            
-            # Execution failed
-            if attempt < MAX_RETRIES:
-                # We have retries left
-                error_message = format_error_for_retry(sandbox_result)
-                retry_info.append({
-                    "attempt": attempt + 1,
-                    "error": error_message
-                })
-                
-                print(f"\n{'='*60}")
-                print(f"RETRY {attempt + 1}/{MAX_RETRIES} - Code execution failed")
-                print(f"{'='*60}")
-                print(error_message)
-                print(f"\n{'='*60}")
-                print("Retrying with error feedback...")
-                print(f"{'='*60}\n")
-                
-                # Append error to prompt for retry
-                current_prompt = f"""{user_prompt}
-
-The previous code generated had the following error:
-
-{error_message}
-
-Please fix the code to address this error."""
-            else:
-                # No more retries left, return the error
-                print(f"\n{'='*60}")
-                print(f"❌ All {MAX_RETRIES} retries exhausted - returning error")
-                print(f"{'='*60}\n")
-                result = format_sandbox_result(sandbox_result)
-                
-                return jsonify({
-                    "code": python_code,
-                    "result": result,
-                    "retries": retry_info,
-                    "max_retries_reached": True
-                })
-
+        t0 = _time.perf_counter()
+        resp = requests.post(SANDBOX_URL, json={"code": code}, timeout=120)
+        sandbox_ms = (_time.perf_counter() - t0) * 1000
+        resp.raise_for_status()
+        result = resp.json()
     except Exception as e:
-        print(f"Error in generate_code: {e}")
-        import traceback
-        traceback.print_exc()
+        err = str(e)
+        return {
+            "sandbox_result": {},
+            "error": err,
+            "retries": retries + 1,
+            "retry_history": retry_history + [{"attempt": retries + 1, "error": err}],
+            "sandbox_ms": 0.0,
+        }
+
+    if not result.get("ok"):
+        parts: list[str] = []
+        rc = result.get("return_code")
+        if rc is not None and rc != 0:
+            parts.append(f"Exit code: {rc}")
+        if result.get("std_err"):
+            parts.append(f"STDERR:\n{result['std_err'].strip()}")
+        if result.get("std_out"):
+            parts.append(f"STDOUT:\n{result['std_out'].strip()}")
+        err = "\n".join(parts)
+        return {
+            "sandbox_result": result,
+            "error": err,
+            "retries": retries + 1,
+            "retry_history": retry_history + [{"attempt": retries + 1, "error": err}],
+            "sandbox_ms": sandbox_ms,
+        }
+
+    exec_key = "exec:" + hashlib.sha256(code.encode()).hexdigest()
+    cache.set(exec_key, result, expire=EXEC_CACHE_TTL)
+    return {"sandbox_result": result, "error": "", "exec_cache_hit": False, "sandbox_ms": sandbox_ms}
+
+
+def _route_after_execute(state: AgentState) -> str:
+    if not state.get("error"):
+        return END
+    # retries has already been incremented by execute_code_node
+    if state.get("retries", 0) <= MAX_RETRIES:
+        return "generate_code"
+    return END
+
+
+# ── Build graph ────────────────────────────────────────────────────────────────
+_builder = StateGraph(AgentState)
+_builder.add_node("retrieve_context", retrieve_context_node)
+_builder.add_node("generate_code", generate_code_node)
+_builder.add_node("execute_code", execute_code_node)
+_builder.set_entry_point("retrieve_context")
+_builder.add_edge("retrieve_context", "generate_code")
+_builder.add_edge("generate_code", "execute_code")
+_builder.add_conditional_edges(
+    "execute_code",
+    _route_after_execute,
+    {END: END, "generate_code": "generate_code"},
+)
+graph = _builder.compile()
+
+
+# ── Verified Solutions (Golden Examples) ──────────────────────────────────────
+_solution_id_counter = 0
+
+
+def save_verified_solution(
+    user_prompt: str,
+    rag_context: str,
+    final_code: str,
+    output_summary: str,
+    *,
+    run_key: str | None = None,
+    creator: str | None = None,
+) -> str:
+    """Save a successful code execution as a verified solution in ChromaDB."""
+    global _solution_id_counter
+    import time
+
+    solution_id = f"solution_{int(time.time() * 1000)}_{_solution_id_counter}"
+    _solution_id_counter += 1
+
+    doc_text = user_prompt.strip()
+    summary_text = f"{doc_text}\n---\nResult: {output_summary.strip()}"
+
+    metadata = {
+        "run_key": run_key or "",
+        "creator": creator or "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        _solutions_raw.upsert(
+            ids=[solution_id],
+            embeddings=embeddings.embed_documents([doc_text]),
+            documents=[summary_text],
+            metadatas=[metadata],
+        )
+        logger.info("Saved verified solution: id=%s", solution_id)
+    except Exception:
+        logger.exception("Failed to save verified solution")
+        raise
+
+    return solution_id
+
+
+# ── RAG stats helper (needs _chroma_client from this module) ───────────────────
+def _rag_stats() -> dict:
+    stats = {}
+    for name in ["sensors", "runs", "verified_solutions"]:
+        try:
+            col = _chroma_client.get_collection(name)
+            stats[name] = {"count": col.count()}
+        except Exception:
+            stats[name] = {"count": 0}
+    return stats
+
+
+# ── Response formatting ────────────────────────────────────────────────────────
+def _format_response(state: AgentState) -> dict:
+    result = state.get("sandbox_result", {})
+    files_info = []
+    for f in result.get("output_files", []):
+        name = f.get("filename", "")
+        files_info.append({
+            "name": name,
+            "data": f.get("b64_data"),
+            "type": "image" if name.endswith((".png", ".jpg", ".jpeg", ".gif", ".svg")) else "file",
+        })
+    retry_history = state.get("retry_history", [])
+    return {
+        "code": state.get("code", ""),
+        "result": {
+            "status": "success" if result.get("ok") else "error",
+            "output": result.get("std_out", "").strip(),
+            "error": state.get("error", "").strip(),
+            "return_code": result.get("return_code"),
+            "files": files_info,
+        },
+        "retries": retry_history,
+        "max_retries_reached": bool(state.get("error")) and state.get("retries", 0) > MAX_RETRIES,
+    }
+
+
+# ── Flask API ──────────────────────────────────────────────────────────────────
+app = Flask(__name__)
+CORS(app)
+
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok", "service": "code-generator", "model": ANTHROPIC_MODEL})
+
+
+@app.route("/api/feedback", methods=["POST"])
+def feedback_endpoint():
+    """Save a successful code execution as a verified solution (Golden Example).
+
+    Body:
+        prompt: str          — original user request
+        code: str            — executed Python code
+        output: str          — stdout from execution (used as summary)
+        rag_context: str     — RAG context retrieved at generation time (optional)
+        run_key: str         — associated run key (optional)
+        creator: str        — user identifier (optional)
+    """
+    data = request.get_json() or {}
+    user_prompt = data.get("prompt", "").strip()
+    final_code = data.get("code", "").strip()
+    output_summary = data.get("output", "").strip()
+
+    if not user_prompt or not final_code:
+        return jsonify({"error": "prompt and code are required"}), 400
+
+    rag_context = data.get("rag_context", "")
+    run_key = data.get("run_key")
+    creator = data.get("creator")
+
+    # Build a concise output summary (first 300 chars of stdout, or file list)
+    files = []
+    result_data = data.get("result", {})
+    if isinstance(result_data, dict):
+        files = result_data.get("files", [])
+    if output_summary and len(output_summary) > 300:
+        output_summary = output_summary[:300] + "..."
+
+    file_names = [f.get("name", "") for f in files if f.get("name")]
+    if file_names:
+        summary = f"Generated: {', '.join(file_names)}"
+        if output_summary:
+            summary += f" | Output: {output_summary}"
+    else:
+        summary = output_summary or "Code executed successfully"
+
+    try:
+        solution_id = save_verified_solution(
+            user_prompt=user_prompt,
+            rag_context=rag_context,
+            final_code=final_code,
+            output_summary=summary,
+            run_key=run_key,
+            creator=creator,
+        )
+        return jsonify({"status": "ok", "solution_id": solution_id})
+    except Exception as e:
+        logger.exception("feedback endpoint failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/generate-code", methods=["POST"])
+def generate_code_endpoint():
+    data = request.get_json() or {}
+    user_prompt = data.get("prompt", "").strip()
+    if not user_prompt:
+        return jsonify({"error": "prompt is required"}), 400
+
+    # Top-level prompt cache: skip the graph entirely on successful repeat requests
+    prompt_key = "prompt:" + hashlib.sha256(user_prompt.encode()).hexdigest()
+    cached_response = cache.get(prompt_key)
+    if cached_response:
+        logger.info("Prompt cache hit — returning cached response")
+        return jsonify(cached_response)
+
+    try:
+        final_state = graph.invoke({
+            "prompt": user_prompt,
+            "rag_context": "",
+            "code": "",
+            "sandbox_result": {},
+            "error": "",
+            "retries": 0,
+            "retry_history": [],
+            "llm_cache_hit": False,
+            "exec_cache_hit": False,
+        })
+        response = _format_response(final_state)
+
+        # Record metrics
+        llm_hit = final_state.get("llm_cache_hit", False)
+        exec_hit = final_state.get("exec_cache_hit", False)
+        retries = final_state.get("retries", 0)
+        sandbox_ms = final_state.get("sandbox_ms", 0.0) or 0.0
+        ok = response["result"]["status"] == "success"
+        creator = data.get("creator", "") or ""
+        try:
+            record_metrics(
+                prompt_hash=prompt_key,
+                llm_cache_hit=llm_hit,
+                exec_cache_hit=exec_hit,
+                retry_count=retries,
+                sandbox_ms=sandbox_ms,
+                success=ok,
+                creator=creator,
+            )
+        except Exception:
+            logger.exception("Failed to record metrics")
+
+        if ok:
+            cache.set(prompt_key, response, expire=LLM_CACHE_TTL)
+        return jsonify(response)
+    except Exception as e:
+        logger.exception("Graph execution failed for prompt: %s", user_prompt[:80])
         return jsonify({
             "error": str(e),
-            "code": None,
-            "result": {
-                "status": "error",
-                "error": str(e),
-                "output": "",
-                "files": []
-            }
+            "result": {"status": "error", "output": "", "error": str(e), "files": []},
         }), 500
 
 
-# ---------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------
-def main():
-    """Start the code generation service."""
-    port = int(os.getenv("CODE_GEN_PORT", "3030"))
-    debug = os.getenv("DEBUG", "false").lower() == "true"
-    
-    print(f"Starting code generation service on http://0.0.0.0:{port}")
-    print(f"Cohere Model: {COHERE_MODEL}")
-    print(f"Sandbox URL: {SANDBOX_URL}")
-    print(f"Max Retries: {MAX_RETRIES}")
-    
-    app.run(host='0.0.0.0', port=port, debug=debug)
+@app.route("/api/metrics", methods=["GET"])
+def metrics_endpoint():
+    """Return aggregated observability stats and a dashboard PNG."""
+    try:
+        return jsonify(stats_response(rag_stats_fn=_rag_stats))
+    except Exception:
+        logger.exception("Metrics endpoint failed")
+        return jsonify({"error": "Failed to build metrics report"}), 500
 
 
 if __name__ == "__main__":
-    main()
+    port = int(os.getenv("CODE_GEN_PORT", "3030"))
+    debug = os.getenv("DEBUG", "false").lower() == "true"
+    logger.info("Starting code-generator on :%d (model=%s)", port, ANTHROPIC_MODEL)
+    index_data_dir()
+    app.run(host="0.0.0.0", port=port, debug=debug)

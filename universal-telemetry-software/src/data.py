@@ -8,12 +8,14 @@ import logging
 import can
 import redis.asyncio as aioredis
 from collections import deque
+import csv
 
 from src.config import (
     REMOTE_IP, UDP_PORT, TCP_PORT,
     REDIS_URL, REDIS_CAN_CHANNEL, REDIS_UPLINK_CHANNEL, ENABLE_UPLINK,
 )
 from src import redis_utils, utils
+from src.version import get_git_hash
 
 BATCH_SIZE = 20
 BATCH_TIMEOUT = 0.05  # 50ms
@@ -57,6 +59,7 @@ class TelemetryNode:
         self.can_event = can_event  # multiprocessing.Event signalled on each CAN RX
         self.telemetry_event = telemetry_event  # heartbeat for LED status
         self.redis_client = redis_utils.get_sync_client(REDIS_URL)
+        self.direct_queue: asyncio.Queue | None = None  # set by main.py for car mode (no Redis)
         # ECU clock sync — offset between ECU RTC and local monotonic clock
         self._clock_offset: float | None = None   # epoch_sec - monotonic at last sync
         self._last_ecu_sync: float = 0.0          # monotonic time of last valid ECU 1999
@@ -64,9 +67,21 @@ class TelemetryNode:
         self._base_to_car_offset: float | None = None # Offset between base station time and car's 1970 time
         self._last_raw_car_time: float | None = None  # Raw timestamp of last message
         self._car_internal_jump: float | None = None  # Cumulative jump from 1970 to 2026+ internal car time
+        self._car_time_synced: bool = False           # True after successful time injection to car Pi
+        self._base_clock_bad: bool = False            # True if base clock is before 2026-04-01 (unsafe to inject)
+        self.status_map = {}                          # seq -> status (0: missing, 1: udp, 2: tcp)
+        self.latest_seq = -1
+        self.last_udp_time = 0.0
+        self._own_git_hash: str = get_git_hash()
+        self._car_git_hash: str | None = None         # None until first successful version check
 
     def publish(self, channel, data):
         redis_utils.safe_publish(self.redis_client, channel, data, logger)
+        if self.direct_queue is not None:
+            try:
+                self.direct_queue.put_nowait(data)
+            except asyncio.QueueFull:
+                pass  # drop under backpressure rather than block the CAN reader
 
     def _handle_ecu_timestamp(self, data: bytes) -> None:
         """Extract epoch_ms from ECU VCU_Timestamp message and update clock offset."""
@@ -373,6 +388,36 @@ class TelemetryNode:
         missing_seqs = set()
         stats = {"received": 0, "missing": 0, "recovered": 0, "messages": 0}
         
+        raw_logs_dir = "/app/raw_can_logs"
+        os.makedirs(raw_logs_dir, exist_ok=True)
+        session_id = os.environ.get("BOOT_SESSION_ID", "default")
+        csv_path = os.path.join(raw_logs_dir, f"raw_can_{session_id}.csv")
+        raw_msg_queue = asyncio.Queue()
+        _csv_is_new = not os.path.exists(csv_path)
+
+        async def raw_csv_logger():
+            # Append mode — each flush is durable, no footer required.
+            # Safe on sudden power loss; only the current 1s batch is at risk.
+            try:
+                with open(csv_path, "a", newline="") as f:
+                    writer = csv.writer(f)
+                    if _csv_is_new:
+                        writer.writerow(["time_ms", "can_id", "data_hex"])
+                        f.flush()
+                    while True:
+                        await asyncio.sleep(1.0)
+                        if raw_msg_queue.empty():
+                            continue
+                        batch = []
+                        while not raw_msg_queue.empty() and len(batch) < 10000:
+                            batch.append(raw_msg_queue.get_nowait())
+                        for m in batch:
+                            writer.writerow([m["time_ms"], m["can_id"], m["data"].hex()])
+                        f.flush()
+            except Exception as e:
+                logger.error(f"Base CSV logger error: {e}")
+
+        
         # UDP Receiver Task
         async def udp_receiver():
             nonlocal expected_seq
@@ -430,6 +475,21 @@ class TelemetryNode:
                 
                 expected_seq = max(expected_seq, seq + 1)
                 
+                # Update status map for visualization
+                self.last_udp_time = time.time()
+                if seq > self.latest_seq:
+                    if self.latest_seq != -1:
+                        for s in range(self.latest_seq + 1, seq):
+                            self.status_map[s] = 0
+                    self.status_map[seq] = 1
+                    self.latest_seq = seq
+                    # Prune status map to last 3000 sequences
+                    if len(self.status_map) > 3000:
+                        min_seq = self.latest_seq - 2999
+                        self.status_map = {s: v for s, v in self.status_map.items() if s >= min_seq}
+                elif seq in self.status_map and self.status_map[seq] == 0:
+                    self.status_map[seq] = 1 # Out-of-order UDP arrival
+                
                 # Process messages
                 offset = 10
                 msgs_to_publish = []
@@ -485,6 +545,11 @@ class TelemetryNode:
                         "canId": msg.can_id,
                         "data": list(msg.data)
                     })
+                    raw_msg_queue.put_nowait({
+                        "time_ms": msg_time_ms,
+                        "can_id": msg.can_id,
+                        "data": bytes(msg.data)
+                    })
                     offset += 20
                 
                 if msgs_to_publish:
@@ -538,8 +603,16 @@ class TelemetryNode:
                                         "canId": m['id'],
                                         "data": list(bytes.fromhex(m['d']))
                                     })
+                                    raw_msg_queue.put_nowait({
+                                        "time_ms": msg_time_ms,
+                                        "can_id": m['id'],
+                                        "data": bytes.fromhex(m['d'])
+                                    })
                                 self.publish(REDIS_CAN_CHANNEL, json.dumps(msgs))
                                 missing_seqs.remove(seq)
+                                # Update status map for visualization
+                                if seq in self.status_map:
+                                    self.status_map[seq] = 2 # Recovered via TCP
                         
                         writer.close()
                         await writer.wait_closed()
@@ -550,19 +623,28 @@ class TelemetryNode:
         async def stats_publisher():
             while True:
                 await asyncio.sleep(1)
-                influx_raw = self.redis_client.get("influx:status") if self.redis_client else None
-                influx_status = None
-                if influx_raw:
+                timescale_raw = self.redis_client.get("timescale:status") if self.redis_client else None
+                timescale_status = None
+                if timescale_raw:
                     try:
-                        influx_status = json.loads(influx_raw)
+                        timescale_status = json.loads(timescale_raw)
                     except (json.JSONDecodeError, UnicodeDecodeError):
-                        logger.warning(f"influx:status contains invalid JSON: {influx_raw!r}")
+                        logger.warning(f"timescale:status contains invalid JSON: {timescale_raw!r}")
                 payload = {
                     "type": "system_stats",
                     **stats,
                     "ecu_synced": self._ecu_synced,
                     "ecu_sync_source": self._sync_source,
-                    "influx": influx_status,
+                    "timescale": timescale_status,
+                    "dbc_file": os.getenv("DBC_DISPLAY_NAME") or os.path.basename(os.getenv("DBC_FILE_PATH", "unknown")),
+                    "car_time_synced": self._car_time_synced,
+                    "base_clock_bad": self._base_clock_bad,
+                    "last_udp_time": self.last_udp_time,
+                    "car_alive": (time.time() - self.last_udp_time) < 5 if self.last_udp_time else False,
+                    "status_buffer": [self.status_map.get(s, 0) for s in range(max(0, self.latest_seq - 2999), self.latest_seq + 1)] if self.latest_seq != -1 else [],
+                    "own_git_hash": self._own_git_hash,
+                    "car_git_hash": self._car_git_hash,
+                    "remote_ip": os.getenv("REMOTE_IP", "unknown"),
                 }
                 self.publish("system_stats", json.dumps(payload))
                 stats["received"] = 0
@@ -628,7 +710,79 @@ class TelemetryNode:
             finally:
                 uplink_sock.close()
 
-        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), utils.heartbeat_coro(self.telemetry_event)]
+        # Car Time Injector — pushes base station clock to car Pi via /set-time every 30s.
+        # Safety gate: if base clock is before 2026-04-01, injection is blocked and
+        # _base_clock_bad is set so the status page can warn the operator.
+        _BASE_CLOCK_TRUST_EPOCH = 1743465600.0  # 2026-04-01 00:00:00 UTC
+        _CAR_TIME_INJECT_INTERVAL = 30.0
+        _CAR_STATUS_PORT = int(os.getenv("STATUS_PORT", "8080"))
+
+        async def car_time_injector():
+            import urllib.request
+            await asyncio.sleep(5.0)  # Let base clock settle first
+            while True:
+                now = time.time()
+                if now < _BASE_CLOCK_TRUST_EPOCH:
+                    self._base_clock_bad = True
+                    self._car_time_synced = False
+                    logger.warning(
+                        f"Base clock is before 2026-04-01 ({now:.0f}). "
+                        "Car time injection BLOCKED until base clock is corrected."
+                    )
+                else:
+                    self._base_clock_bad = False
+                    time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(now))
+                    url = f"http://{REMOTE_IP}:{_CAR_STATUS_PORT}/set-time"
+                    payload = json.dumps({"time": time_str}).encode()
+                    try:
+                        import urllib.error
+                        req = urllib.request.Request(
+                            url, data=payload,
+                            headers={"Content-Type": "application/json"},
+                            method="POST",
+                        )
+                        loop = asyncio.get_running_loop()
+                        resp = await loop.run_in_executor(
+                            None,
+                            lambda: urllib.request.urlopen(req, timeout=5)
+                        )
+                        resp.read()
+                        self._car_time_synced = True
+                        logger.info(f"Car Pi clock set to {time_str} UTC")
+                    except urllib.error.HTTPError as e:
+                        self._car_time_synced = False
+                        logger.warning(f"Car rejected time injection ({e.code}): {e.read().decode(errors='replace')}")
+                    except urllib.error.URLError as e:
+                        self._car_time_synced = False
+                        logger.debug(f"Car unreachable for time injection — car may be off ({url}: {e.reason})")
+                    except Exception as e:
+                        self._car_time_synced = False
+                        logger.warning(f"Car time injection error ({url}): {e}")
+                await asyncio.sleep(_CAR_TIME_INJECT_INTERVAL)
+
+        async def version_checker():
+            import urllib.request, urllib.error
+            await asyncio.sleep(8.0)  # stagger from time injector
+            while True:
+                url = f"http://{REMOTE_IP}:{_CAR_STATUS_PORT}/version"
+                try:
+                    loop = asyncio.get_running_loop()
+                    resp = await loop.run_in_executor(
+                        None, lambda: urllib.request.urlopen(url, timeout=5)
+                    )
+                    data = json.loads(resp.read().decode())
+                    self._car_git_hash = data.get("git_hash", "unknown")
+                    if self._car_git_hash != self._own_git_hash:
+                        logger.warning(
+                            f"Version mismatch: base={self._own_git_hash} car={self._car_git_hash}"
+                        )
+                except urllib.error.URLError:
+                    pass  # car offline — logged by time injector already
+                except Exception as e:
+                    logger.debug(f"Version check error: {e}")
+                await asyncio.sleep(30.0)
+
+        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_csv_logger(), car_time_injector(), version_checker(), utils.heartbeat_coro(self.telemetry_event)]
         if ENABLE_UPLINK:
             tasks.append(uplink_relay())
         await asyncio.gather(*tasks)

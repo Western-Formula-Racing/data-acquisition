@@ -28,7 +28,7 @@ export class SyncService {
 
   /**
    * Sync recorded CAN frames to the server TimescaleDB via REST API.
-   * Replaces the InfluxDB3 Line Protocol upload.
+    * Replaces the legacy line protocol upload path.
    */
   public async syncToServer(
     config: SyncConfig,

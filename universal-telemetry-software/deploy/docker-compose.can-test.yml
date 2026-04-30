@@ -3,7 +3,10 @@
 # Container uses network_mode: host so it sees the host CAN interface.
 services:
   telemetry:
-    build: ..
+    build:
+      context: ..
+      args:
+        GIT_HASH: ${GIT_HASH:-ci-unknown}
     container_name: daq-can-test
     privileged: true
     network_mode: host
@@ -25,7 +28,10 @@ services:
         condition: service_healthy
 
   telemetry-base:
-    build: ..
+    build:
+      context: ..
+      args:
+        GIT_HASH: ${GIT_HASH:-ci-unknown}
     container_name: daq-can-test-base
     privileged: true
     network_mode: host

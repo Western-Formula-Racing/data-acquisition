@@ -9,14 +9,14 @@ ingress:
       headers:
         Host: localhost
 
-  - hostname: influxdb3.0001200.xyz
+  - hostname: timescaledb.0001200.xyz
     service: http://127.0.0.1:9000
     originRequest:
       noTLSVerify: true
       headers:
         Host: localhost
 
-  - hostname: influxdb3-data.0001200.xyz
+  - hostname: timescaledb-data.0001200.xyz
     service: http://127.0.0.1:8181
     originRequest:
       noTLSVerify: true

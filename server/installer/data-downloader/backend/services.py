@@ -7,11 +7,11 @@ from typing import Dict, List, Optional
 
 import psycopg2
 
-from backend.config import Settings
+from backend.config import Settings, SeasonConfig
 from backend.storage import RunsRepository, SensorsRepository, ScannerStatusRepository
 from backend.db_queries import fetch_signal_series
 from backend.server_scanner import ScannerConfig, scan_runs
-from backend.sql import SensorQueryConfig, fetch_unique_sensors
+from backend.sql import SensorQueryConfig, fetch_unique_sensors, discover_season_tables
 
 
 logger = logging.getLogger(__name__)
@@ -34,18 +34,58 @@ def _parse_iso(value: str | None) -> Optional[datetime]:
 class DataDownloaderService:
     def __init__(self, settings: Settings):
         self.settings = settings
-        data_dir = Path(settings.data_dir).resolve()
-        data_dir.mkdir(parents=True, exist_ok=True)
+        self._data_dir = Path(settings.data_dir).resolve()
+        self._data_dir.mkdir(parents=True, exist_ok=True)
 
+        # Mutable season list — starts from explicit config, or auto-discovered from DB
+        self._seasons: List[SeasonConfig] = list(settings.seasons)
         self.runs_repos: Dict[str, RunsRepository] = {}
         self.sensors_repos: Dict[str, SensorsRepository] = {}
 
-        for season in settings.seasons:
-            self.runs_repos[season.name] = RunsRepository(data_dir, suffix=season.name)
-            self.sensors_repos[season.name] = SensorsRepository(data_dir, suffix=season.name)
+        for season in self._seasons:
+            self._register_season(season)
 
-        self.status_repo = ScannerStatusRepository(data_dir)
+        if not self._seasons:
+            logger.info("SEASONS not configured — auto-discovering from TimescaleDB")
+            self._refresh_seasons_from_db()
+
+        self.status_repo = ScannerStatusRepository(self._data_dir)
         self._log_db_connectivity()
+
+    # ------------------------------------------------------------------
+    # Season management
+    # ------------------------------------------------------------------
+
+    def _register_season(self, season: SeasonConfig) -> None:
+        """Create repo objects for a season if not already registered."""
+        if season.name not in self.runs_repos:
+            self.runs_repos[season.name] = RunsRepository(self._data_dir, suffix=season.name)
+        if season.name not in self.sensors_repos:
+            self.sensors_repos[season.name] = SensorsRepository(self._data_dir, suffix=season.name)
+
+    def _refresh_seasons_from_db(self) -> None:
+        """
+        Query TimescaleDB for season tables and register any that aren't
+        already known.  Called at startup (when SEASONS is not set) and
+        at the start of every full scan so new seasons are picked up
+        without a service restart.
+        """
+        discovered = discover_season_tables(self.settings.postgres_dsn)
+        known_names = {s.name for s in self._seasons}
+        added = 0
+        for table_name, year in discovered:
+            season_name = table_name.upper()
+            if season_name not in known_names:
+                season = SeasonConfig(name=season_name, year=year, table=table_name)
+                self._seasons.append(season)
+                self._register_season(season)
+                known_names.add(season_name)
+                added += 1
+                logger.info("Auto-discovered season: %s (table=%s, year=%d)", season_name, table_name, year)
+        if added:
+            self._seasons.sort(key=lambda s: s.year, reverse=True)
+        elif not self._seasons:
+            logger.warning("No season tables found in TimescaleDB. Check POSTGRES_DSN and table schema.")
 
     # ------------------------------------------------------------------
     # Reads
@@ -78,7 +118,7 @@ class DataDownloaderService:
     def get_seasons(self) -> List[dict]:
         return [
             {"name": s.name, "year": s.year, "table": s.table, "color": s.color}
-            for s in self.settings.seasons
+            for s in self._seasons
         ]
 
     # ------------------------------------------------------------------
@@ -95,7 +135,7 @@ class DataDownloaderService:
     ) -> dict:
         target_name = season or self._default_season()
         season_cfg = next(
-            (s for s in self.settings.seasons if s.name == target_name), None
+            (s for s in self._seasons if s.name == target_name), None
         )
         if not season_cfg:
             raise ValueError(f"Season {target_name} not configured")
@@ -116,12 +156,17 @@ class DataDownloaderService:
     def run_full_scan(
         self, source: str = "manual", season_names: list[str] | None = None
     ) -> Dict[str, dict]:
+        # Refresh auto-discovered seasons on every scan so new tables are
+        # picked up without a service restart (only when not explicitly configured).
+        if not self.settings.seasons:
+            self._refresh_seasons_from_db()
+
         self.status_repo.mark_start(source)
         results = {}
         errors = []
 
         try:
-            sorted_seasons = sorted(self.settings.seasons, key=lambda s: s.year, reverse=True)
+            sorted_seasons = sorted(self._seasons, key=lambda s: s.year, reverse=True)
             if season_names is not None:
                 sorted_seasons = [s for s in sorted_seasons if s.name in season_names]
 
@@ -187,24 +232,32 @@ class DataDownloaderService:
     # Connectivity check
     # ------------------------------------------------------------------
 
-    def _log_db_connectivity(self) -> None:
+    def check_db_connectivity(self) -> tuple[bool, str]:
+        """Return (ok, detail) where detail is the PG version string or the error message."""
         try:
-            logger.info("Checking TimescaleDB connectivity (%s)...", self.settings.postgres_dsn)
             with psycopg2.connect(self.settings.postgres_dsn) as conn:
                 with conn.cursor() as cur:
                     cur.execute("SELECT version()")
-            logger.info("TimescaleDB connectivity OK")
-        except Exception:
-            logger.exception("TimescaleDB connectivity check failed")
+                    version: str = cur.fetchone()[0]
+            return True, version
+        except Exception as exc:
+            return False, str(exc)
+
+    def _log_db_connectivity(self) -> None:
+        ok, detail = self.check_db_connectivity()
+        if ok:
+            logger.info("TimescaleDB connectivity OK: %s", detail)
+        else:
+            logger.error("TimescaleDB connectivity check failed: %s", detail)
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
     def _default_season(self) -> str:
-        if self.settings.seasons:
-            return self.settings.seasons[0].name
-        return "WFR26"
+        if self._seasons:
+            return self._seasons[0].name
+        return ""
 
     @staticmethod
     def _build_sensor_fallback_range(

@@ -56,8 +56,8 @@ When importing external dashboards, you need to update datasource references:
     "panels": [
       {
         "datasource": {
-          "type": "influxdb",
-          "uid": "influxdb-wfr-v2"    // Must match your datasource UID
+          "type": "postgres",
+          "uid": "timescaledb-wfr-v2"    // Must match your datasource UID
         }
       }
     ]
@@ -66,7 +66,7 @@ When importing external dashboards, you need to update datasource references:
 ```
 
 ### **Datasource UID Reference**
-Your current InfluxDB datasource UID: `influxdb-wfr-v2`
+Your current TimescaleDB datasource UID: `timescaledb-wfr-v2`
 
 
 ## 🚀 **Quick Setup Steps**
@@ -109,7 +109,7 @@ After restart, check that dashboards are provisioned:
 
 1. **Log into Grafana**: http://localhost:8087
 2. **Check dashboards**: Should appear in "General" or "DAQ System" folder
-3. **Verify data**: Ensure queries work with your InfluxDB data
+3. **Verify data**: Ensure queries work with your TimescaleDB data
 
 ## 📝 **Dashboard Development Workflow**
 
@@ -121,10 +121,10 @@ After restart, check that dashboards are provisioned:
 
 ## 🎯 **Data Source Configuration**
 
-All dashboard queries should reference your InfluxDB setup:
+All dashboard queries should reference your TimescaleDB setup:
 - **Bucket**: `ourCar` or `WFR2025` ...
 - **Organization**: `WFR`
-- **Datasource UID**: `influxdb-wfr-v2`
+- **Datasource UID**: `timescaledb-wfr-v2`
 
 ## 💡 **Pro Tips**
 

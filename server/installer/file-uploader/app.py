@@ -7,6 +7,8 @@ from flask import (
     Response,
 )
 import uuid, time, threading, json, logging, requests, os, asyncio, io, zipfile
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Optional, Tuple, List
 from urllib.parse import quote
 from helper import CANTimescaleStreamer
@@ -20,7 +22,7 @@ if os.getenv("DEBUG") is None:
 
 error_logger = logging.getLogger(__name__)
 
-ALLOWED_EXTENSIONS = {"csv", "zip"}
+ALLOWED_EXTENSIONS = {"csv", "zip", "pecan"}
 UPLOAD_ZIP_MAX_ARCHIVE_BYTES = int(os.getenv("UPLOAD_ZIP_MAX_ARCHIVE_BYTES", str(2 * 1024**3)))
 UPLOAD_ZIP_MAX_MEMBER_BYTES = int(os.getenv("UPLOAD_ZIP_MAX_MEMBER_BYTES", str(4 * 1024**3)))
 UPLOAD_ZIP_MAX_TOTAL_UNCOMPRESSED_BYTES = int(
@@ -44,7 +46,7 @@ POSTGRES_DSN = os.getenv("POSTGRES_DSN", "postgresql://wfr:wfr_password@timescal
 GITHUB_DBC_TOKEN = os.getenv("GITHUB_DBC_TOKEN", "").strip()
 GITHUB_DBC_REPO = os.getenv("GITHUB_DBC_REPO", "Western-Formula-Racing/DBC").strip()
 GITHUB_DBC_BRANCH = os.getenv("GITHUB_DBC_BRANCH", "main").strip()
-app = Flask(__name__)
+app = Flask(__name__, static_url_path="/assets")
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +157,16 @@ def _zip_entry_path_safe(arcname: str) -> bool:
     return ".." not in n.split("/")
 
 
+class _InMemoryFile:
+    """Minimal file-like object for passing in-memory bytes through expand_upload_files_to_csv_payloads."""
+    def __init__(self, filename: str, data: bytes):
+        self.filename = filename
+        self._data = data
+
+    def read(self) -> bytes:
+        return self._data
+
+
 def expand_upload_files_to_csv_payloads(files) -> Tuple[List[Tuple[str, bytes]], Optional[str]]:
     out: List[Tuple[str, bytes]] = []
     zip_idx = 0
@@ -178,14 +190,14 @@ def expand_upload_files_to_csv_payloads(files) -> Tuple[List[Tuple[str, bytes]],
                     infos = [
                         i for i in z.infolist()
                         if not i.is_dir()
-                        and i.filename.lower().endswith(".csv")
+                        and (i.filename.lower().endswith(".csv") or i.filename.lower().endswith(".pecan"))
                         and _zip_entry_path_safe(i.filename)
                         # exclude macOS resource forks (__MACOSX/ and ._filename)
                         and not i.filename.startswith("__MACOSX/")
                         and not os.path.basename(i.filename).startswith("._")
                     ]
                     if not infos:
-                        return [], f"No CSV files found in zip: {name}"
+                        return [], f"No CSV or .pecan files found in zip: {name}"
                     if len(infos) > UPLOAD_ZIP_MAX_CSV_IN_ZIP:
                         return [], f"Too many CSV entries in {name} (max {UPLOAD_ZIP_MAX_CSV_IN_ZIP})"
                     total_uc = sum(i.file_size for i in infos)
@@ -193,21 +205,61 @@ def expand_upload_files_to_csv_payloads(files) -> Tuple[List[Tuple[str, bytes]],
                         return [], f"Zip {name} uncompressed total too large"
                     for i in infos:
                         if i.file_size > UPLOAD_ZIP_MAX_MEMBER_BYTES:
-                            return [], f"CSV inside zip too large: {i.filename} in {name}"
+                            return [], f"File inside zip too large: {i.filename} in {name}"
                         leaf = os.path.basename(i.filename) or "data.csv"
                         key = (zlabel, leaf.lower())
                         if key in seen_in_zip:
-                            return [], f'Duplicate CSV filename "{leaf}" inside zip {name}'
+                            return [], f'Duplicate filename "{leaf}" inside zip {name}'
                         seen_in_zip.add(key)
                         with z.open(i, "r") as fp:
                             body = fp.read()
-                        out.append((f"_z{zlabel}/{leaf}", body))
+                        if leaf.lower().endswith(".pecan"):
+                            # Convert .pecan to CSV in-place so the pipeline is uniform
+                            sub_out, err = expand_upload_files_to_csv_payloads(
+                                [_InMemoryFile(leaf, body)]
+                            )
+                            if err:
+                                return [], f"{err} (inside zip {name})"
+                            out.extend(sub_out)
+                        else:
+                            out.append((f"_z{zlabel}/{leaf}", body))
             except zipfile.BadZipFile:
                 return [], f"Invalid or corrupt zip: {name}"
             except RuntimeError as e:
                 return [], f"Could not read zip {name}: {e}"
+        elif ext == "pecan":
+            try:
+                payload = json.loads(data.decode("utf-8"))
+            except Exception:
+                return [], f"Invalid .pecan file (bad JSON): {name}"
+            if payload.get("format") != "pecan-session" or payload.get("version") != 2:
+                return [], f".pecan file must be pecan-session v2 format: {name}"
+            frames = payload.get("frames") or []
+            if not frames:
+                return [], f"No frames in .pecan file: {name}"
+            epoch_base_ms = payload.get("epochBaseMs")
+            if epoch_base_ms is None:
+                return [], f".pecan file missing epochBaseMs — cannot determine timestamps: {name}"
+            tz_toronto = ZoneInfo("America/Toronto")
+            start_dt = datetime.fromtimestamp(epoch_base_ms / 1000, tz=tz_toronto)
+            csv_filename = start_dt.strftime("%Y-%m-%d-%H-%M-%S") + ".csv"
+            lines = []
+            for frame in frames:
+                if not isinstance(frame, list) or len(frame) < 4:
+                    continue
+                try:
+                    t_rel_ms = int(frame[0])
+                    can_id = int(frame[1])
+                    data_bytes = bytes.fromhex(str(frame[3]))
+                    padded = (data_bytes + b"\x00" * 8)[:8]
+                except Exception:
+                    continue
+                lines.append(f"{t_rel_ms},CAN,{can_id}," + ",".join(str(b) for b in padded))
+            if not lines:
+                return [], f"No parseable frames in .pecan file: {name}"
+            out.append((csv_filename, "\n".join(lines).encode("utf-8")))
         else:
-            return [], f"Invalid file type (only .csv and .zip): {name}"
+            return [], f"Invalid file type (only .csv, .zip, and .pecan): {name}"
     if not out:
         return [], "No CSV data to process"
     return out, None
@@ -501,12 +553,13 @@ def upload_file():
                 pass
 
         def worker():
-            streamer = CANTimescaleStreamer(
-                postgres_dsn=POSTGRES_DSN,
-                table=season.lower(),
-                dbc_path=dbc_temp_path,
-            )
+            streamer = None
             try:
+                streamer = CANTimescaleStreamer(
+                    postgres_dsn=POSTGRES_DSN,
+                    table=season.lower(),
+                    dbc_path=dbc_temp_path,
+                )
                 asyncio.run(
                     streamer.stream_multiple_csvs(
                         file_data=file_data,
@@ -516,14 +569,16 @@ def upload_file():
                 )
             except Exception as e:
                 error_logger.error(traceback.format_exc())
-                PROGRESS[task_id]["msg"]  = f"Error: {e}"
-                PROGRESS[task_id]["done"] = True
+                PROGRESS[task_id]["msg"]   = f"Error: {e}"
+                PROGRESS[task_id]["error"] = str(e)
+                PROGRESS[task_id]["done"]  = True
                 slack.fail(str(e))
             finally:
-                try:
-                    streamer.close()
-                except Exception as e:
-                    print("error closing streamer", e)
+                if streamer:
+                    try:
+                        streamer.close()
+                    except Exception as e:
+                        print("error closing streamer", e)
                 if dbc_temp_path and os.path.exists(dbc_temp_path):
                     try:
                         os.unlink(dbc_temp_path)

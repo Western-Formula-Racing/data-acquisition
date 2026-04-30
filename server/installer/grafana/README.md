@@ -8,17 +8,18 @@ The Grafana container included in this repository is fully provisioned. Dashboar
 - **Username:** `admin`
 - **Password:** defined by `GRAFANA_ADMIN_PASSWORD` in `installer/.env` (defaults to `dev-grafana-password`)
 
-## InfluxDB datasource
+## TimescaleDB datasource
 
-Provisioned from `provisioning/datasources/influxdb.yml`:
+Provisioned from `provisioning/datasources/postgres.yml`:
 
 | Setting | Value |
 | --- | --- |
-| URL | `${INFLUXDB_URL:-http://influxdb3:8181}` |
-| Organisation | `WFR` |
-| Bucket | `WFR25` |
-| Token | `${INFLUXDB_TOKEN}` (injected from `.env`) |
-| Query language | Flux |
+| Type | PostgreSQL |
+| URL | `timescaledb:5432` |
+| Database | `wfr` |
+| User | `$POSTGRES_USER` (from `.env`) |
+| Password | `$POSTGRES_PASSWORD` (from `.env`) |
+| TimescaleDB | enabled |
 
 The datasource is marked as the default, so new panels automatically target it.
 
@@ -36,6 +37,6 @@ The repository ships with **Vehicle Overview.json**, a simple demonstration dash
 
 ## Troubleshooting
 
-- Verify the datasource using **Administration → Data sources → InfluxDB-WFR**. A green status icon indicates a successful connection.
+- Verify the datasource using **Administration → Data sources → TimescaleDB-WFR**. A green status icon indicates a successful connection.
 - Inspect logs with `docker compose logs -f grafana`.
 - If dashboards fail to load, confirm that the JSON files exist inside the container: `docker compose exec grafana ls /etc/grafana/dashboards`.

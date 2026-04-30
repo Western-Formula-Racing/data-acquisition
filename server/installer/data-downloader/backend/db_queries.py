@@ -1,7 +1,5 @@
 """
 db_queries.py — Signal time-series queries against TimescaleDB.
-
-Replaces influx_queries.py.  All queries are plain SQL via psycopg2.
 """
 from __future__ import annotations
 

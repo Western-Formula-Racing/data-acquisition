@@ -12,18 +12,25 @@ graph LR
     CAN["CAN Reader\n(can0)"] --> UDP["UDP Sender\n(batch 20msg/50ms)"]
     CAN --> RB["Ring Buffer\n(60 sec)"]
     RB --> TCP_S["TCP Resend Server\n(:5006)"]
+    CAM["USB Camera"] --> FFMPEG["ffmpeg\nx264 encoder"]
+    FFMPEG -- "RTSP ANNOUNCE\nTCP :8554" --> MTX_PUSH["→ MediaMTX"]
+    CTRL["Video Control\nHTTP :8081"] -. "quality preset" .-> FFMPEG
   end
 
-  subgraph BASE["BASE — Raspberry Pi"]
+  subgraph BASE["BASE — MacBook / RPi"]
     UDP_R["UDP Receiver"] --> Redis["Redis Publisher"]
     Redis --> WS["WebSocket Bridge\n(:9080)"]
     Redis --> STATUS["Status HTTP Server\n(:8080)"]
     TCP_C["TCP Client\n(recovery)"] --> Redis
+    MTX["MediaMTX\n(:8554 RTSP in\n:8889 WebRTC out)"]
   end
 
   UDP -- "UDP :5005" --> UDP_R
   TCP_S -- "TCP :5006" --> TCP_C
+  MTX_PUSH -- "RTSP push" --> MTX
   WS --> PECAN["PECAN Dashboard\n(:3000)"]
+  MTX -- "WebRTC WHEP\n:8889" --> PECAN
+  PECAN -. "quality change\nHTTP :8081" .-> CTRL
 ```
 
 **Car mode** is auto-detected when `can0` is present. Otherwise the software runs in **base station mode**.
@@ -123,13 +130,6 @@ Once `can0` is confirmed working, proceed to deployment.
 - CAN HAT set up (see Hardware Setup above)
 - Network connection between car and base (LAN cable or Ubiquiti radios)
 
-> ```
->
-> Then use the rpi5 override whenever starting the stack:
-> ```bash
-> docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.rpi5.yml up -d
-> ```
-
 ### Installation
 
 Clone the repository:
@@ -170,15 +170,15 @@ docker compose logs -f telemetry
 
 ## Deploying with Pre-built Images (GHCR)
 
-Instead of building locally, use pre-built images from GitHub Container Registry:
+Use `docker-compose.macbook-base.yml` for MacBook or `docker-compose.rpi-base.yml` for Pi base station.
+Both pull pre-built images from GHCR:
 
 ```bash
-# Login (required for private packages)
-echo $CR_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+# MacBook full stack
+docker compose -f deploy/docker-compose.macbook-base.yml up -d
 
-# Pull and start
-docker compose -f deploy/docker-compose.prod.yml pull
-docker compose -f deploy/docker-compose.prod.yml up -d
+# RPi base station (ephemeral, no DB persistence)
+docker compose -f deploy/docker-compose.rpi-base.yml up -d
 ```
 
 Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
@@ -199,9 +199,21 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 | `WS_PORT` | `9080` | WebSocket port for PECAN |
 | `STATUS_PORT` | `8080` | HTTP port for status page |
 | `SIMULATE` | `false` | Simulate CAN data (no hardware needed) |
-| `ENABLE_VIDEO` | `false` | Enable video streaming |
+| `ENABLE_VIDEO` | `false` | Enable video streaming (car: push RTSP; base: unused) |
 | `ENABLE_AUDIO` | `false` | Enable audio streaming |
 | `ENABLE_TIMESCALE_LOGGING` | `false` | Log telemetry to server TimescaleDB (direct write) |
+| `ENABLE_WS_RELAY` | `false` | Enable downlink-only WebSocket relay for remote viewers |
+| `RELAY_TOKEN` | unset | Optional passcode for relay connections (`?token=...`) |
+| `RELAY_LISTEN_PORT` | `9089` | Local port for the relay WebSocket server |
+| `RELAY_UPSTREAM_WS` | `ws://127.0.0.1:9080` | Upstream base-station WebSocket consumed by the relay |
+| `RELAY_REQUIRE_TOKEN_ON_LAN` | `false` | Require token for LAN clients too, not just loopback/public clients |
+| `RTSP_PORT` | `8554` | Port on base station where MediaMTX accepts RTSP push |
+| `VIDEO_STREAM_NAME` | `car-camera` | RTSP/WebRTC stream path name |
+| `VIDEO_WIDTH` | `848` | Capture width (overridden by quality preset) |
+| `VIDEO_HEIGHT` | `480` | Capture height (overridden by quality preset) |
+| `VIDEO_FPS` | `30` | Frame rate |
+| `VIDEO_BITRATE` | `800` | Encoder bitrate in kbps (overridden by quality preset) |
+| `VIDEO_CONTROL_PORT` | `8081` | HTTP port for runtime quality control on car |
 
 ### Ports
 
@@ -212,7 +224,60 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 | 6379 | TCP | Redis (internal) |
 | 8080 | HTTP | Status monitoring page |
 | 9080 | WebSocket | PECAN dashboard feed |
+| 9089 | WebSocket | Downlink-only relay for remote viewers |
 | 3000 | HTTP | PECAN dashboard UI |
+| 8081 | HTTP | Video quality control (car only, when ENABLE_VIDEO=true) |
+| 8554 | TCP | RTSP — car pushes H.264 to MediaMTX on base |
+| 8889 | HTTP | WebRTC WHEP — Pecan pulls video from MediaMTX |
+
+---
+
+## Video Streaming
+
+Video uses a **push architecture**: the car Pi encodes H.264 with ffmpeg and pushes RTSP to [MediaMTX](https://github.com/bluenviron/mediamtx) running on the base station. Pecan receives the stream via WebRTC (WHEP protocol).
+
+```
+Car Pi (ffmpeg x264) → RTSP ANNOUNCE/RECORD → MediaMTX (:8554)
+                                                    ↓
+                                    WebRTC WHEP (:8889) → Pecan browser
+```
+
+### Why MediaMTX
+
+go2rtc (previous relay) does not support RTSP ANNOUNCE/RECORD (push). MediaMTX natively supports both push and WebRTC output with sub-second latency.
+
+### Encoder settings
+
+ffmpeg runs on the car with `libx264 -preset ultrafast -tune zerolatency`. Key parameters:
+
+| Parameter | Value | Reason |
+|-----------|-------|--------|
+| `-preset ultrafast` | — | Minimum encode latency |
+| `-tune zerolatency` | — | Disables B-frames and lookahead |
+| `-g 15` | keyframe every 0.5s | WebRTC can recover from packet loss within 0.5s |
+| `-bf 0` | no B-frames | Eliminates reorder buffer delay |
+| `-threads 1` | — | Avoids thread synchronisation stalls |
+| `-rtsp_transport tcp` | — | MediaMTX only accepts TCP for incoming ANNOUNCE/RECORD |
+
+### Quality presets
+
+Selectable live from Pecan's video feed (bottom-right). Pecan POSTs to the car's control server (`http://10.71.1.10:8081/video/quality`), which restarts ffmpeg with new encoder params.
+
+| Preset | Resolution | Bitrate |
+|--------|-----------|---------|
+| 360p (low) | 640×360 | 500 kbps |
+| 480p (medium, default) | 848×480 | 800 kbps |
+| 720p (high) | 1280×720 | 2000 kbps |
+
+### Camera focus
+
+If using a USB camera with autofocus that parks at infinity, set manual focus via v4l2:
+
+```bash
+# Disable autofocus and set manual focus (0=close, 255=infinity)
+v4l2-ctl --device /dev/video0 --set-ctrl focus_automatic_continuous=0
+v4l2-ctl --device /dev/video0 --set-ctrl focus_absolute=40
+```
 
 ---
 
@@ -221,6 +286,80 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 **Status page** (`http://<ip>:8080`): real-time connection status, packet stats, live packet rate chart.
 
 **PECAN dashboard** (`http://<ip>:3000`): live CAN message visualization. Connects automatically to WebSocket on port 9080.
+
+---
+
+## Remote Viewing via WebSocket Relay
+
+The base station can publish the live telemetry WebSocket through a downlink-only relay on port `9089`. The relay connects upstream to the normal local WebSocket (`9080`) and rebroadcasts frames to viewers; downstream messages are not forwarded back to the car or base station.
+
+### Enable the relay
+
+For the MacBook base stack this is already enabled in `deploy/docker-compose.macbook-base.yml`:
+
+```yaml
+ENABLE_WS_RELAY=true
+RELAY_UPSTREAM_WS=ws://127.0.0.1:9080
+RELAY_LISTEN_PORT=9089
+RELAY_TOKEN=<optional passcode>
+```
+
+You can set or change the token from the status page at `http://localhost:8080`. Tokens saved from the UI take effect for new relay connections immediately.
+
+Local viewers can connect to:
+
+```text
+ws://<base-station-ip>:9089?token=<token>
+```
+
+### Forward with Cloudflare Tunnel
+
+Cloudflare Tunnel is the recommended way to expose the relay as secure `wss://` without opening inbound firewall ports.
+
+Install and log in:
+
+```bash
+brew install cloudflared
+cloudflared tunnel login
+```
+
+Create a tunnel:
+
+```bash
+cloudflared tunnel create daq-ws-relay
+```
+
+Create `~/.cloudflared/config.yml`:
+
+```yaml
+tunnel: <tunnel-id-or-name>
+credentials-file: /Users/<you>/.cloudflared/<tunnel-id>.json
+
+ingress:
+  - hostname: daq-relay.example.com
+    service: http://localhost:9089
+  - service: http_status:404
+```
+
+Route DNS:
+
+```bash
+cloudflared tunnel route dns daq-ws-relay daq-relay.example.com
+```
+
+Run the tunnel while the base station stack is up:
+
+```bash
+cloudflared tunnel run daq-ws-relay
+```
+
+Remote viewers connect with:
+
+```text
+wss://daq-relay.example.com?token=<token>
+```
+
+This same relay can be published by any reverse tunnel provider; Cloudflare is only the documented default.
 
 ---
 
@@ -281,13 +420,13 @@ universal-telemetry-software/
 │   └── poe.py                  # PoE monitor
 ├── tests/
 ├── deploy/
-│   ├── docker-compose.yml          # Development/local build
-│   ├── docker-compose.prod.yml     # Production (GHCR images)
-│   ├── docker-compose.staging.yml  # Staging (:test-latest images)
-│   ├── docker-compose.test.yml     # Integration test stack (CI)
-│   ├── docker-compose.can-test.yml # vCAN pipeline tests
-│   ├── docker-compose.jitsi.yml    # Optional Jitsi comms addon
-│   ├── docker-compose.rpi5.yml     # RPi5 QEMU override
+│   ├── docker-compose.yml              # General purpose (RPi or MacBook)
+│   ├── docker-compose.macbook-base.yml # MacBook full stack (TimescaleDB + Grafana)
+│   ├── docker-compose.rpi-base.yml     # RPi lightweight base (ephemeral)
+│   ├── docker-compose.staging.yml      # Staging (:test-latest images)
+│   ├── docker-compose.test.yml         # Integration test stack (CI)
+│   ├── docker-compose.can-test.yml     # vCAN pipeline tests
+│   ├── docker-compose.jitsi.yml        # Optional Jitsi comms addon
 │   └── WHICH_ONE.md                # Compose file reference
 ├── Dockerfile
 └── requirements.txt

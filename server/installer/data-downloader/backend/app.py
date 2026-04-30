@@ -58,7 +58,12 @@ app.add_middleware(
 
 @app.get("/api/health")
 def healthcheck() -> dict:
-    return {"status": "ok"}
+    ok, detail = service.check_db_connectivity()
+    return {
+        "status": "ok" if ok else "degraded",
+        "timescaledb": ok,
+        "timescaledb_detail": detail,
+    }
 
 
 def _docker_container_running(container_name: str) -> bool:
@@ -129,13 +134,19 @@ def trigger_scan(background_tasks: BackgroundTasks, season: str | None = None) -
 @app.post("/api/query")
 def query_signal(payload: DataQueryPayload, season: str | None = None) -> dict:
     limit = None if payload.no_limit else (payload.limit or 2000)
-    return service.query_signal_series(
-        payload.signal,
-        payload.start,
-        payload.end,
-        limit,
-        season=season
-    )
+    try:
+        return service.query_signal_series(
+            payload.signal,
+            payload.start,
+            payload.end,
+            limit,
+            season=season,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Query failed for signal %s", payload.signal)
+        raise HTTPException(status_code=503, detail=f"Database query failed: {exc}")
 
 
 # ── CAN frames batch ingest (for flight-recorder sync) ─────────────────────────
@@ -185,7 +196,7 @@ def ingest_can_frames(payload: CanFramesBatchPayload) -> dict:
     if not payload.frames:
         return {"ingested": 0}
 
-    table = f"{payload.season.lower()}_base"
+    table = payload.season.lower()
 
     # Deduplicate within batch: last frame wins for (time, message_name)
     seen: dict = {}
@@ -238,13 +249,9 @@ def ingest_can_frames(payload: CanFramesBatchPayload) -> dict:
 @app.get("/", response_class=HTMLResponse)
 def index():
     """Simple status page for debugging."""
-    try:
-        service._log_db_connectivity()
-        influx_status = "Connected"
-        influx_color = "green"
-    except Exception as e:
-        influx_status = f"Error: {e}"
-        influx_color = "red"
+    db_ok, db_detail = service.check_db_connectivity()
+    timescale_status = db_detail if db_ok else f"Error: {db_detail}"
+    timescale_color = "green" if db_ok else "red"
 
     # Default to first season for overview
     runs = service.get_runs()
@@ -272,7 +279,7 @@ def index():
         
         <div class="card">
             <h2>System Status</h2>
-            <p><strong>InfluxDB Connection:</strong> <span style="color: {influx_color}">{influx_status}</span></p>
+            <p><strong>TimescaleDB Connection:</strong> <span style="color: {timescale_color}">{timescale_status}</span></p>
             <p><strong>Scanner Status:</strong> {scanner_status.get('status', 'Unknown')} (Last run: {scanner_status.get('last_run', 'Never')})</p>
             <p><strong>API Version:</strong> 1.1.0 (Multi-Season Support)</p>
         </div>

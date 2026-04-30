@@ -1,0 +1,78 @@
+name: Offline Docker Bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to package (branch, tag, SHA)'
+        required: true
+        default: 'timescale-sync'
+
+  release:
+    types: [published]
+
+  push:
+    branches: [ timescale-sync, main, dev ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  package-offline:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Pull all required images
+        run: |
+          docker pull ghcr.io/western-formula-racing/daq-radio/universal-telemetry:latest
+          docker pull ghcr.io/western-formula-racing/daq-radio/pecan:latest
+          docker pull timescale/timescaledb:latest-pg16
+          docker pull redis:8.2
+          docker pull bluenviron/mediamtx:latest
+          docker pull grafana/grafana:latest
+
+      - name: Save images as tarball
+        run: |
+          cd universal-telemetry-software/deploy
+          docker save \
+            ghcr.io/western-formula-racing/daq-radio/universal-telemetry:latest \
+            ghcr.io/western-formula-racing/daq-radio/pecan:latest \
+            timescale/timescaledb:latest-pg16 \
+            redis:8.2 \
+            bluenviron/mediamtx:latest \
+            grafana/grafana:latest \
+            -o offline/wfr-docker-images.tar
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wfr-docker-images-offline
+          path: universal-telemetry-software/deploy/offline/wfr-docker-images.tar
+          retention-days: 30
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: universal-telemetry-software/deploy/offline/wfr-docker-images.tar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -4,7 +4,6 @@ websockets==14.1
 aiohttp==3.11.11
 redis[hiredis]
 cantools>=39.4.0
-slicks>=0.2.0
 pyarrow>=15.0.0
 psycopg2-binary>=2.9.9
 

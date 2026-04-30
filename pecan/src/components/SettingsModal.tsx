@@ -1,4 +1,8 @@
-import { webSocketService } from "../services/WebSocketService";
+import {
+    webSocketService,
+    PECAN_WS_CANDIDATES_KEY,
+    DEFAULT_WS_FAILOVER_URLS,
+} from "../services/WebSocketService";
 import { forceCache, clearDbcCache } from "../utils/canProcessor";
 import { useState, useEffect } from "react";
 import { Button } from "./Button";
@@ -11,9 +15,10 @@ import { getCategoryConfigString, updateCategories } from "../config/categories"
 import { useSerialStatus } from "../lib/useSerialStatus";
 import NotNotGame from "./NotNotGame";
 import { useDataStoreControls } from "../lib/useDataStore";
+import { DbcSelector } from "./DbcSelector";
+import { useTheme } from "next-themes";
 
 const RETENTION_STORAGE_KEY = "pecan:retention-window-ms";
-const THEME_STORAGE_KEY = "pecan:theme";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -131,6 +136,12 @@ function CommsSensorPicker() {
 
 function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalProps>) {
     const [customWsUrl, setCustomWsUrl] = useState(() => localStorage.getItem("custom-ws-url") || "");
+    const [wsCandidatesText, setWsCandidatesText] = useState(() => {
+        const saved = localStorage.getItem(PECAN_WS_CANDIDATES_KEY);
+        return saved != null && saved.trim() !== ""
+            ? saved
+            : DEFAULT_WS_FAILOVER_URLS.join("\n");
+    });
     const [perfOverlayEnabled, setPerfOverlayEnabled] = useState(() =>
         localStorage.getItem("perf-overlay-enabled") === "true"
     );
@@ -144,26 +155,34 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
         return Number.isFinite(parsed) ? parsed : 30 * 60 * 1000;
     });
 
-    const [theme, setTheme] = useState<"dark" | "light">(() => {
-        const saved = localStorage.getItem(THEME_STORAGE_KEY);
-        return saved === "light" ? "light" : "dark";
-    });
+    const { theme: nextTheme, setTheme } = useTheme();
+    const theme: "dark" | "light" = nextTheme === "light" ? "light" : "dark";
 
     const { session, loadConfig, saveConfig } = useRemoteConfig();
     const [categoryText, setCategoryText] = useState("");
     const [isSavingCategory, setIsSavingCategory] = useState(false);
 
+    // Sync WebSocket fields only when the modal opens — not when session/loadConfig
+    // changes while typing (that was resetting the failover textarea every render).
     useEffect(() => {
-        if (isOpen) {
-            setCategoryText(getCategoryConfigString());
-            setRetentionWindowMsState(getRetentionWindow());
-            if (session?.user) {
-                loadConfig().then(config => {
-                    if (config?.categoryConfig) {
-                        setCategoryText(config.categoryConfig);
-                    }
-                });
-            }
+        if (!isOpen) return;
+        const saved = localStorage.getItem(PECAN_WS_CANDIDATES_KEY);
+        setWsCandidatesText(
+            saved != null && saved.trim() !== "" ? saved : DEFAULT_WS_FAILOVER_URLS.join("\n")
+        );
+        setCustomWsUrl(localStorage.getItem("custom-ws-url") || "");
+    }, [isOpen]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setCategoryText(getCategoryConfigString());
+        setRetentionWindowMsState(getRetentionWindow());
+        if (session?.user) {
+            loadConfig().then((config) => {
+                if (config?.categoryConfig) {
+                    setCategoryText(config.categoryConfig);
+                }
+            });
         }
     }, [isOpen, session, loadConfig]);
 
@@ -221,7 +240,13 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
             className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
             onClick={handleBackdropClick}
         >
-            <div className="relative bg-sidebar rounded-xl shadow-2xl border border-gray-600 w-full max-w-2xl h-[80%] md:w-[66%] p-4 md:p-6 flex flex-col animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+            <div
+                className="relative bg-sidebar rounded-xl shadow-2xl border border-gray-600 w-full max-w-2xl h-[80%] md:w-[66%] p-4 md:p-6 flex flex-col animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+            >
                 {/* Close button */}
                 <button
                     onClick={onClose}
@@ -253,6 +278,9 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                         <NotNotGame onClose={() => setIsGameOpen(false)} />
                     ) : (
                         <>
+                            {/* Team DBC — internal build only */}
+                            {import.meta.env.VITE_INTERNAL && <DbcSelector />}
+
                             {/* DBC Upload Section - compact single row */}
                             <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
                                 <span className="text-sm font-medium">Custom DBC File</span>
@@ -340,6 +368,40 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                         return null;
                                     }
                                 })()}
+                                <div className="flex flex-col gap-1 mt-2 pt-2 border-t border-gray-600/50">
+                                    <span className="text-xs font-medium text-gray-300">Failover URLs (optional)</span>
+                                    <span className="text-xs text-gray-500">
+                                        Default (when you have not saved a list) is track base then WFR demo, one URL
+                                        per line. Two or more lines try each in order (~2.5s timeout). Clear the box and
+                                        apply to fall back to that default at runtime; use Custom WebSocket URL above
+                                        to force a single URL instead.
+                                    </span>
+                                    <textarea
+                                        rows={4}
+                                        placeholder={DEFAULT_WS_FAILOVER_URLS.join("\n")}
+                                        className="bg-zinc-800 text-white px-2 py-1.5 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none font-mono w-full resize-y min-h-[5.5rem]"
+                                        value={wsCandidatesText}
+                                        onChange={(e) => setWsCandidatesText(e.target.value)}
+                                        autoComplete="off"
+                                        spellCheck={false}
+                                    />
+                                    <Button
+                                        onClick={() => {
+                                            const t = wsCandidatesText.trim();
+                                            if (t) {
+                                                localStorage.setItem(PECAN_WS_CANDIDATES_KEY, wsCandidatesText);
+                                            } else {
+                                                localStorage.removeItem(PECAN_WS_CANDIDATES_KEY);
+                                            }
+                                            webSocketService.reconnect();
+                                            onClose();
+                                        }}
+                                        variant="primary"
+                                        className="self-start"
+                                    >
+                                        Apply failover list
+                                    </Button>
+                                </div>
                             </div>
 
                             {/* Performance Overlay Toggle */}
@@ -373,32 +435,16 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button
-                                        onClick={() => {
-                                            const next = "dark";
-                                            setTheme(next);
-                                            localStorage.setItem(THEME_STORAGE_KEY, next);
-                                            document.body.classList.remove("theme-light");
-                                        }}
+                                        onClick={() => setTheme("dark")}
                                         className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${theme === "dark" ? "bg-blue-600 border-blue-500 text-white" : "border-gray-500 text-gray-400 hover:border-gray-300 hover:text-gray-200"}`}
                                     >
                                         Dark
                                     </button>
                                     <button
-                                        onClick={() => {
-                                            const next = "light";
-                                            setTheme(next);
-                                            localStorage.setItem(THEME_STORAGE_KEY, next);
-                                            document.body.classList.remove("theme-dark");
-                                            document.body.classList.add("theme-light");
-                                        }}
+                                        onClick={() => setTheme("light")}
                                         className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${theme === "light" ? "bg-blue-600 border-blue-500 text-white" : "border-gray-500 text-gray-400 hover:border-gray-300 hover:text-gray-200"}`}
                                     >
-                                        <span className="flex items-center gap-2">
-                                            Light
-                                            <span className="text-xs bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/40 font-mono tracking-wider">
-                                                DEV
-                                            </span>
-                                        </span>
+                                        Light
                                     </button>
                                 </div>
                             </div>
