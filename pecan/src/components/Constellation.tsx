@@ -25,8 +25,12 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
   const cursorTimeMsRef = useRef<number>(cursorTimeMs ?? Date.now());
   const sourceRef = useRef<TelemetrySource>(source);
   const modeRef = useRef<TimelineMode>(mode);
-  useEffect(() => { cursorTimeMsRef.current = cursorTimeMs ?? Date.now(); }, [cursorTimeMs]);
-  useEffect(() => { sourceRef.current = source; }, [source]);
+  useEffect(() => {
+    cursorTimeMsRef.current = cursorTimeMs ?? Date.now();
+    // Pinned-mode cursor moves rewrite history wholesale; drop cached correlations.
+    correlationCacheRef.current.clear();
+  }, [cursorTimeMs]);
+  useEffect(() => { sourceRef.current = source; correlationCacheRef.current.clear(); }, [source]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -74,6 +78,10 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
   // --- RENDER ENGINE ---
   const timeRef = useRef(0);
   const bgStarsRef = useRef<{x: number, y: number, size: number, alpha: number}[]>([]);
+  // Correlation cache: pair-key -> { r, expiresAt }. History updates at most
+  // ~10Hz; recomputing Pearson per link per rAF (60Hz) is wasted work.
+  const correlationCacheRef = useRef<Map<string, { r: number, expiresAt: number }>>(new Map());
+  const CORRELATION_TTL_MS = 150;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -267,10 +275,17 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
         if (sNode && tNode && !sNode.behindCamera && !tNode.behindCamera) {
           const isSelected = selectedIds.includes(sNode.id) && selectedIds.includes(tNode.id);
           
-          // Calculate Correlation
-          const h1 = telemetryHistoryRef.current?.[sNode.id] || [];
-          const h2 = telemetryHistoryRef.current?.[tNode.id] || [];
-          const r = calculateCorrelation(h1, h2);
+          // Calculate Correlation (cached — TTL avoids per-frame Pearson recompute)
+          const cacheKey = sNode.id < tNode.id ? `${sNode.id}|${tNode.id}` : `${tNode.id}|${sNode.id}`;
+          const nowMs = performance.now();
+          let cached = correlationCacheRef.current.get(cacheKey);
+          if (!cached || cached.expiresAt <= nowMs) {
+            const h1 = telemetryHistoryRef.current?.[sNode.id] || [];
+            const h2 = telemetryHistoryRef.current?.[tNode.id] || [];
+            cached = { r: calculateCorrelation(h1, h2), expiresAt: nowMs + CORRELATION_TTL_MS };
+            correlationCacheRef.current.set(cacheKey, cached);
+          }
+          const r = cached.r;
           const meta = getCorrelationMeta(r);
           
           const alpha = (isSelected ? 0.9 : 0.25) * Math.min(sNode.scale, tNode.scale);
