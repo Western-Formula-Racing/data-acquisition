@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { SensorStar } from '../hooks/useConstellationSignals';
 import { ConstellationSidebar } from './ConstellationSidebar';
-import { dataStore } from '../lib/DataStore';
+import { dataStore, type TelemetrySource } from '../lib/DataStore';
+import type { TimelineMode } from '../context/TimelineContext';
 import { calculateCorrelation, getCorrelationMeta, findStrongCorrelations } from '../utils/statistics';
 import { Zap, Share2, RefreshCw, Info } from 'lucide-react';
 
@@ -10,9 +11,27 @@ interface ConstellationCanvasProps {
   sensorValuesRef: React.RefObject<Record<string, number>>;
   telemetryHistoryRef: React.RefObject<Record<string, number[]>>;
   onExport: (constellationIds: string[]) => void;
+  /** Timeline cursor (epoch ms). When in replay or paused, "isLive" is evaluated at this time. */
+  cursorTimeMs?: number;
+  /** Active telemetry source — replay buffer is queried separately from live. */
+  source?: TelemetrySource;
+  /** Timeline mode — paused mode also pins the canvas to cursorTimeMs. */
+  mode?: TimelineMode;
 }
 
-export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetryHistoryRef, onExport }: ConstellationCanvasProps) {
+export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetryHistoryRef, onExport, cursorTimeMs, source = "live", mode = "live" }: ConstellationCanvasProps) {
+  // Mirror timeline state into refs so the rAF render loop can read fresh
+  // values without re-subscribing or restarting.
+  const cursorTimeMsRef = useRef<number>(cursorTimeMs ?? Date.now());
+  const sourceRef = useRef<TelemetrySource>(source);
+  const modeRef = useRef<TimelineMode>(mode);
+  useEffect(() => {
+    cursorTimeMsRef.current = cursorTimeMs ?? Date.now();
+    // Pinned-mode cursor moves rewrite history wholesale; drop cached correlations.
+    correlationCacheRef.current.clear();
+  }, [cursorTimeMs]);
+  useEffect(() => { sourceRef.current = source; correlationCacheRef.current.clear(); }, [source]);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   
@@ -59,6 +78,10 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
   // --- RENDER ENGINE ---
   const timeRef = useRef(0);
   const bgStarsRef = useRef<{x: number, y: number, size: number, alpha: number}[]>([]);
+  // Correlation cache: pair-key -> { r, expiresAt }. History updates at most
+  // ~10Hz; recomputing Pearson per link per rAF (60Hz) is wasted work.
+  const correlationCacheRef = useRef<Map<string, { r: number, expiresAt: number }>>(new Map());
+  const CORRELATION_TTL_MS = 150;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -230,7 +253,11 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
         const sx = cx + x1 * scale;
         const sy = cy + y2 * scale;
         
-        const latest = dataStore.getLatest(s.msgID);
+        const activeSource = sourceRef.current;
+        const pinned = activeSource === "replay" || modeRef.current === "paused";
+        const latest = pinned
+          ? dataStore.getLatestAt(s.msgID, cursorTimeMsRef.current, activeSource)
+          : dataStore.getLatest(s.msgID, activeSource);
         const isLive = latest && !!latest.data[s.sigName];
         
         return { ...s, sx, sy, scale, zDepth: z2, isLive, behindCamera: scale <= 0 };
@@ -248,10 +275,17 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
         if (sNode && tNode && !sNode.behindCamera && !tNode.behindCamera) {
           const isSelected = selectedIds.includes(sNode.id) && selectedIds.includes(tNode.id);
           
-          // Calculate Correlation
-          const h1 = telemetryHistoryRef.current?.[sNode.id] || [];
-          const h2 = telemetryHistoryRef.current?.[tNode.id] || [];
-          const r = calculateCorrelation(h1, h2);
+          // Calculate Correlation (cached — TTL avoids per-frame Pearson recompute)
+          const cacheKey = sNode.id < tNode.id ? `${sNode.id}|${tNode.id}` : `${tNode.id}|${sNode.id}`;
+          const nowMs = performance.now();
+          let cached = correlationCacheRef.current.get(cacheKey);
+          if (!cached || cached.expiresAt <= nowMs) {
+            const h1 = telemetryHistoryRef.current?.[sNode.id] || [];
+            const h2 = telemetryHistoryRef.current?.[tNode.id] || [];
+            cached = { r: calculateCorrelation(h1, h2), expiresAt: nowMs + CORRELATION_TTL_MS };
+            correlationCacheRef.current.set(cacheKey, cached);
+          }
+          const r = cached.r;
           const meta = getCorrelationMeta(r);
           
           const alpha = (isSelected ? 0.9 : 0.25) * Math.min(sNode.scale, tNode.scale);
@@ -455,7 +489,7 @@ export default function ConstellationCanvas({ sensors, sensorValuesRef, telemetr
   };
 
   return (
-    <div className="relative w-full h-screen overflow-hidden select-none" style={{ background: '#020617' }}>
+    <div className="relative w-full h-full overflow-hidden select-none" style={{ background: '#020617' }}>
       <canvas
         ref={canvasRef}
         className="absolute inset-0 z-0"
