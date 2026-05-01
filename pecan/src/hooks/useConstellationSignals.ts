@@ -36,10 +36,13 @@ function categoryHex(categoryName: string): string {
   return TAILWIND_HEX_MAP[cat.color] ?? DEFAULT_HEX;
 }
 
-export function useConstellationSignals(): SensorStar[] {
+export function useConstellationSignals(refreshKey?: string | number): SensorStar[] {
   const messages = useMemo(() => {
+    // refreshKey is referenced solely to invalidate the memo when the active
+    // DBC changes (e.g. after a .pecan replay import embeds a new DBC).
+    void refreshKey;
     return getLoadedDbcMessages();
-  }, []);
+  }, [refreshKey]);
 
   const sensors = useMemo(() => {
     // 1. Identify all unique categories and count their signal density
