@@ -643,9 +643,11 @@
         let totalMissing = 0;
         let totalRecovered = 0;
         let packetHistory = [];
+        let healthMosaicPulseUntil = 0;
         const MOSAIC_SECONDS = 60;
         const UDP_BATCHES_PER_SECOND = 50;
         const MOSAIC_CELLS = MOSAIC_SECONDS * UDP_BATCHES_PER_SECOND;
+        const MOSAIC_PULSE_MS = 180;
         let ecuSynced = false;
 
         const mosaicCanvas = document.getElementById('healthMosaic');
@@ -948,7 +950,8 @@
                 const row = cell % rows;
                 const x = second * colWidth;
                 const y = row * (cellHeight + rowGap);
-                mosaicCtx.fillStyle = packetStatusColor(status);
+                const pulsingNowColumn = second === cols - 1 && Date.now() < healthMosaicPulseUntil;
+                mosaicCtx.fillStyle = pulsingNowColumn ? '#374151' : packetStatusColor(status);
                 mosaicCtx.fillRect(x + 1, y, cellWidth, cellHeight);
             }
         }
@@ -958,6 +961,13 @@
             if (status === 1) return '#4ade80';
             if (status === 2) return '#3b82f6';
             return '#1a1a1a';
+        }
+
+        function advanceHealthMosaic() {
+            packetHistory = packetHistory.concat(Array(UDP_BATCHES_PER_SECOND)).slice(-MOSAIC_CELLS);
+            healthMosaicPulseUntil = Date.now() + MOSAIC_PULSE_MS;
+            drawHealthMosaic();
+            setTimeout(drawHealthMosaic, MOSAIC_PULSE_MS);
         }
 
         function updateUI() {
@@ -1163,6 +1173,7 @@
         loadRelayInfo();
         connect();
         setInterval(updateUI, 100);
+        setInterval(advanceHealthMosaic, 1000);
     </script>
 </body>
 
