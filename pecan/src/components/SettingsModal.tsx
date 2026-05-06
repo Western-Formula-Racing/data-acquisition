@@ -19,6 +19,7 @@ import { DbcSelector } from "./DbcSelector";
 import { useTheme } from "next-themes";
 
 const RETENTION_STORAGE_KEY = "pecan:retention-window-ms";
+const PLOT_AXIS_RANGE_STORAGE_KEY = "pecan:plot-axis-range-source";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -161,6 +162,9 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
     const { session, loadConfig, saveConfig } = useRemoteConfig();
     const [categoryText, setCategoryText] = useState("");
     const [isSavingCategory, setIsSavingCategory] = useState(false);
+    const [plotAxisRangeSource, setPlotAxisRangeSource] = useState<"dbc" | "dynamic">(() =>
+        localStorage.getItem(PLOT_AXIS_RANGE_STORAGE_KEY) === "dynamic" ? "dynamic" : "dbc"
+    );
 
     // Sync WebSocket fields only when the modal opens — not when session/loadConfig
     // changes while typing (that was resetting the failover textarea every render).
@@ -471,6 +475,28 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                         <option value={30 * 60 * 1000}>30 minutes (default)</option>
                                         <option value={45 * 60 * 1000}>45 minutes</option>
                                         <option value={60 * 60 * 1000}>60 minutes</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Plot Axis Range Source */}
+                            <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium">Plot Axis Range Source</span>
+                                    <span className="text-xs text-gray-400">Use DBC min/max ranges or auto-scale to live data</span>
+                                </div>
+                                <div className="flex gap-2 items-center">
+                                    <select
+                                        className="bg-zinc-800 text-white px-2 py-1 text-sm rounded border border-gray-600 focus:border-blue-500 outline-none h-9"
+                                        value={plotAxisRangeSource}
+                                        onChange={(e) => {
+                                            const next = e.target.value as "dbc" | "dynamic";
+                                            setPlotAxisRangeSource(next);
+                                            localStorage.setItem(PLOT_AXIS_RANGE_STORAGE_KEY, next === "dynamic" ? "dynamic" : "");
+                                        }}
+                                    >
+                                        <option value="dbc">DBC Range</option>
+                                        <option value="dynamic">Dynamic (Auto)</option>
                                     </select>
                                 </div>
                             </div>

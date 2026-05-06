@@ -5,6 +5,7 @@ import { createGrafanaDashboard } from "../services/GrafanaService";
 import { useTimeline } from "../context/TimelineContext";
 import { getSignalAxisDef, getValueDefs } from "../utils/canProcessor";
 
+const PLOT_AXIS_RANGE_KEY = "pecan:plot-axis-range-source";
 const STATE_OVERLAY_MSG_ID = "0x7D2";
 const STATE_OVERLAY_SIGNAL = "State";
 
@@ -301,14 +302,15 @@ function PlotManager({
       const TICK_MAX_CHARS = 10;
       const truncate = (s: string) => s.length > TICK_MAX_CHARS ? s.slice(0, TICK_MAX_CHARS - 1) + "…" : s;
 
+      const useDbcRange = localStorage.getItem(PLOT_AXIS_RANGE_KEY) !== "dynamic";
       let yaxisEnumConfig = {};
       let leftMargin = 60;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const enumAnnotations: any[] = [];
 
       if (signals.length === 1) {
-        const axisDef = getSignalAxisDef(signals[0].signalName);
-        const valueDefs = getValueDefs(signals[0].signalName);
+        const axisDef = useDbcRange ? getSignalAxisDef(signals[0].signalName) : null;
+        const valueDefs = useDbcRange ? getValueDefs(signals[0].signalName) : null;
         if (valueDefs) {
           const entries = Object.entries(valueDefs).map(([k, v]) => [parseInt(k), v] as [number, string]);
           entries.sort((a, b) => a[0] - b[0]);
@@ -319,10 +321,10 @@ function PlotManager({
             range: [axisDef?.min ?? entries[0][0] - 0.5, axisDef?.max ?? entries[entries.length - 1][0] + 0.5],
           };
           leftMargin = 82;
-        } else if (axisDef?.min !== undefined && axisDef?.max !== undefined && axisDef.min < axisDef.max) {
+        } else if (useDbcRange && axisDef?.min !== undefined && axisDef?.max !== undefined && axisDef.min < axisDef.max) {
           yaxisEnumConfig = { range: [axisDef.min, axisDef.max] };
         }
-      } else if (signals.length > 1) {
+      } else if (signals.length > 1 && useDbcRange) {
         // Multi-signal plot: shade y-axis with each signal's enum labels in legend color.
         // Stack labels vertically (yshift) on the same column when multiple signals share a y-value.
         const enumSignals = signals
@@ -363,7 +365,7 @@ function PlotManager({
             range: [-(timeWindowMs / 1000), 0],
           },
           yaxis: {
-            title: signals.length === 1 ? (getSignalAxisDef(signals[0].signalName)?.unit || signals[0].unit || "Value") : "Value",
+            title: signals.length === 1 ? (useDbcRange ? getSignalAxisDef(signals[0].signalName)?.unit : undefined) || signals[0].unit || "Value" : "Value",
             autorange: !Object.keys(yaxisEnumConfig).length,
             ...yaxisEnumConfig,
           },
