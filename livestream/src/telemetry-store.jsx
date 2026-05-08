@@ -6,8 +6,8 @@
 // scale is applied by get() and getHistory() so waveforms and readouts are consistent.
 // Throttle/Brake: DBC factor is 0.01, Candied gives 0.0–1.0 → scale *100 to get %.
 const SIGNAL_ALIASES = {
-  rpm:        'INV_Motor_Speed',
-  motor_speed:'INV_Motor_Speed',
+  rpm:        'INV_Fast_Motor_Speed',
+  motor_speed:'INV_Fast_Motor_Speed',
   throttle:   ['Throttle',     100],  // DBC factor 0.01 → *100 = %
   brake:      ['Brake_Percent', 100], // DBC factor 0.01 → *100 = %
   steer:      null,                   // not available in WFR25

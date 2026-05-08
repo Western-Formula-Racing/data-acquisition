@@ -17,7 +17,10 @@ function OverlayBroadcastBar({ carNumber = 33 }) {
   const coolantT = store.get('coolant_t')?.value ?? 0;
   const dcBus = store.get('dc_bus')?.value ?? 0;
   const steer = store.get('steer')?.value ?? 0;
-  const speedKmh = rpm / 500;
+  const gearRatio = 4.51;
+  const wheelRadiusM = 0.25;
+  const wheelRpm = rpm / gearRatio;
+  const speedKmh = wheelRpm * (2 * Math.PI / 60) * wheelRadiusM * 3.6;
 
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none',
@@ -140,7 +143,10 @@ function OverlayCornerHud({ carNumber = 33 }) {
   const torchT = store.get('torch_t')?.value ?? 0;
   const coolantT = store.get('coolant_t')?.value ?? 0;
   const steer = store.get('steer')?.value ?? 0;
-  const speedKmh = rpm / 500;
+  const gearRatio = 4.51;
+  const wheelRadiusM = 0.25;
+  const wheelRpm = rpm / gearRatio;
+  const speedKmh = wheelRpm * (2 * Math.PI / 60) * wheelRadiusM * 3.6;
 
   const cornerBox = {
     background: 'rgba(10,10,11,0.55)',

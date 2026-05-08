@@ -387,6 +387,7 @@ class TelemetryNode:
         logger.info("Starting Base Station Mode...")
         expected_seq = None
         missing_seqs = set()
+        missing_seq_seconds = {}
         stats = {"received": 0, "missing": 0, "recovered": 0, "messages": 0}
         
         raw_logs_dir = "/app/raw_can_logs"
@@ -439,7 +440,8 @@ class TelemetryNode:
                 if len(data) < 10: continue
                 
                 seq, count = struct.unpack("!QH", data[:10])
-                
+                now_sec = int(time.time())
+
                 if expected_seq is None:
                     expected_seq = seq
                     logger.info(f"Initial sequence: {seq}")
@@ -449,6 +451,7 @@ class TelemetryNode:
                     logger.info(f"Sequence reset detected. Expected {expected_seq}, got {seq}. Resetting expected_seq.")
                     expected_seq = seq
                     missing_seqs.clear()
+                    missing_seq_seconds.clear()
                 
                 if seq > expected_seq:
                     # Gap detected
@@ -456,13 +459,17 @@ class TelemetryNode:
                     stats["missing"] += gap
                     for s in range(expected_seq, seq):
                         missing_seqs.add(s)
+                        missing_seq_seconds[s] = now_sec
                         # Keep missing list manageable
                         if len(missing_seqs) > 1000:
-                            missing_seqs.remove(min(missing_seqs))
+                            oldest = min(missing_seqs)
+                            missing_seqs.remove(oldest)
+                            missing_seq_seconds.pop(oldest, None)
                 elif seq < expected_seq:
                     # Out of order or duplicate
                     if seq in missing_seqs:
                         missing_seqs.remove(seq)
+                        recovered_sec = missing_seq_seconds.pop(seq, now_sec)
                         stats["recovered"] += 1
                         # recovered packets were already counted as "missing" when the gap was found
                         # do NOT count them as "received" or "messages" here
@@ -478,9 +485,6 @@ class TelemetryNode:
                 
                 # Update status map for visualization
                 self.last_udp_time = time.time()
-                now_sec = int(self.last_udp_time)
-                # Per-second status: track the worst status in each second
-                # 0=missed, 1=ok, 2=recovered  (higher = better)
                 if seq > self.latest_seq:
                     if self.latest_seq != -1:
                         for s in range(self.latest_seq + 1, seq):
@@ -491,13 +495,10 @@ class TelemetryNode:
                     if len(self.status_map) > 3000:
                         min_seq = self.latest_seq - 2999
                         self.status_map = {s: v for s, v in self.status_map.items() if s >= min_seq}
-                    # Track per-second: if this second has no entry yet, mark ok
-                    if now_sec not in self._second_status:
-                        self._second_status[now_sec] = 1
+                    self._second_status[now_sec] = 1
                 elif seq in self.status_map and self.status_map[seq] == 0:
                     self.status_map[seq] = 1 # Out-of-order UDP arrival
-                    # Mark this second as recovered (worse than ok but better than missed)
-                    self._second_status[now_sec] = max(self._second_status.get(now_sec, 0), 2)
+                    self._second_status[recovered_sec] = 2
                 
                 # Process messages
                 offset = 10
@@ -582,9 +583,15 @@ class TelemetryNode:
                         writer.write(json.dumps(request).encode())
                         await writer.drain()
                         
-                        data = await reader.read(65536)
+                        chunks = []
+                        while True:
+                            chunk = await reader.read(65536)
+                            if not chunk:
+                                break
+                            chunks.append(chunk)
+                        data = b"".join(chunks)
                         if not data: continue
-                        
+
                         resends = json.loads(data.decode())
                         stats["recovered"] += len(resends)
                         for item in resends:
@@ -619,12 +626,11 @@ class TelemetryNode:
                                     })
                                 self.publish(REDIS_CAN_CHANNEL, json.dumps(msgs))
                                 missing_seqs.remove(seq)
+                                recovered_sec = missing_seq_seconds.pop(seq, int(time.time()))
                                 # Update status map for visualization
                                 if seq in self.status_map:
                                     self.status_map[seq] = 2 # Recovered via TCP
-                                # Track per-second: mark this second as having a recovery
-                                recovery_sec = int(time.time())
-                                self._second_status[recovery_sec] = max(self._second_status.get(recovery_sec, 0), 2)
+                                self._second_status[recovered_sec] = 2
                         
                         writer.close()
                         await writer.wait_closed()
