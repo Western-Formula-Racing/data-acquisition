@@ -67,6 +67,18 @@ def healthcheck() -> dict:
     }
 
 
+@app.get("/api/timescale-health")
+def timescale_health() -> dict:
+    """TimescaleDB health check including data freshness lag for the newest season table."""
+    ok, detail, lag = service.check_db_lag()
+    return {
+        "status": "up" if ok else "down",
+        "timescaledb": ok,
+        "timescaledb_detail": detail,
+        "lag_seconds": lag,
+    }
+
+
 def _docker_container_running(container_name: str) -> bool:
     """Return True if Docker container is in Running state."""
     try:
