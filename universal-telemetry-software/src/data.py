@@ -70,6 +70,7 @@ class TelemetryNode:
         self._car_time_synced: bool = False           # True after successful time injection to car Pi
         self._base_clock_bad: bool = False            # True if base clock is before 2026-04-01 (unsafe to inject)
         self.status_map = {}                          # seq -> status (0: missing, 1: udp, 2: tcp)
+        self._second_status: dict[int, int] = {}      # wall-clock second -> aggregate status (0=miss, 1=ok, 2=recovered)
         self.latest_seq = -1
         self.last_udp_time = 0.0
         self._own_git_hash: str = get_git_hash()
@@ -463,8 +464,8 @@ class TelemetryNode:
                     if seq in missing_seqs:
                         missing_seqs.remove(seq)
                         stats["recovered"] += 1
-                        stats["received"] += 1
-                        stats["messages"] += count
+                        # recovered packets were already counted as "missing" when the gap was found
+                        # do NOT count them as "received" or "messages" here
                     else:
                         # Duplicate packet: ignore
                         continue
@@ -477,6 +478,9 @@ class TelemetryNode:
                 
                 # Update status map for visualization
                 self.last_udp_time = time.time()
+                now_sec = int(self.last_udp_time)
+                # Per-second status: track the worst status in each second
+                # 0=missed, 1=ok, 2=recovered  (higher = better)
                 if seq > self.latest_seq:
                     if self.latest_seq != -1:
                         for s in range(self.latest_seq + 1, seq):
@@ -487,8 +491,13 @@ class TelemetryNode:
                     if len(self.status_map) > 3000:
                         min_seq = self.latest_seq - 2999
                         self.status_map = {s: v for s, v in self.status_map.items() if s >= min_seq}
+                    # Track per-second: if this second has no entry yet, mark ok
+                    if now_sec not in self._second_status:
+                        self._second_status[now_sec] = 1
                 elif seq in self.status_map and self.status_map[seq] == 0:
                     self.status_map[seq] = 1 # Out-of-order UDP arrival
+                    # Mark this second as recovered (worse than ok but better than missed)
+                    self._second_status[now_sec] = max(self._second_status.get(now_sec, 0), 2)
                 
                 # Process messages
                 offset = 10
@@ -613,6 +622,9 @@ class TelemetryNode:
                                 # Update status map for visualization
                                 if seq in self.status_map:
                                     self.status_map[seq] = 2 # Recovered via TCP
+                                # Track per-second: mark this second as having a recovery
+                                recovery_sec = int(time.time())
+                                self._second_status[recovery_sec] = max(self._second_status.get(recovery_sec, 0), 2)
                         
                         writer.close()
                         await writer.wait_closed()
@@ -641,12 +653,15 @@ class TelemetryNode:
                     "base_clock_bad": self._base_clock_bad,
                     "last_udp_time": self.last_udp_time,
                     "car_alive": (time.time() - self.last_udp_time) < 5 if self.last_udp_time else False,
-                    "status_buffer": [self.status_map.get(s, 0) for s in range(max(0, self.latest_seq - 2999), self.latest_seq + 1)] if self.latest_seq != -1 else [],
+                    "second_buffer": [self._second_status.get(s, -1) for s in range(int(time.time()) - 59, int(time.time()) + 1)],
                     "own_git_hash": self._own_git_hash,
                     "car_git_hash": self._car_git_hash,
                     "remote_ip": os.getenv("REMOTE_IP", "unknown"),
                 }
                 self.publish("system_stats", json.dumps(payload))
+                # Prune second_status to last 120s to prevent unbounded growth
+                cutoff = int(time.time()) - 120
+                self._second_status = {s: v for s, v in self._second_status.items() if s >= cutoff}
                 stats["received"] = 0
                 stats["missing"] = 0
                 stats["recovered"] = 0

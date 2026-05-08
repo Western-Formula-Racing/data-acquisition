@@ -599,7 +599,7 @@
             <canvas id="healthMosaic" class="seq-tape" style="height: 180px;"></canvas>
             <div class="seq-legend" style="justify-content: space-between;">
                 <span>60s ago</span>
-                <span>50 UDP batches/sec</span>
+                <span>1 cell = 1 second</span>
                 <span>now</span>
             </div>
             <div class="seq-legend">
@@ -645,9 +645,7 @@
         let packetHistory = [];
         let healthMosaicPulseUntil = 0;
         const MOSAIC_SECONDS = 60;
-        const UDP_BATCHES_PER_SECOND = 50;
-        const MOSAIC_CELLS = MOSAIC_SECONDS * UDP_BATCHES_PER_SECOND;
-        const MOSAIC_PULSE_MS = 180;
+        let secondBuffer = [];
         let ecuSynced = false;
 
         const mosaicCanvas = document.getElementById('healthMosaic');
@@ -854,8 +852,8 @@
                 : 0;
             document.getElementById('lossPercent').textContent = lossPercent + '%';
 
-            if (status_buffer) {
-                packetHistory = status_buffer.slice(-MOSAIC_CELLS);
+            if (stats.second_buffer) {
+                secondBuffer = stats.second_buffer;
             }
 
             updateTimescale(stats.timescale);
@@ -936,38 +934,42 @@
             mosaicCtx.clearRect(0, 0, mosaicCanvas.width, mosaicCanvas.height);
 
             const cols = MOSAIC_SECONDS;
-            const rows = UDP_BATCHES_PER_SECOND;
             const colGap = 2;
-            const rowGap = 1;
             const colWidth = mosaicCanvas.width / cols;
             const cellWidth = Math.max(1, colWidth - colGap);
-            const cellHeight = Math.max(1, (mosaicCanvas.height - rowGap * (rows - 1)) / rows);
-            const start = MOSAIC_CELLS - packetHistory.length;
+            const cellHeight = mosaicCanvas.height;
 
-            for (let cell = 0; cell < MOSAIC_CELLS; cell++) {
-                const status = packetHistory[cell - start];
-                const second = Math.floor(cell / rows);
-                const row = cell % rows;
-                const x = second * colWidth;
-                const y = row * (cellHeight + rowGap);
-                const pulsingNowColumn = second === cols - 1 && Date.now() < healthMosaicPulseUntil;
-                mosaicCtx.fillStyle = pulsingNowColumn ? '#374151' : packetStatusColor(status);
-                mosaicCtx.fillRect(x + 1, y, cellWidth, cellHeight);
+            for (let col = 0; col < cols; col++) {
+                const status = secondBuffer[col] ?? -1;
+                const x = col * colWidth;
+                const pulsingNow = col === cols - 1 && Date.now() < healthMosaicPulseUntil;
+                const lastReceived = lastCarDataTime && (Date.now() - lastCarDataTime > CAR_TIMEOUT);
+                let color = packetStatusColor(status);
+                // If car is offline, dim all non-recovered cells
+                if (lastReceived && status !== 2) {
+                    color = '#1a1a1a';
+                }
+                // Pulsing "now" column
+                if (pulsingNow) {
+                    color = status === 1 ? '#374151' : status === 2 ? '#1e3a5f' : status === 0 ? '#4a3a00' : '#1a1a1a';
+                }
+                mosaicCtx.fillStyle = color;
+                mosaicCtx.fillRect(x + 1, 0, cellWidth, cellHeight);
             }
         }
 
         function packetStatusColor(status) {
-            if (status === 0) return '#fbbf24';
-            if (status === 1) return '#4ade80';
-            if (status === 2) return '#3b82f6';
-            return '#1a1a1a';
+            if (status === 0) return '#fbbf24'; // missed
+            if (status === 1) return '#4ade80'; // ok
+            if (status === 2) return '#3b82f6'; // recovered
+            return '#1a1a1a';                  // idle
         }
 
         function advanceHealthMosaic() {
-            packetHistory = packetHistory.concat(Array(UDP_BATCHES_PER_SECOND)).slice(-MOSAIC_CELLS);
-            healthMosaicPulseUntil = Date.now() + MOSAIC_PULSE_MS;
+            // Backend now handles buffer content; just pulse the now column
+            healthMosaicPulseUntil = Date.now() + 180;
             drawHealthMosaic();
-            setTimeout(drawHealthMosaic, MOSAIC_PULSE_MS);
+            setTimeout(drawHealthMosaic, 180);
         }
 
         function updateUI() {
