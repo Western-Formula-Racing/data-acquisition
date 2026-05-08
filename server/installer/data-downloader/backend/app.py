@@ -61,6 +61,7 @@ def healthcheck() -> dict:
     ok, detail = service.check_db_connectivity()
     return {
         "status": "ok" if ok else "degraded",
+        "healthy": ok,
         "timescaledb": ok,
         "timescaledb_detail": detail,
     }
