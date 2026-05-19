@@ -136,7 +136,7 @@ Supported phone-based store-and-forward telemetry recorder for lightweight run r
 - The phone must stay connected to the car hotspot and keep the page open during the run
 - Supersedes the `lte-relay` branch for no-SD-card database ingest; optional remote live relay uses the public Wrangler Worker in `flight-recorder/relay-worker` to receive phone-forwarded WebSocket frames and rebroadcast them
 
-**Live:** https://fdr.westernformularacing.org (`wfr-fdr.pages.dev`)
+**Internal app:** https://fdr.westernformularacing.org (`wfr-fdr.pages.dev`, protected by Cloudflare Zero Trust)
 
 ### WebSocket Backend (`/ws-backend`)
 

@@ -84,6 +84,8 @@ export class WebSocketService {
 
           const messageData = JSON.parse(event.data);
           
+          this.notify('wire', event.data);
+
           if (messageData?.type) {
             this.notify(messageData.type, messageData);
           }
