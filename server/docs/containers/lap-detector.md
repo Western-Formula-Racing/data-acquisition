@@ -1,6 +1,6 @@
 # Lap Detector
 
-`lap-detector` is a Dash web application used for lap time analysis and visualisation.
+`lap-detector` is a Dash web application used for lap time analysis and visualisation. It is tabled until GPS hardware is available and is intentionally disabled in the main compose stack.
 
 ## Ports
 

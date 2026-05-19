@@ -112,7 +112,7 @@ Expected running containers:
 | slackbot | Exits cleanly if `ENABLE_SLACK=false` |
 | startup-data-loader | Runs once then exits — normal |
 
-> `lap-detector` is intentionally disabled. To run it: `docker compose --profile disabled up lap-detector -d`
+> `lap-detector` is tabled until GPS hardware is available and is intentionally disabled. To run it: `docker compose --profile disabled up lap-detector -d`
 
 ---
 
@@ -192,6 +192,6 @@ crontab -l  # shows: 0 4 * * * docker compose restart
 | File Uploader | 8084 |
 | Data Downloader API | 8000 |
 | Data Downloader Frontend | 3000 |
-| Lap Detector (disabled) | 8050 |
+| Lap Detector (tabled until GPS hardware is available) | 8050 |
 
 Tailscale IP: `100.72.11.60` (hostname: `ovh-daq-server`)
