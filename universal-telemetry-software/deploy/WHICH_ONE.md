@@ -12,10 +12,21 @@ update, and troubleshooting instructions.
 
 ---
 
-## docker-compose.yml — General purpose (RPi or MacBook)
+## Recommended Production/Track Choices
 
-Default compose with `network_mode: host` + `privileged`. Base station only.
-Pulls `:latest` images from GHCR.
+Use these first:
+
+| Target | File / doc | Notes |
+|--------|------------|-------|
+| Car RPi | `CAR_DEPLOY.md` + `car-telemetry.service` | Native systemd, no Docker/Redis on the car |
+| MacBook base | `docker-compose.macbook-base.yml` | Full local stack with TimescaleDB, Grafana, Pecan, Redis, MediaMTX |
+| RPi base | `docker-compose.rpi-base.yml` | Lightweight base station, no local TimescaleDB persistence |
+
+---
+
+## docker-compose.yml — Legacy/general base stack
+
+Older base-station compose with `network_mode: host` + `privileged`. It is base station only and is kept for compatibility with older setups. Prefer `docker-compose.macbook-base.yml` or `docker-compose.rpi-base.yml` for new work.
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d

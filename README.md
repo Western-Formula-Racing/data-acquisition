@@ -120,13 +120,18 @@ GUI adapters for Kvaser and PECAN CAN hardware interfaces. Used during bench tes
 
 ### Flight Recorder (`/flight-recorder`)
 
-Post-run telemetry review and ad hoc WiFi upload PWA. Runs on an ESP32 or RPi on the car — captures CAN frames to IndexedDB during a run, then uploads directly to the server's TimescaleDB over WiFi (no SD card pull required). Deployed on Cloudflare Pages.
+Optional trackside phone recorder for quick runs when the full base-station workflow is not in use. Put a phone on the car hotspot, point Flight Recorder at the car UTS WebSocket, record telemetry locally in the browser, then upload the captured data over WiFi for post-run storage and review. This is a temporary recording path so you do not have to pull the SD card from the `ECU_25` ECU code setup after every run.
 
-**Features:**
-- Records CAN frames to IndexedDB during a run
-- WiFi upload from car hardware to server TimescaleDB (ESP32 or RPi WiFi)
-- Post-run review with the same visualization as Pecan
-- Uploads via `POST /api/can-frames/batch` on the data-downloader API
+**Use cases:**
+- Quick shakedown runs without setting up the full base station
+- Temporary phone-based recording during testing
+- Ad hoc upload of run data after a session
+
+**Notes:**
+- Not the primary live telemetry dashboard; use PECAN + UTS for real-time monitoring
+- Stores received CAN frames locally in browser IndexedDB while recording is enabled
+- Uploads decoded signal batches via `POST /api/can-frames/batch` on the data-downloader API
+- The phone must stay connected to the car hotspot and keep the page open during the run
 
 **Live:** https://flight-recorder.pages.dev
 
