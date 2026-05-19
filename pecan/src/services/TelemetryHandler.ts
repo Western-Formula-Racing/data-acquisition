@@ -12,8 +12,9 @@ export const DIAG_MSG_IDS = {
   HEARTBEAT: '__heartbeat__',
 } as const;
 
-// CAN ID of the UTS heartbeat frame (timestamp sync injected by car Pi)
-const HEARTBEAT_CAN_ID = 1999; // 0x7CF
+// CAN IDs of heartbeat frames that indicate the link is alive, not real telemetry.
+const UTS_HEARTBEAT_CAN_ID = 1999; // 0x7CF, timestamp sync injected by car Pi
+const RELAY_HEARTBEAT_CAN_ID = 0x7FD; // Flight Recorder live relay heartbeat
 
 class TelemetryHandler {
   private isInitialized = false;
@@ -36,8 +37,7 @@ class TelemetryHandler {
       messages.forEach(msg => {
         if (!msg?.signals) return;
 
-        // Intercept UTS heartbeat — it's a timestamp sync frame, not real CAN data
-        if (msg.canId === HEARTBEAT_CAN_ID) {
+        if (msg.canId === UTS_HEARTBEAT_CAN_ID || msg.canId === RELAY_HEARTBEAT_CAN_ID) {
           dataStore.ingestMessage({
             msgID: DIAG_MSG_IDS.HEARTBEAT,
             messageName: 'Heartbeat',

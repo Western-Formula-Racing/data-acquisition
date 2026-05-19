@@ -215,6 +215,8 @@ class LiveRelayService {
     const url = new URL(withScheme);
     url.protocol = url.protocol === 'ws:' || url.protocol === 'http:' ? 'https:' : 'https:';
     url.pathname = '/session';
+    url.search = '';
+    url.hash = '';
     return url;
   }
 

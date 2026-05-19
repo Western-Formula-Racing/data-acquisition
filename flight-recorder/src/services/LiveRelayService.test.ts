@@ -95,6 +95,23 @@ describe('LiveRelayService', () => {
   afterEach(() => {
     liveRelayService.shutdown();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('creates sessions from a Worker origin even when the input is an old ingest URL', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        room: 'new-room',
+        ingestUrl: 'wss://relay.example/ingest?room=new-room',
+        viewerUrl: 'wss://relay.example/viewer?room=new-room',
+      }),
+    })) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', fetchMock);
+
+    await liveRelayService.createSession('wss://relay.example/ingest?room=old-room#stale');
+
+    expect(fetchMock).toHaveBeenCalledWith('https://relay.example/session', { method: 'POST' });
   });
 
   it('sends the synthetic relay heartbeat immediately and once per second', () => {
