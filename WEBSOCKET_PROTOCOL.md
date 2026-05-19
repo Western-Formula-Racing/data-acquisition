@@ -2,7 +2,9 @@
 
 ## 1. Overview
 
-This document defines the bidirectional WebSocket protocol used between **Pecan** (the dashboard client) and the **Universal Telemetry Software** (UTS) WebSocket bridge. Protocol v2 adds client-to-car (uplink) messaging alongside the existing car-to-client (downlink) telemetry stream.
+This is the canonical WebSocket protocol document for **Pecan** and the **Universal Telemetry Software** (UTS) WebSocket bridge. UTS uses the same Python codebase in both roles: the car runs it natively through `car-telemetry.service`, while the base station runs it through Docker Compose. Protocol v2 adds client-to-car (uplink) messaging alongside the existing car-to-client (downlink) telemetry stream.
+
+The component-local runtime notes live at [`universal-telemetry-software/WEBSOCKET_RUNTIME_NOTES.md`](./universal-telemetry-software/WEBSOCKET_RUNTIME_NOTES.md) so this file remains the only protocol spec.
 
 ### 1.1 Architecture Context
 
@@ -26,16 +28,20 @@ graph LR
 ```
 
 **Uplink (Client -> Car):**
-> Only with direct connection to the car
 
 ```mermaid
 graph LR
     Pecan["Pecan<br/><i>browser</i>"]
     WSBridge["WS Bridge<br/><i>port 9080</i>"]
+    RedisDB[("Redis<br/><i>base mode only</i>")]
+    BaseData["Base data.py<br/><i>base mode only</i>"]
     CarPi["Car Pi<br/><i>can0</i>"]
 
     Pecan -- "WebSocket<br/>can_send" --> WSBridge
-    WSBridge -- "Redis<br/>can_uplink" --> CarPi
+    WSBridge -- "car mode<br/>python-can direct write" --> CarPi
+    WSBridge -- "base mode<br/>Redis can_uplink" --> RedisDB
+    RedisDB --> BaseData
+    BaseData -- "UDP 0xCAFE" --> CarPi
 
     style Pecan fill:#e76f51,color:#fff
     style WSBridge fill:#f4a261,color:#fff
@@ -83,7 +89,7 @@ graph TB
 | **Downlink** | Car-to-client direction. Telemetry data flowing from the vehicle to dashboard viewers. |
 | **Uplink** | Client-to-car direction. Commands/messages flowing from the dashboard to the vehicle. |
 | **Pecan** | The web-based dashboard (React/TypeScript). Acts as a WebSocket client. |
-| **UTS** | Universal Telemetry Software. Runs on both car and base Raspberry Pis. |
+| **UTS** | Universal Telemetry Software. Shared Python codebase used by both car and base roles. |
 | **WS Bridge** | The WebSocket server component inside UTS (`websocket_bridge.py`, port 9080). |
 | **CAN frame** | A Controller Area Network message with an arbitration ID (11-bit or 29-bit) and up to 8 data bytes. |
 
@@ -197,7 +203,7 @@ Sent in response to an uplink `can_send` message to confirm receipt and processi
 {
   "type": "uplink_ack",
   "ref": "abc-123",           // Echo of the client's ref ID
-  "status": "queued",         // "queued" | "delivered" | "rejected"
+  "status": "queued",         // "queued" in base mode, "sent" in car mode
   "reason": null              // null on success, string on rejection
 }
 ```
@@ -206,7 +212,7 @@ Sent in response to an uplink `can_send` message to confirm receipt and processi
 |-------|------|----------|-------------|
 | `type` | `"uplink_ack"` | Yes | Message discriminator |
 | `ref` | `string` | Yes | Echo of the client-provided reference ID |
-| `status` | `string` | Yes | `"queued"` = accepted into Redis for relay, `"delivered"` = confirmed written to CAN bus (future), `"rejected"` = refused |
+| `status` | `string` | Yes | `"queued"` = accepted by base mode for Redis/UDP relay, `"sent"` = written directly in car mode |
 | `reason` | `string\|null` | No | Human-readable rejection reason |
 
 ### 4.4 `error` — Server Error
@@ -261,8 +267,9 @@ Request the car to write a CAN frame to the bus.
 **Server behavior:**
 1. Validate the message
 2. If invalid, respond with `error` and close processing
-3. If valid, publish to Redis channel `can_uplink`
-4. Respond with `uplink_ack` (status `"queued"`)
+3. If running in car mode, write directly to `can0` with `python-can`
+4. If running in base mode, publish to Redis channel `can_uplink` for UDP relay to the car
+5. Respond with `uplink_ack` (`"sent"` in car mode, `"queued"` in base mode)
 
 ### 5.2 `can_send_batch` — Send Multiple CAN Messages
 
@@ -308,9 +315,16 @@ Server responds with:
 
 ---
 
-## 6. Redis Channels
+## 6. Deployment Modes and Redis Channels
 
-The WebSocket bridge uses Redis pub/sub as the message bus between components.
+The WebSocket bridge runs the same protocol in both UTS roles, but the uplink path differs:
+
+| Mode | `ROLE` | Uplink path | Redis required for uplink? |
+|------|--------|-------------|----------------------------|
+| Car direct | `car` | Browser -> WebSocket bridge -> `python-can` -> `can0` | No |
+| Base station | `base` | Browser -> WebSocket bridge -> Redis `can_uplink` -> UDP `0xCAFE` relay -> car | Yes |
+
+In car mode, downlink frames can also be broadcast from an in-process queue, so Redis is not required on the car. In base mode, the WebSocket bridge uses Redis pub/sub as the message bus between components.
 
 | Channel | Direction | Publisher | Subscriber | Format |
 |---------|-----------|-----------|------------|--------|
@@ -346,6 +360,7 @@ For batch messages, each CAN frame in the batch is published as a separate Redis
 | `RATE_LIMITED` | Client is sending uplink messages too fast |
 | `UPLINK_DISABLED` | Uplink is not enabled on this server instance |
 | `UNKNOWN_TYPE` | Unrecognized message `type` |
+| `CAN_WRITE_FAILED` | Car mode only: `python-can` failed to write to `can0` |
 
 ---
 
@@ -373,10 +388,15 @@ When rate limited, the server responds with:
 
 ## 9. Car-Side Uplink Processing
 
-When the car-side UTS receives a message from the `can_uplink` Redis channel (relayed via UDP from the base station), it:
+There are two valid car-side uplink paths:
+
+- Direct car connection: the car-mode WebSocket bridge writes `can_send` and `can_send_batch` messages directly to `can0`.
+- Base station relay: the base-mode WebSocket bridge publishes to Redis, `data.py` relays the message over UDP, and the car receives a `0xCAFE` uplink packet.
+
+When the car-side UTS receives a UDP uplink packet from the base station, it:
 
 1. Deserializes the JSON payload
-2. Validates the CAN ID exists in the loaded DBC (optional safety check)
+2. Validates the CAN frame shape
 3. Constructs a `python-can` `Message` object
 4. Writes to `can0` via `bus.send(msg)`
 
@@ -408,11 +428,14 @@ Sending arbitrary CAN messages to a vehicle is **inherently dangerous**. Malform
 - Corrupt ECU state
 - Violate FSAE safety rules
 
-**Mandatory safeguards:**
+**Current safeguards:**
 - Uplink is **disabled by default** (requires `ENABLE_UPLINK=true` env var)
-- Only CAN IDs defined in the DBC file should be allowed (configurable allowlist)
 - Rate limiting is enforced at the WebSocket bridge level
 - All uplink messages are logged with client IP and timestamp for auditing
+
+**Recommended future safeguards:**
+- Restrict uplink CAN IDs to an allowlist derived from the DBC or a dedicated safety config
+- Require authentication for uplink-capable WebSocket connections
 
 ### 10.2 Authentication
 
@@ -506,10 +529,10 @@ sequenceDiagram
 
 v1 clients (those that never send messages and only consume downlink data) require **zero changes**. The server continues to broadcast legacy un-enveloped messages on the `can_messages` and `system_stats` Redis channels.
 
-To opt into v2 enveloped downlink messages, a client can send:
+Clients may send typed v2 uplink/control messages such as:
 
 ```jsonc
-{ "type": "subscribe", "format": "v2" }
+{ "type": "ping", "timestamp": 1708012800000 }
 ```
 
-Until this is sent, the client receives legacy format. This ensures full backward compatibility.
+The server accepts `subscribe` as a no-op reserved message type for future compatibility, but it does not currently switch downlink clients into a different envelope format.
