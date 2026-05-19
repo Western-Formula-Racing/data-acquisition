@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Radio, AlertTriangle } from 'lucide-react';
 import { useLatestMessage } from '../../lib/useDataStore';
 import type { TelemetrySample } from '../../lib/DataStore';
+import { DIAG_MSG_IDS } from '../../services/TelemetryHandler';
 
 interface Props {
   radioData: TelemetrySample | undefined;
@@ -35,7 +36,7 @@ function StatPill({
 
 export default function RadioStatChips({ radioData }: Props) {
   const [now, setNow] = useState(Date.now());
-  const heartbeatData = useLatestMessage('1999');
+  const heartbeatData = useLatestMessage(DIAG_MSG_IDS.HEARTBEAT);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);

@@ -152,7 +152,7 @@ flowchart TD
 **Connection features:**
 - **Auto-protocol detection**: `ws://` on HTTP, `wss://` on HTTPS
 - **Deployment modes**: Production cloud, localhost dev, car hotspot (192.168.x.x)
-- **Default backend**: On non-`192.x.x.x` hosts (including `localhost`) PECAN connects to the hosted backend at `wss://ws-demo.westernformularacing.org`, unless overridden
+- **Default backend**: On cloud/non-local hosts PECAN connects to the hosted backend at `wss://ws-demo.westernformularacing.org`, while localhost defaults to `ws://localhost:9080`, unless overridden
 - **Configurable override**: Users can set a custom WebSocket URL via Settings or `VITE_WS_URL`
 - **Reconnection**: Up to 5 attempts with linear backoff (2s increments)
 - **Uplink in active development**: The WebSocket protocol supports uplink (`can_send`, `can_send_batch`, `ping`), but the PECAN UI and client helpers for sending control messages are still under active development
@@ -171,7 +171,7 @@ npm install
 npm run dev
 ```
 
-By default, the development server runs on `http://localhost:5173` and PECAN connects to the **hosted** telemetry backend at `wss://ws-demo.westernformularacing.org:9443`. To force a different backend (for example, a local UTS instance on `ws://localhost:9080`), set `VITE_WS_URL` or configure a `custom-ws-url` in the PECAN Settings dialog.
+By default, the development server runs on `http://localhost:5173` and PECAN connects to `ws://localhost:9080`. Cloud/non-local builds default to the hosted telemetry backend at `wss://ws-demo.westernformularacing.org`. To force a different backend, set `VITE_WS_URL` or configure a `custom-ws-url` in the PECAN Settings dialog.
 
 ### Testing
 
