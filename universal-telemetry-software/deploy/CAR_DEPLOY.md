@@ -11,8 +11,8 @@ and runs a local WebSocket bridge on port 9080 for direct PECAN connections when
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/western-formula-racing/daq-radio.git /home/pi/daq-radio
-cd /home/pi/daq-radio/universal-telemetry-software
+git clone https://github.com/western-formula-racing/data-acquisition.git /home/car/data-acquisition
+cd /home/car/data-acquisition/universal-telemetry-software
 
 # 2. Install uv (if not already installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -52,7 +52,7 @@ systemctl status car-telemetry
 ## After a code update
 
 ```bash
-cd /home/pi/daq-radio
+cd /home/car/data-acquisition
 git pull
 cd universal-telemetry-software
 uv sync

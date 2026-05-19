@@ -15,7 +15,7 @@ Comprehensive telemetry and data acquisition system for real-time monitoring of 
 The repository contains the end-to-end telemetry software for Western Formula Racing vehicles, enabling real-time monitoring of critical vehicle systems during testing and competition. The system consists of:
 
 - **PECAN Dashboard**: Real-time web-based visualization of vehicle telemetry
-- **Universal Telemetry Software** (`/universal-telemetry-software`): Onboard and base station software for CAN acquisition, transport, and WebSocket/Redis bridging
+- **Universal Telemetry Software** (`/universal-telemetry-software`): Car and base station software for CAN acquisition, transport, WebSocket bridging, and base-side Redis/TimescaleDB integration
 
 ## System Architecture
 
@@ -24,7 +24,7 @@ flowchart LR
     ECU["Vehicle CAN Bus (ECU)"]
     HAT["Raspberry Pi CAN HAT"]
     EDGE["Car Raspberry Pi
-    (UTS car mode)"]
+    (native systemd service)"]
     BASE["Base Station
     (UTS base mode)"]
     REDIS["Redis"]
@@ -52,8 +52,8 @@ flowchart LR
 
 **Data Flow:**
 
-1. Vehicle CAN bus messages are read by the car-side Universal Telemetry Software on the Raspberry Pi
-2. The car-side UTS packs messages in UDP/TCP for radio or Ethernet transmission
+1. Vehicle CAN bus messages are read by the car-side Universal Telemetry Software running as a native `car-telemetry.service` systemd service on the Raspberry Pi
+2. The car service packs messages in UDP/TCP for radio or Ethernet transmission
 3. The base-side UTS receives telemetry and publishes it to Redis
 4. Redis-to-WebSocket bridge broadcasts messages to connected clients (PECAN dashboard)
 5. Base-side TimescaleDB bridge writes decoded CAN frames directly to the server stack's TimescaleDB over the network
@@ -85,16 +85,18 @@ A modern React + TypeScript web application for real-time telemetry visualizatio
 
 ### Universal Telemetry Software (`/universal-telemetry-software`)
 
-Complete DAQ telemetry stack that runs on both the car and base station Raspberry Pis, automatically detecting its role based on CAN bus availability.
+Complete DAQ telemetry stack for the car Raspberry Pi and base station. UTS uses the same Python source and role-specific runtime logic on both ends; the car runs that shared code natively as `car-telemetry.service`, while base stations run it through Docker Compose with Redis, WebSocket, status, video relay, and optional TimescaleDB logging.
 
 **Features:**
 
-- Car/base auto-detection (single codebase deployable to both Pis)
+- Shared car/base telemetry logic in one Python codebase
+- Native car systemd deployment with direct CAN read, UDP streaming, TCP packet resend, and direct WebSocket support
+- Docker Compose base-station deployment for MacBook or Raspberry Pi
 - UDP and TCP telemetry transport with packet recovery
-- Redis publisher, WebSocket bridge, and status HTTP server
+- Base-side Redis publisher, WebSocket bridge, and status HTTP server
 - Optional TimescaleDB logging (direct write to server TimescaleDB), audio/video streaming, and simulation mode
 
-**Tech Stack:** Python, Redis, WebSockets, Docker, TimescaleDB
+**Tech Stack:** Python, systemd, Redis, WebSockets, Docker, TimescaleDB
 
 [📖 Detailed Documentation](./universal-telemetry-software/README.md)
 
@@ -156,25 +158,39 @@ The MacBook base station runs the UTS telemetry stack + Pecan dashboard locally,
 cd universal-telemetry-software/
 cp deploy/.env.macbook deploy/.env
 # Edit deploy/.env — set REMOTE_IP (car RPi) and TIMESCALE_DSN (server TimescaleDB)
-docker compose -f deploy/docker-compose.macbook.yml --profile base up -d
+docker compose -f deploy/docker-compose.macbook-base.yml up -d
 ```
 
 Open `http://localhost:3000` for Pecan, `http://localhost:8080` for the status page.
 
 See [`deploy/MACBOOK_DEPLOY.md`](./universal-telemetry-software/deploy/MACBOOK_DEPLOY.md) for full setup details.
 
-### RPi Deployment (Car + Base Station)
+### Car RPi Deployment
 
-Deploy to the car and base station Raspberry Pis:
+The car runs the telemetry stack natively through systemd, without Docker or Redis:
+
+```bash
+cd /home/car/data-acquisition/universal-telemetry-software
+uv sync
+sed -i "s/GIT_HASH=unknown/GIT_HASH=$(git rev-parse --short HEAD)/" deploy/car-telemetry.service
+sudo cp deploy/car-telemetry.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable car-telemetry
+sudo systemctl start car-telemetry
+```
+
+The service is configured for `ROLE=car`, `REMOTE_IP=10.71.1.20`, UDP `5005`, TCP resend `5006`, and local PECAN WebSocket `9080`. See [`deploy/CAR_DEPLOY.md`](./universal-telemetry-software/deploy/CAR_DEPLOY.md) for full setup and update commands.
+
+### RPi Base Station Deployment
+
+The Raspberry Pi base station still uses Docker Compose:
 
 ```bash
 cd universal-telemetry-software/
-cp deploy/.env.macbook deploy/.env
-# Edit deploy/.env with your IPs and credentials
-docker compose -f deploy/docker-compose.yml up -d
+docker compose -f deploy/docker-compose.rpi-base.yml up -d
 ```
 
-UTS auto-detects its role (car vs base) based on CAN bus availability. See the [UTS README](./universal-telemetry-software/README.md) for hardware setup.
+See the [UTS README](./universal-telemetry-software/README.md) for hardware setup and base-station options.
 
 ### Server Stack (TimescaleDB + Grafana + APIs)
 
@@ -211,7 +227,7 @@ npm run dev
 ```bash
 cd universal-telemetry-software/
 cp deploy/.env.macbook deploy/.env
-docker compose -f deploy/docker-compose.yml up -d
+docker compose -f deploy/docker-compose.macbook-base.yml up -d
 ```
 
 #### Car Simulator
@@ -253,9 +269,9 @@ docker compose up -d --build
 ### Project Structure
 ```
 data-acquisition/
-├── universal-telemetry-software/  # Car/base telemetry stack (UTS) on RPi
+├── universal-telemetry-software/  # Shared car/base telemetry code with systemd and Docker deploys
 │   ├── src/           # Python telemetry source
-│   ├── deploy/        # Docker Compose files (prod, staging, macbook, test)
+│   ├── deploy/        # Car systemd service and base Docker Compose files
 │   └── status/        # Status page HTML
 ├── pecan/             # React live dashboard (GitHub Pages)
 │   └── src/
