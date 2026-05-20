@@ -134,7 +134,7 @@ export class WebSocketService {
     const hostname = window.location.hostname;
 
     if (hostname === 'chargecart.westernformularacing.org') {
-      return `wss://${hostname}/ws`;
+      return 'wss://chargecart-ws.westernformularacing.org/ws';
     }
 
     if (hostname === '127.0.0.1') {

@@ -31,8 +31,10 @@ logger = logging.getLogger("TxBridge")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
+TX_WS_HOST = os.getenv("TX_WS_HOST", "0.0.0.0")
 TX_WS_PORT = int(os.getenv("TX_WS_PORT", "9078"))
 ENABLE_TX_WS = os.getenv("ENABLE_TX_WS", "false").lower() == "true"
+TX_CHARGECART_ONLY = os.getenv("TX_CHARGECART_ONLY", "false").lower() == "true"
 DBC_FILE_PATH = os.getenv("DBC_FILE_PATH", "/app/example.dbc")
 UPLINK_RATE_LIMIT = int(os.getenv("UPLINK_RATE_LIMIT", "10"))
 CHARGECART_BALANCE_COMMANDS = {
@@ -139,6 +141,7 @@ _ERRORS = {
     "ENCODE_ERROR": "Failed to encode signals — check signal names and values",
     "INTERNAL_ERROR": "Internal encoding error",
     "TX_DISABLED": "TX bridge is disabled (set ENABLE_TX_WS=true)",
+    "TX_RESTRICTED": "TX bridge is restricted to chargecart start/stop balancing commands",
     "UNKNOWN_TYPE": "Unrecognized message type",
     "RATE_LIMITED": f"Rate limit exceeded ({UPLINK_RATE_LIMIT} msg/sec/client)",
 }
@@ -159,6 +162,10 @@ async def _handle_client_message(websocket, raw: str):
 
     if msg_type not in ("can_preview_signals", "can_send_signals", "can_send_chargecart_balance"):
         await websocket.send(json.dumps({"type": "error", "code": "UNKNOWN_TYPE", "message": _ERRORS["UNKNOWN_TYPE"]}))
+        return
+
+    if TX_CHARGECART_ONLY and msg_type != "can_send_chargecart_balance":
+        await websocket.send(json.dumps({"type": "error", "code": "TX_RESTRICTED", "message": _ERRORS["TX_RESTRICTED"]}))
         return
 
     # can_preview_signals is allowed even when TX writes are disabled — it never touches the bus.
@@ -273,15 +280,20 @@ async def ws_handler(websocket):
         logger.info(f"TX client disconnected: {client_info}")
 
 
-async def run_tx_bridge():
+async def run_tx_bridge(
+    external_shutdown_event: asyncio.Event | None = None,
+    register_signals: bool = True,
+):
     loop = asyncio.get_running_loop()
+    stop_event = external_shutdown_event or shutdown_event
 
     def handle_signal():
         logger.info("Shutting down TX bridge...")
-        shutdown_event.set()
+        stop_event.set()
 
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, handle_signal)
+    if register_signals:
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, handle_signal)
 
     # Pre-load DBC on startup
     try:
@@ -292,10 +304,16 @@ async def run_tx_bridge():
     if ENABLE_TX_WS:
         _init_can_bus()
 
-    logger.info(f"Starting TX WebSocket Bridge on port {TX_WS_PORT} (ENABLE_TX_WS={ENABLE_TX_WS})")
+    logger.info(
+        "Starting TX WebSocket Bridge on %s:%s (ENABLE_TX_WS=%s, TX_CHARGECART_ONLY=%s)",
+        TX_WS_HOST,
+        TX_WS_PORT,
+        ENABLE_TX_WS,
+        TX_CHARGECART_ONLY,
+    )
 
-    async with websockets.serve(ws_handler, "0.0.0.0", TX_WS_PORT):
-        await shutdown_event.wait()
+    async with websockets.serve(ws_handler, TX_WS_HOST, TX_WS_PORT):
+        await stop_event.wait()
 
 
 if __name__ == "__main__":

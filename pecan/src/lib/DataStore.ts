@@ -14,6 +14,7 @@
 
 import { coldStore, type RawCanFrame } from "./ColdStore";
 import { createCanProcessor, formatCanId } from "../utils/canProcessor";
+import { CHARGECART_HOT_RETENTION_WINDOW_MS, isChargecartRuntime } from "./chargecartRuntime";
 
 // ── Binary-search helpers ──────────────────────────────────────────────────
 
@@ -158,6 +159,7 @@ class DataStore {
   private snapshotSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private recoveredFromSnapshot = false;
   private isRestoringSnapshot = false;
+  private lightweightMode: boolean;
 
   // ── Cold store integration ──────────────────────────────────────────────
 
@@ -182,20 +184,25 @@ class DataStore {
       replay: { byMsgId: new Map(), trace: [] },
     };
     this.activeSource = "live";
-    this.retentionWindowMs = retentionWindowMs;
+    this.lightweightMode = isChargecartRuntime();
+    this.retentionWindowMs = this.lightweightMode
+      ? CHARGECART_HOT_RETENTION_WINDOW_MS
+      : retentionWindowMs;
     this.listeners = new Set();
     this.traceListeners = new Set();
 
-    // Wire cold store warnings into DataStore notifications.
-    coldStore.setWarningCallback((msg) => {
-      this.coldWarningMessage = msg;
-      this.notifyColdState();
-    });
+    if (!this.lightweightMode) {
+      // Wire cold store warnings into DataStore notifications.
+      coldStore.setWarningCallback((msg) => {
+        this.coldWarningMessage = msg;
+        this.notifyColdState();
+      });
 
-    // Boot OPFS cold store asynchronously (non-blocking).
-    coldStore.init().catch((e) => console.warn("[DataStore] ColdStore init failed:", e));
+      // Boot OPFS cold store asynchronously (non-blocking).
+      coldStore.init().catch((e) => console.warn("[DataStore] ColdStore init failed:", e));
 
-    this.loadSnapshotFromStorage();
+      this.loadSnapshotFromStorage();
+    }
   }
 
   private getSourceBuffers(source: TelemetrySource = this.activeSource): SourceBufferSet {
@@ -393,6 +400,10 @@ class DataStore {
   }
 
   private scheduleSnapshotSave(): void {
+    if (this.lightweightMode) {
+      return;
+    }
+
     if (this.isRestoringSnapshot) {
       return;
     }
@@ -1012,7 +1023,7 @@ class DataStore {
    * Used by TimelineContext to extend the collection-start timestamp.
    */
   public getColdExtent(): { startMs: number; endMs: number } | null {
-    if (this.activeSource !== "live") {
+    if (this.lightweightMode || this.activeSource !== "live") {
       return null;
     }
     return coldStore.getTimeRange();
@@ -1020,14 +1031,14 @@ class DataStore {
 
   /** Returns cold store on-disk size in bytes. */
   public getColdStoreSizeBytes(): number {
-    if (this.activeSource !== "live") {
+    if (this.lightweightMode || this.activeSource !== "live") {
       return 0;
     }
     return coldStore.getTotalBytes();
   }
 
   public isColdNearingLimit(): boolean {
-    if (this.activeSource !== "live") {
+    if (this.lightweightMode || this.activeSource !== "live") {
       return false;
     }
     return coldStore.isNearingLimit();
@@ -1038,6 +1049,7 @@ class DataStore {
    * Uses capability detection (not user-agent sniffing).
    */
   public isColdStoreSupported(): boolean {
+    if (this.lightweightMode) return false;
     if (typeof navigator === "undefined") return false;
     if (!("storage" in navigator)) return false;
     return typeof (navigator.storage as { getDirectory?: unknown }).getDirectory === "function";
@@ -1051,6 +1063,10 @@ class DataStore {
    * Skips the load if the requested range is already covered by the cache.
    */
   public async prefetchWarmCache(startMs: number, endMs: number): Promise<void> {
+    if (this.lightweightMode) {
+      return;
+    }
+
     if (this.warmCacheLoading) {
       // Queue the latest range; it will be run after the current load finishes.
       this.pendingWarmRange = { startMs, endMs };
@@ -1171,7 +1187,7 @@ class DataStore {
    * off to ColdStore for background OPFS writing.
    */
   private evictToColdStore(samples: TelemetrySample[]): void {
-    if (samples.length === 0 || !coldStore.isReady()) return;
+    if (this.lightweightMode || samples.length === 0 || !coldStore.isReady()) return;
 
     const frames: RawCanFrame[] = [];
     for (const sample of samples) {
@@ -1321,6 +1337,10 @@ class DataStore {
 
 // Export singleton instance
 function getInitialRetentionWindowMs(): number {
+  if (isChargecartRuntime()) {
+    return CHARGECART_HOT_RETENTION_WINDOW_MS;
+  }
+
   try {
     const raw = localStorage.getItem(RETENTION_STORAGE_KEY);
     if (!raw) return DEFAULT_RETENTION_WINDOW_MS;

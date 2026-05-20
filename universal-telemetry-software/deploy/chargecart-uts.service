@@ -1,0 +1,59 @@
+# WFR Chargecart — minimal native UTS service
+#
+# Runs only the chargecart live path:
+#   - reads can0
+#   - serves RX telemetry websocket on 127.0.0.1:9080
+#   - serves local-only TX websocket on 127.0.0.1:9078
+#   - TX bridge accepts only chargecart start/stop balancing commands
+#
+# Install:
+#   sudo cp chargecart-uts.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now chargecart-uts
+
+[Unit]
+Description=WFR Chargecart Minimal UTS
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=car
+WorkingDirectory=/home/car/data-acquisition/universal-telemetry-software
+
+Environment=ROLE=car
+Environment=SIMULATE=false
+Environment=CAN_CHANNEL=can0
+
+# RX websocket consumed by the local kiosk page and by cloudflared /ws.
+Environment=WS_HOST=127.0.0.1
+Environment=WS_PORT=9080
+Environment=ENABLE_UPLINK=false
+
+# Local-only TX websocket. The frontend uses this only on localhost.
+Environment=TX_WS_HOST=127.0.0.1
+Environment=TX_WS_PORT=9078
+Environment=ENABLE_TX_WS=true
+Environment=TX_CHARGECART_ONLY=true
+Environment=DBC_FILE_PATH=/home/car/data-acquisition/universal-telemetry-software/deploy/example.dbc
+Environment=UPLINK_RATE_LIMIT=2
+
+# Keep the normal stack off this Pi profile.
+Environment=ENABLE_VIDEO=false
+Environment=ENABLE_AUDIO=false
+Environment=ENABLE_TIMESCALE_LOGGING=false
+Environment=OFF_THE_SHELF=true
+
+ExecStart=/home/car/.local/bin/uv run python main_chargecart.py
+Restart=always
+RestartSec=3
+
+AmbientCapabilities=CAP_SYS_NICE
+CapabilityBoundingSet=CAP_SYS_NICE
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=chargecart-uts
+
+[Install]
+WantedBy=multi-user.target

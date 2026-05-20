@@ -646,6 +646,44 @@ jobs:
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           branch: ${{ github.ref_name }}
 
+  deploy-chargecart-cloudflare:
+    needs: [detect-changes, unit-tests, integration, vcan]
+    runs-on: ubuntu-latest
+    if: |
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/chargecart-display') &&
+      needs.detect-changes.outputs.pecan == 'true'
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: pecan/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./pecan
+        run: npm ci
+
+      - name: Build chargecart frontend
+        working-directory: ./pecan
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: wfr-chargecart
+          directory: ./pecan/dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref_name }}
+
   # ── Deploy pecan-internal to Cloudflare Pages (main branch only) ──────────
   deploy-pecan-internal-cloudflare:
     needs: [detect-changes, unit-tests, integration, vcan]

@@ -18,6 +18,7 @@ from src import redis_utils, utils
 
 logger = logging.getLogger("WebSocketBridge")
 
+WS_HOST = os.getenv("WS_HOST", "0.0.0.0")
 WS_PORT = int(os.getenv("WS_PORT", 9080))
 UPLINK_RATE_LIMIT = int(os.getenv("UPLINK_RATE_LIMIT", 10))  # messages per second per client
 ROLE = os.getenv("ROLE", "base")  # "car" = direct CAN write, "base" = Redis relay
@@ -221,9 +222,9 @@ def _release_client_locks(websocket):
         logger.info(f"Page lock auto-released: {page} (client disconnected)")
 
 
-async def direct_queue_listener(queue: asyncio.Queue):
+async def direct_queue_listener(queue: asyncio.Queue, stop_event: asyncio.Event = shutdown_event):
     """Broadcast messages from an in-process queue to all WS clients (car mode, no Redis)."""
-    while not shutdown_event.is_set():
+    while not stop_event.is_set():
         try:
             data = await asyncio.wait_for(queue.get(), timeout=1.0)
         except asyncio.TimeoutError:
@@ -235,7 +236,7 @@ async def direct_queue_listener(queue: asyncio.Queue):
             )
 
 
-async def redis_listener():
+async def redis_listener(stop_event: asyncio.Event = shutdown_event):
     """Listens to Redis and broadcasts to all WS clients."""
     try:
         r = redis.from_url(REDIS_URL)
@@ -244,7 +245,7 @@ async def redis_listener():
         logger.info(f"Subscribed to Redis channels: {REDIS_CHANNEL}, {REDIS_STATS_CHANNEL}, {REDIS_DIAG_CHANNEL}")
 
         async for message in pubsub.listen():
-            if shutdown_event.is_set():
+            if stop_event.is_set():
                 break
 
             if message['type'] == 'message':
@@ -476,16 +477,23 @@ async def ws_handler(websocket):
         if had_locks:
             await _broadcast_page_lock_state()
 
-async def run_websocket_bridge(heartbeat_event=None, direct_queue: asyncio.Queue | None = None):
+async def run_websocket_bridge(
+    heartbeat_event=None,
+    direct_queue: asyncio.Queue | None = None,
+    external_shutdown_event: asyncio.Event | None = None,
+    register_signals: bool = True,
+):
     """Main entry point for WebSocket bridge.
 
     When direct_queue is provided (car mode without Redis), messages are read
     from the queue instead of Redis pub/sub.
     """
     loop = asyncio.get_running_loop()
-    utils.register_shutdown_signals(loop, shutdown_event, "WebSocket bridge")
+    stop_event = external_shutdown_event or shutdown_event
+    if register_signals:
+        utils.register_shutdown_signals(loop, stop_event, "WebSocket bridge")
 
-    logger.info(f"Starting WebSocket Bridge on port {WS_PORT}... (role={ROLE})")
+    logger.info(f"Starting WebSocket Bridge on {WS_HOST}:{WS_PORT}... (role={ROLE})")
     if direct_queue is not None:
         logger.info("WebSocket bridge using direct in-process queue (no Redis)")
     if ENABLE_UPLINK:
@@ -498,11 +506,11 @@ async def run_websocket_bridge(heartbeat_event=None, direct_queue: asyncio.Queue
         logger.info("Uplink DISABLED (set ENABLE_UPLINK=true to enable)")
 
     # Start WebSocket server
-    async with websockets.serve(ws_handler, "0.0.0.0", WS_PORT):
-        logger.info(f"WebSocket server running at ws://0.0.0.0:{WS_PORT}")
+    async with websockets.serve(ws_handler, WS_HOST, WS_PORT):
+        logger.info(f"WebSocket server running at ws://{WS_HOST}:{WS_PORT}")
 
-        listener = direct_queue_listener(direct_queue) if direct_queue is not None else redis_listener()
-        await asyncio.gather(listener, utils.heartbeat_coro(heartbeat_event, shutdown_event))
+        listener = direct_queue_listener(direct_queue, stop_event) if direct_queue is not None else redis_listener(stop_event)
+        await asyncio.gather(listener, utils.heartbeat_coro(heartbeat_event, stop_event))
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

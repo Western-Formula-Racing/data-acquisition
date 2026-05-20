@@ -1,6 +1,7 @@
 import { webSocketService } from './WebSocketService';
 import { dataStore } from '../lib/DataStore';
 import { formatCanId } from '../utils/canProcessor';
+import { isChargecartRuntime, isChargecartTelemetryCanId } from '../lib/chargecartRuntime';
 
 // Synthetic message IDs for non-CAN diagnostic data
 export const DIAG_MSG_IDS = {
@@ -18,6 +19,7 @@ const RELAY_HEARTBEAT_CAN_ID = 0x7FD; // Flight Recorder live relay heartbeat
 
 class TelemetryHandler {
   private isInitialized = false;
+  private chargecartRuntime = isChargecartRuntime();
 
   initialize() {
     if (this.isInitialized) return;
@@ -36,6 +38,7 @@ class TelemetryHandler {
       const messages = Array.isArray(decoded) ? decoded : [decoded];
       messages.forEach(msg => {
         if (!msg?.signals) return;
+        if (this.chargecartRuntime && !isChargecartTelemetryCanId(msg.canId)) return;
 
         if (msg.canId === UTS_HEARTBEAT_CAN_ID || msg.canId === RELAY_HEARTBEAT_CAN_ID) {
           dataStore.ingestMessage({
