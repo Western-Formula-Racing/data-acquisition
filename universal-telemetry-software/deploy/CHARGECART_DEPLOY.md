@@ -107,13 +107,41 @@ chargecart-ws  -> Cloudflare Tunnel CNAME for the Pi RX websocket
 
 ## Kiosk
 
+Install the local static frontend for the physical 7-inch screen:
+
+```bash
+cd /home/chargecart/data-acquisition/pecan
+npm ci
+npm run build
+
+sudo mkdir -p /var/www/chargecart
+sudo rsync -a --delete dist/ /var/www/chargecart/
+
+sudo apt install -y nginx
+sudo cp /home/chargecart/data-acquisition/universal-telemetry-software/deploy/chargecart-nginx.conf /etc/nginx/sites-available/chargecart
+sudo ln -sf /etc/nginx/sites-available/chargecart /etc/nginx/sites-enabled/chargecart
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl enable --now nginx
+sudo systemctl reload nginx
+```
+
 The physical 7-inch screen should open Chromium to:
 
 ```text
 http://localhost/chargecart
 ```
 
-or to the Cloudflare Pages URL if the Pi has internet. Use `localhost`, not `127.0.0.1`, because `127.0.0.1` is reserved by the frontend for demo websocket mode.
+The nginx config serves `/var/www/chargecart`, not the checkout under `/home/chargecart`. Keeping the web root outside the home directory avoids relying on broad execute permissions on `/home/chargecart`, `/home/chargecart/data-acquisition`, and `/home/chargecart/data-acquisition/pecan`. After each frontend rebuild, refresh the deployed static files with:
+
+```bash
+cd /home/chargecart/data-acquisition/pecan
+npm run build
+sudo rsync -a --delete dist/ /var/www/chargecart/
+sudo systemctl reload nginx
+```
+
+Use `localhost`, not `127.0.0.1`, because `127.0.0.1` is reserved by the frontend for demo websocket mode. The local page has TX controls; the Cloudflare Pages hostname remains RX-only.
 
 ## Verification
 

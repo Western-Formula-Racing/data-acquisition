@@ -87,6 +87,25 @@ jobs:
         docker compose -f deploy/docker-compose.can-test.yml config --quiet
         echo "✓ All compose configs valid"
 
+    - name: Validate nginx config
+      run: |
+        sudo apt-get install -y nginx > /dev/null 2>&1
+        sudo nginx -t -c universal-telemetry-software/deploy/chargecart-nginx.conf
+        echo "✓ chargecart nginx config valid"
+
+    - name: Validate cloudflared config
+      run: |
+        curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
+        chmod +x /tmp/cloudflared
+        /tmp/cloudflared tunnel validate -c universal-telemetry-software/deploy/chargecart-cloudflared.yml
+        echo "✓ chargecart cloudflared config valid"
+
+    - name: Validate deploy scripts
+      run: |
+        for f in universal-telemetry-software/deploy/chargecart-deploy.sh; do
+          bash -n "$f" && echo "✓ $f syntax OK" || { echo "✗ $f has syntax errors"; exit 1; }
+        done
+
     - name: Upload Docker image artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -553,6 +572,13 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./pecan/dist
+
+      - name: Upload dist as reusable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pecan-dist
+          path: ./pecan/dist
+          retention-days: 7
 
       - name: Deploy to GitHub Pages
         id: deployment
