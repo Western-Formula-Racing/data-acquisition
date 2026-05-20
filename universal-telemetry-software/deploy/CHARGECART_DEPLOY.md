@@ -45,7 +45,7 @@ cloudflared tunnel route dns chargecart chargecart-ws.westernformularacing.org
 Copy the tunnel credential to the Pi:
 
 ```bash
-scp ~/.cloudflared/8675ba25-b084-4e4b-9d89-4aa5061d48ac.json car@<chargecart-pi>:/home/car/.cloudflared/
+scp ~/.cloudflared/8675ba25-b084-4e4b-9d89-4aa5061d48ac.json chargecart@<chargecart-pi>:/home/chargecart/.cloudflared/
 ```
 
 Then copy the service config:

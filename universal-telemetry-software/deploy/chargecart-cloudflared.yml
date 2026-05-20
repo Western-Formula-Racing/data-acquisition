@@ -4,7 +4,7 @@
 # must remain loopback-only for the physical chargecart screen.
 
 tunnel: chargecart
-credentials-file: /home/car/.cloudflared/8675ba25-b084-4e4b-9d89-4aa5061d48ac.json
+credentials-file: /home/chargecart/.cloudflared/8675ba25-b084-4e4b-9d89-4aa5061d48ac.json
 
 ingress:
   - hostname: chargecart-ws.westernformularacing.org

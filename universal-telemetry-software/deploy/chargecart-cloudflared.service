@@ -1,7 +1,7 @@
 # WFR Chargecart Cloudflare Tunnel
 #
 # Assumes `cloudflared tunnel login` and tunnel creation have already been
-# performed on the Pi as the `car` user.
+# performed on the Pi as the `chargecart` user.
 #
 # Install:
 #   sudo cp chargecart-cloudflared.service /etc/systemd/system/
@@ -18,7 +18,7 @@ Requires=chargecart-uts.service
 
 [Service]
 Type=simple
-User=car
+User=chargecart
 ExecStart=/usr/bin/cloudflared tunnel --config /etc/cloudflared/chargecart.yml run chargecart
 Restart=always
 RestartSec=5

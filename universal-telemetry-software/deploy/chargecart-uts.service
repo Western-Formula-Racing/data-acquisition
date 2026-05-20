@@ -18,8 +18,8 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=car
-WorkingDirectory=/home/car/data-acquisition/universal-telemetry-software
+User=chargecart
+WorkingDirectory=/home/chargecart/data-acquisition/universal-telemetry-software
 
 Environment=ROLE=car
 Environment=SIMULATE=false
@@ -35,7 +35,7 @@ Environment=TX_WS_HOST=127.0.0.1
 Environment=TX_WS_PORT=9078
 Environment=ENABLE_TX_WS=true
 Environment=TX_CHARGECART_ONLY=true
-Environment=DBC_FILE_PATH=/home/car/data-acquisition/universal-telemetry-software/deploy/example.dbc
+Environment=DBC_FILE_PATH=/home/chargecart/data-acquisition/universal-telemetry-software/deploy/example.dbc
 Environment=UPLINK_RATE_LIMIT=2
 
 # Keep the normal stack off this Pi profile.
@@ -44,7 +44,7 @@ Environment=ENABLE_AUDIO=false
 Environment=ENABLE_TIMESCALE_LOGGING=false
 Environment=OFF_THE_SHELF=true
 
-ExecStart=/home/car/.local/bin/uv run python main_chargecart.py
+ExecStart=/home/chargecart/.local/bin/uv run python main_chargecart.py
 Restart=always
 RestartSec=3
 
