@@ -114,7 +114,9 @@ export class WebSocketService {
     } else {
       const hostname = window.location.hostname;
       const isRpiNetwork = hostname.startsWith('192.');
-      if (isRpiNetwork) {
+      if (this.isChargecartRoute()) {
+        wsUrl = this.getChargecartWsUrl();
+      } else if (isRpiNetwork) {
         wsUrl = `${protocol}://${hostname}:${port}`;
       } else {
         wsUrl = `wss://ws-demo.westernformularacing.org`;
@@ -122,6 +124,27 @@ export class WebSocketService {
     }
 
     return this.normalizeWsUrl(wsUrl, protocol);
+  }
+
+  private isChargecartRoute(): boolean {
+    return window.location.pathname === '/chargecart';
+  }
+
+  private getChargecartWsUrl(): string {
+    const hostname = window.location.hostname;
+
+    if (hostname === 'chargecart.westernformularacing.org') {
+      return `wss://${hostname}/ws`;
+    }
+
+    if (hostname === '127.0.0.1') {
+      return 'wss://ws-demo.westernformularacing.org';
+    }
+
+    const isSecure = window.location.protocol === 'https:';
+    const protocol = isSecure ? 'wss' : 'ws';
+    const port = isSecure ? '9443' : '9080';
+    return `${protocol}://${hostname}:${port}`;
   }
 
   private normalizeWsUrl(wsUrl: string, defaultProtocol?: string): string {
@@ -158,6 +181,10 @@ export class WebSocketService {
   private resolveCandidateUrls(): string[] {
     const isSecure = window.location.protocol === 'https:';
     const protocol = isSecure ? 'wss' : 'ws';
+
+    if (this.isChargecartRoute() && !localStorage.getItem('custom-ws-url')?.trim() && !import.meta.env.VITE_WS_URL) {
+      return [this.normalizeWsUrl(this.getChargecartWsUrl(), protocol)];
+    }
 
     const raw = localStorage.getItem(PECAN_WS_CANDIDATES_KEY);
     if (raw?.trim()) {

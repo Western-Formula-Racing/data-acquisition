@@ -60,7 +60,8 @@ function App() {
   const closeSettings = () => setIsSettingsOpen(false);
   const openAuth = () => setIsAuthOpen(true);
   const closeAuth = () => setIsAuthOpen(false);
-  const showAppBanners = location.pathname !== "/";
+  const isChargeCart = location.pathname === "/chargecart";
+  const showAppBanners = location.pathname !== "/" && !isChargeCart;
 
   const handleClearRecoveredSession = async () => {
     // Wipe cold store first so that getColdExtent() returns null by the time
@@ -108,10 +109,12 @@ function App() {
 
   return (
     <div className="h-screen flex flex-row overflow-y-auto">
-      <div className={`h-screen transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'lg:w-2/9 md:w-2/5 sm:w-3/5 w-full' : 'w-[60px]'}`}>
-        {!isSidebarOpen && <Hamburger trigger={() => setIsSidebarOpen(true)} />}
-        <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} onOpenSettings={openSettings} onOpenAuth={openAuth} />
-      </div>
+      {!isChargeCart && (
+        <div className={`h-screen transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'lg:w-2/9 md:w-2/5 sm:w-3/5 w-full' : 'w-[60px]'}`}>
+          {!isSidebarOpen && <Hamburger trigger={() => setIsSidebarOpen(true)} />}
+          <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} onOpenSettings={openSettings} onOpenAuth={openAuth} />
+        </div>
+      )}
 
       {/* Main content area, Outlet element is needed to display the rendered child pages received from the routes */}
       <main id="main-content" className="flex-1 h-full min-w-0">
@@ -140,9 +143,13 @@ function App() {
           </div>
         )}
         <Outlet context={{ isSidebarOpen, openSettings, ...bannerApi }} />
-        <SettingsModal isOpen={isSettingsOpen} onClose={closeSettings} bannerApi={bannerApi} />
-        <AuthModal isOpen={isAuthOpen} onClose={closeAuth} />
-        <FloatingTools />
+        {!isChargeCart && (
+          <>
+            <SettingsModal isOpen={isSettingsOpen} onClose={closeSettings} bannerApi={bannerApi} />
+            <AuthModal isOpen={isAuthOpen} onClose={closeAuth} />
+            <FloatingTools />
+          </>
+        )}
       </main>
 
 

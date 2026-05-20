@@ -61,6 +61,7 @@ describe("TxWebSocketService", () => {
 
     expect(svc.previewSignals(256, { a: 1 })).toBe(false);
     expect(svc.sendSignals(256, { a: 1 })).toBe(false);
+    expect(svc.sendChargecartBalance("start")).toBe(false);
   });
 
   it("sends preview and send payloads when connected", async () => {
@@ -73,9 +74,12 @@ describe("TxWebSocketService", () => {
 
     expect(svc.previewSignals(256, { a: 1 }, "p1")).toBe(true);
     expect(svc.sendSignals(256, { b: 2 }, "s1")).toBe(true);
+    expect(svc.sendChargecartBalance("start", "c1")).toBe(true);
 
     expect(ws.sent[0]).toContain('"type":"can_preview_signals"');
     expect(ws.sent[1]).toContain('"type":"can_send_signals"');
+    expect(ws.sent[2]).toContain('"type":"can_send_chargecart_balance"');
+    expect(ws.sent[2]).toContain('"command":"start"');
   });
 
   it("notifies registered listeners", async () => {

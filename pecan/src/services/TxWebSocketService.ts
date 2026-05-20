@@ -31,6 +31,8 @@ export type TxWsErrorMessage = {
   message: string;
 };
 
+export type ChargecartBalanceCommand = 'start' | 'stop';
+
 export type TxHandler = (data: PreviewMessage | UplinkAckMessage | TxWsErrorMessage) => void;
 
 const TX_WS_PORT = 9078;
@@ -164,6 +166,21 @@ export class TxWebSocketService {
     const r = ref ?? `send-${this._uuid()}`;
     console.log(`[TxWS →] can_send_signals  canId=${canId}  ref=${r}  signals=${JSON.stringify(signals)}`);
     this.send({ type: 'can_send_signals', ref: r, canId, signals });
+    return true;
+  }
+
+  /**
+   * Chargecart-only safety path. The TX bridge maps this command to the DBC
+   * balance frames and rejects every other CAN ID for this message type.
+   */
+  sendChargecartBalance(command: ChargecartBalanceCommand, ref?: string): boolean {
+    if (!this._connected) {
+      console.warn('[TxWS] Not connected — cannot send chargecart balance command');
+      return false;
+    }
+    const r = ref ?? `chargecart-${command}-${this._uuid()}`;
+    console.log(`[TxWS →] can_send_chargecart_balance  command=${command}  ref=${r}`);
+    this.send({ type: 'can_send_chargecart_balance', ref: r, command });
     return true;
   }
 

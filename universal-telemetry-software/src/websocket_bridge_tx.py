@@ -35,6 +35,10 @@ TX_WS_PORT = int(os.getenv("TX_WS_PORT", "9078"))
 ENABLE_TX_WS = os.getenv("ENABLE_TX_WS", "false").lower() == "true"
 DBC_FILE_PATH = os.getenv("DBC_FILE_PATH", "/app/example.dbc")
 UPLINK_RATE_LIMIT = int(os.getenv("UPLINK_RATE_LIMIT", "10"))
+CHARGECART_BALANCE_COMMANDS = {
+    "start": 998,  # TORCH_START_BALANCE
+    "stop": 999,   # TORCH_STOP_BALANCE
+}
 
 # ── DBC / CAN bus (lazy init) ────────────────────────────────────────────────
 
@@ -131,6 +135,7 @@ _ERRORS = {
     "INVALID_MESSAGE": "Could not parse message or missing 'type' field",
     "INVALID_CAN_ID": "canId must be a non-negative integer",
     "INVALID_SIGNALS": "signals must be a dict of signal_name: numeric_value",
+    "INVALID_CHARGECART_COMMAND": "Chargecart balancing command must be 'start' or 'stop'",
     "ENCODE_ERROR": "Failed to encode signals — check signal names and values",
     "INTERNAL_ERROR": "Internal encoding error",
     "TX_DISABLED": "TX bridge is disabled (set ENABLE_TX_WS=true)",
@@ -152,13 +157,13 @@ async def _handle_client_message(websocket, raw: str):
         await websocket.send(json.dumps({"type": "pong", "timestamp": msg.get("timestamp"), "serverTime": int(time.time() * 1000)}))
         return
 
-    if msg_type not in ("can_preview_signals", "can_send_signals"):
+    if msg_type not in ("can_preview_signals", "can_send_signals", "can_send_chargecart_balance"):
         await websocket.send(json.dumps({"type": "error", "code": "UNKNOWN_TYPE", "message": _ERRORS["UNKNOWN_TYPE"]}))
         return
 
     # can_preview_signals is allowed even when TX writes are disabled — it never touches the bus.
-    # Only can_send_signals requires ENABLE_TX_WS=true.
-    if not ENABLE_TX_WS and msg_type == "can_send_signals":
+    # Only write paths require ENABLE_TX_WS=true.
+    if not ENABLE_TX_WS and msg_type in ("can_send_signals", "can_send_chargecart_balance"):
         await websocket.send(json.dumps({"type": "error", "code": "TX_DISABLED", "message": _ERRORS["TX_DISABLED"]}))
         return
 
@@ -168,15 +173,27 @@ async def _handle_client_message(websocket, raw: str):
 
     # ── Validate ──────────────────────────────────────────────────────────────
 
-    can_id = msg.get("canId")
-    if not isinstance(can_id, int) or can_id < 0:
-        await websocket.send(json.dumps({"type": "error", "code": "INVALID_CAN_ID", "message": _ERRORS["INVALID_CAN_ID"]}))
-        return
+    if msg_type == "can_send_chargecart_balance":
+        command = msg.get("command")
+        can_id = CHARGECART_BALANCE_COMMANDS.get(command)
+        if can_id is None:
+            await websocket.send(json.dumps({
+                "type": "error",
+                "code": "INVALID_CHARGECART_COMMAND",
+                "message": _ERRORS["INVALID_CHARGECART_COMMAND"],
+            }))
+            return
+        signals = {}
+    else:
+        can_id = msg.get("canId")
+        if not isinstance(can_id, int) or can_id < 0:
+            await websocket.send(json.dumps({"type": "error", "code": "INVALID_CAN_ID", "message": _ERRORS["INVALID_CAN_ID"]}))
+            return
 
-    signals = msg.get("signals", {})
-    if not isinstance(signals, dict):
-        await websocket.send(json.dumps({"type": "error", "code": "INVALID_SIGNALS", "message": _ERRORS["INVALID_SIGNALS"]}))
-        return
+        signals = msg.get("signals", {})
+        if not isinstance(signals, dict):
+            await websocket.send(json.dumps({"type": "error", "code": "INVALID_SIGNALS", "message": _ERRORS["INVALID_SIGNALS"]}))
+            return
 
     ref = msg.get("ref", "preview")
     client_info = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
@@ -210,9 +227,9 @@ async def _handle_client_message(websocket, raw: str):
         }))
         return
 
-    # ── can_send_signals: encode + write to CAN bus ───────────────────────────
+    # ── CAN write paths: encode + write to CAN bus ────────────────────────────
 
-    if msg_type == "can_send_signals":
+    if msg_type in ("can_send_signals", "can_send_chargecart_balance"):
         _init_can_bus()
         write_err = _write_can(can_id, bytes(data_bytes), ref)
 
