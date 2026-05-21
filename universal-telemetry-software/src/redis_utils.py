@@ -14,7 +14,7 @@ import redis.asyncio as aioredis
 logger = logging.getLogger(__name__)
 
 
-def get_sync_client(url: str, retries: int = 10, backoff: float = 1.0):
+def get_sync_client(url: str, retries: int = 5, backoff: float = 1.0):
     """Return a connected synchronous Redis client, retrying on failure.
 
     Args:
