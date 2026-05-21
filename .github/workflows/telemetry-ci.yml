@@ -90,14 +90,24 @@ jobs:
     - name: Validate nginx config
       run: |
         sudo apt-get install -y nginx > /dev/null 2>&1
-        sudo nginx -t -c universal-telemetry-software/deploy/chargecart-nginx.conf
+        CHARGECART_NGINX_CONF="$(realpath universal-telemetry-software/deploy/chargecart-nginx.conf)"
+        NGINX_TEST_CONF="$RUNNER_TEMP/chargecart-nginx-test.conf"
+        cat > "$NGINX_TEST_CONF" <<EOF
+        events {}
+        http {
+            include /etc/nginx/mime.types;
+            default_type application/octet-stream;
+            include $CHARGECART_NGINX_CONF;
+        }
+        EOF
+        sudo nginx -t -c "$NGINX_TEST_CONF"
         echo "✓ chargecart nginx config valid"
 
     - name: Validate cloudflared config
       run: |
         curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
         chmod +x /tmp/cloudflared
-        /tmp/cloudflared tunnel validate -c universal-telemetry-software/deploy/chargecart-cloudflared.yml
+        /tmp/cloudflared tunnel --config universal-telemetry-software/deploy/chargecart-cloudflared.yml ingress validate
         echo "✓ chargecart cloudflared config valid"
 
     - name: Validate deploy scripts
