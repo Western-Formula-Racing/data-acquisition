@@ -1,0 +1,94 @@
+services:
+  # Base station only — no car container needed.
+  # lan_sender.py on the host (or another container) sends UDP packets.
+  base:
+    build:
+      context: ..
+      args:
+        GIT_HASH: ${GIT_HASH:-ci-unknown}
+    container_name: daq-lan-base
+    privileged: true
+    restart: unless-stopped
+    ports:
+      - "8080:8080/tcp"   # Status HTTP server
+      - "9080:9080/tcp"   # WebSocket bridge
+    environment:
+      - ROLE=base
+      - REMOTE_IP=127.0.0.1   # Will be overridden by lan_sender — base listens on all interfaces
+      - UDP_PORT=5005
+      - TCP_PORT=5006
+      - REDIS_URL=redis://base-redis:***@timescaledb:5432/wfr
+      - TIMESCALE_TABLE=wfr26
+    depends_on:
+      base-redis:
+        condition: service_healthy
+      timescaledb:
+        condition: service_healthy
+    networks:
+      - daq-network
+    volumes:
+      - ../../pecan/src/assets/dbc.dbc:/app/example.dbc:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  base-redis:
+    image: redis:8.2
+    container_name: daq-lan-base-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379/tcp"
+    volumes:
+      - lan_base_redis_data:/data
+    networks:
+      - daq-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  timescaledb:
+    image: timescale/timescaledb:2.17.1-pg16
+    container_name: daq-lan-timescaledb
+    environment:
+      POSTGRES_USER: wfr
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: wfr
+    restart: "no"
+    ports:
+      - "5432:5432"
+    volumes:
+      - lan_timescaledb_data:/var/lib/postgresql/data
+      - ./timescaledb_init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - daq-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wfr -d wfr"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  lan_base_redis_data:
+  lan_timescaledb_data:
+
+networks:
+  daq-network:
+    driver: bridge
+
+# ── Access points ──────────────────────────────────────────────────────────────
+#   Status page:  http://localhost:8080
+#   WebSocket:    ws://localhost:9080
+#   Redis:        localhost:6379
+#   TimescaleDB:  localhost:5432  (user=wfr, pass=password, db=wfr)
+#
+# ── How it works ───────────────────────────────────────────────────────────────
+# 1. docker compose up -f docker-compose.lan-sender-test.yml up -d
+# 2. python src/lan_sender.py 127.0.0.1 5005   (or ./lan_sender.sh 127.0.0.1 5005)
+# 3. Data flows: lan_sender → UDP → base (data.py) → Redis → WebSocket bridge
+# 4. Run: python -m pytest tests/test_lan_sender.py -v

@@ -386,8 +386,116 @@ jobs:
         docker compose -f deploy/docker-compose.can-test.yml down -v 2>/dev/null || true
         sudo ip link delete can0 2>/dev/null || true
 
+  # ── LAN sender tests: base-only stack + lan_sender.py fake car ───────────────
+  lan-sender:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download Docker image artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-images
+        path: /tmp
+
+    - name: Load telemetry image
+      run: docker load -i /tmp/telemetry.tar
+
+    - name: Pull Redis and TimescaleDB images
+      run: |
+        docker pull redis:8.2 &
+        docker pull timescale/timescaledb:2.17.1-pg16 &
+        wait
+        echo "✓ Images pulled"
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install Python test dependencies
+      run: |
+        pip install \
+          pytest pytest-asyncio pytest-timeout \
+          websockets redis requests aiohttp
+
+    - name: Start base-only stack
+      working-directory: ./universal-telemetry-software
+      env:
+        GIT_HASH: ${{ github.sha }}
+      run: |
+        docker compose -f deploy/docker-compose.lan-sender-test.yml down -v --remove-orphans || true
+        docker compose -f deploy/docker-compose.lan-sender-test.yml up -d --build
+        echo "Waiting for services to become ready..."
+        sleep 20
+
+    - name: Check container health
+      working-directory: ./universal-telemetry-software
+      run: |
+        docker compose -f deploy/docker-compose.lan-sender-test.yml ps
+        docker compose -f deploy/docker-compose.lan-sender-test.yml logs --tail 30
+
+    - name: Verify containers
+      run: |
+        for container in daq-lan-base daq-lan-base-redis daq-lan-timescaledb; do
+          if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+            echo "✓ ${container} running"
+          else
+            echo "✗ ${container} NOT running"
+            docker logs ${container} 2>&1 || true
+            exit 1
+          fi
+        done
+
+    - name: Start lan_sender.py in background
+      working-directory: ./universal-telemetry-software
+      run: |
+        python3 src/lan_sender.py 127.0.0.1 5005 &
+        LAN_SENDER_PID=$!
+        echo "lan_sender PID: $LAN_SENDER_PID"
+        # Give it time to establish a stream before tests start
+        sleep 5
+        # Keep PID alive for the test duration (background=true keeps it attached to the step)
+        echo "$LAN_SENDER_PID" > /tmp/lan_sender.pid
+
+    - name: Run lan_sender integration tests
+      working-directory: ./universal-telemetry-software
+      run: |
+        python -m pytest tests/test_lan_sender.py -v -s --timeout=120
+
+    - name: Collect logs on failure
+      if: failure()
+      working-directory: ./universal-telemetry-software
+      run: |
+        mkdir -p test-logs
+        docker compose -f deploy/docker-compose.lan-sender-test.yml logs --no-color > test-logs/lan-sender-compose.log 2>&1
+        docker logs daq-lan-base              > test-logs/lan-base.log 2>&1 || true
+        docker logs daq-lan-base-redis         > test-logs/lan-base-redis.log 2>&1 || true
+        docker logs daq-lan-timescaledb         > test-logs/lan-timescaledb.log 2>&1 || true
+
+    - name: Upload lan-sender test logs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: lan-sender-test-logs
+        path: universal-telemetry-software/test-logs/
+        retention-days: 7
+
+    - name: Cleanup lan-sender test stack
+      if: always()
+      working-directory: ./universal-telemetry-software
+      run: |
+        # Kill lan_sender if still running
+        if [ -f /tmp/lan_sender.pid ]; then
+          kill $(cat /tmp/lan_sender.pid) 2>/dev/null || true
+        fi
+        docker compose -f deploy/docker-compose.lan-sender-test.yml down -v
+
   publish-telemetry:
-    needs: [unit-tests, integration, vcan]
+    needs: [unit-tests, integration, vcan, lan-sender]
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || github.event_name != 'pull_request'
     permissions:
