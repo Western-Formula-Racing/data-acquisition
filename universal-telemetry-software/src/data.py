@@ -146,7 +146,10 @@ class TelemetryNode:
         seen_s_ago = now - self.last_udp_time if self.last_udp_time else None
         car_alive = bool(seen_s_ago is not None and seen_s_ago < 5)
 
-        if os.getenv("ENABLE_TIMESCALE_LOGGING", "false").lower() == "true":
+        timescale_mode = os.getenv("ENABLE_TIMESCALE_LOGGING", "false").lower()
+        timescale_enabled = os.getenv("TIMESCALE_EFFECTIVE_ENABLED", "true" if timescale_mode == "true" else "false").lower() == "true"
+
+        if timescale_enabled:
             if not timescale_status:
                 timescale_component = {
                     "status": "unknown",
@@ -173,12 +176,17 @@ class TelemetryNode:
                     "detail": timescale_status.get("error") or "Timescale bridge reported an error",
                 }
         else:
+            detail = (
+                "ENABLE_TIMESCALE_LOGGING=auto and TimescaleDB is not reachable"
+                if timescale_mode == "auto"
+                else "ENABLE_TIMESCALE_LOGGING=false"
+            )
             timescale_component = {
                 "status": "warn",
                 "state": "disabled",
                 "rows": 0,
                 "errors": 0,
-                "detail": "ENABLE_TIMESCALE_LOGGING=false",
+                "detail": detail,
             }
 
         version_mismatch = (
@@ -186,6 +194,13 @@ class TelemetryNode:
             and self._car_git_hash is not None
             and self._own_git_hash != self._car_git_hash
         )
+        can_bus_detail = None
+        if not car_alive:
+            can_bus_detail = (
+                "No CAN frames received from car"
+                if seen_s_ago is None
+                else f"No CAN frames received for {seen_s_ago:.1f}s"
+            )
 
         return {
             "producer_ts": now,
@@ -206,8 +221,8 @@ class TelemetryNode:
                 },
                 "timescale": timescale_component,
                 "can_bus": {
-                    "status": "warn",
-                    "detail": "Base station receives car CAN over UDP; local can0 is not required",
+                    "status": "ok" if car_alive else "error",
+                    "detail": can_bus_detail,
                 },
             },
             "car": {

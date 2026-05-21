@@ -37,7 +37,7 @@ Optional profiles:
 
 | Command | Starts |
 |---------|--------|
-| `ENABLE_TIMESCALE_LOGGING=true ... --profile timescale` | Local TimescaleDB and telemetry writes |
+| `--profile timescale` | Local TimescaleDB and telemetry writes |
 | `--profile media` | MediaMTX and stream overlay |
 | `--profile tunnel` | cloudflared relay |
 
@@ -48,10 +48,10 @@ Examples:
 docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 
 # Add local TimescaleDB writes
-ENABLE_TIMESCALE_LOGGING=true docker compose --profile timescale -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
+docker compose --profile timescale -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 
 # Add TimescaleDB and local media helpers
-ENABLE_TIMESCALE_LOGGING=true docker compose --profile timescale --profile media -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
+docker compose --profile timescale --profile media -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 ```
 
 ## Configuration
@@ -61,7 +61,7 @@ All configuration is done through `deploy/.env.macbook`. Key variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `REMOTE_IP` | `10.71.1.10` | Car RPi IP address |
-| `ENABLE_TIMESCALE_LOGGING` | `false` | Set `true` when running with `--profile timescale` |
+| `ENABLE_TIMESCALE_LOGGING` | `auto` | Auto-start writer when the TimescaleDB profile is running |
 | `TIMESCALE_TABLE` | `WFR26test` | Season table name (no `_base` suffix — added automatically) |
 | `DBC_HOST_PATH` | `./example.dbc` | Path to DBC file |
 | `RELAY_TOKEN` | blank | Optional relay token |
@@ -118,7 +118,7 @@ docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.
 
 **Port conflicts:** If ports 3000, 8080, 5005, or 5006 are in use, edit the port mappings in `docker-compose.macbook-base.yml`. Optional profiles also use 5432 for TimescaleDB, 8554/8889/8189/9997 for media, and 8085 for the stream overlay.
 
-**TimescaleDB not writing:** Start with `ENABLE_TIMESCALE_LOGGING=true docker compose --profile timescale ... up -d`, or set `ENABLE_TIMESCALE_LOGGING=true` in `.env.macbook`. Verify the `WFR26test_base` table exists: `psql postgresql://wfr:wfr_password@localhost:5432/wfr -c "\dt"`
+**TimescaleDB not writing:** Start with `docker compose --profile timescale ... up -d`. In `auto` mode, telemetry probes the configured database at boot and starts the writer only when it is reachable. Verify the `WFR26test_base` table exists: `psql postgresql://wfr:wfr_password@localhost:5432/wfr -c "\dt"`
 
 ## Windows / WSL2
 

@@ -39,7 +39,7 @@ services:
       - ENABLE_VIDEO=false
       - ENABLE_AUDIO=false
       - SET_TIME_ENABLED=false
-      - ENABLE_TIMESCALE_LOGGING=${ENABLE_TIMESCALE_LOGGING:-false}
+      - ENABLE_TIMESCALE_LOGGING=${ENABLE_TIMESCALE_LOGGING:-auto}
       - POSTGRES_DSN=postgresql://wfr:wfr_password@timescaledb:5432/wfr
       - TIMESCALE_TABLE=${TIMESCALE_TABLE:-WFR26test}_base
       - DBC_FILE_PATH=/app/dbc_uploads/active.dbc

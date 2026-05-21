@@ -281,6 +281,14 @@ class TimescaleBridge:
             except Exception:
                 pass  # Already logged in _flush_batch
 
+    def _status_payload(self) -> dict:
+        return {
+            "ok": True,
+            "rows": self.rows_written,
+            "errors": self.errors,
+            "ts": time.time(),
+        }
+
     # ── Main loop ──────────────────────────────────────────────────────────
 
     async def run(self):
@@ -290,8 +298,22 @@ class TimescaleBridge:
             pubsub = r.pubsub()
             await pubsub.subscribe(REDIS_CHANNEL)
             logger.info(f"Subscribed to Redis channel: {REDIS_CHANNEL}")
+            await r.set("timescale:status", json.dumps(self._status_payload()))
 
-            async for message in pubsub.listen():
+            while not shutdown_event.is_set():
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                if message is None:
+                    self._periodic_flush()
+                    now = time.time()
+                    if now - self._last_stats >= 10:
+                        logger.info(
+                            f"[TimescaleBridge] {self.msgs_processed} CAN msgs → "
+                            f"{self.rows_written} rows written, {self.errors} errors"
+                        )
+                        await r.set("timescale:status", json.dumps(self._status_payload()))
+                        self._last_stats = now
+                    continue
+
                 if shutdown_event.is_set():
                     break
 
@@ -312,12 +334,7 @@ class TimescaleBridge:
                         f"[TimescaleBridge] {self.msgs_processed} CAN msgs → "
                         f"{self.rows_written} rows written, {self.errors} errors"
                     )
-                    await r.set("timescale:status", json.dumps({
-                        "ok": True,
-                        "rows": self.rows_written,
-                        "errors": self.errors,
-                        "ts": now,
-                    }))
+                    await r.set("timescale:status", json.dumps(self._status_payload()))
                     self._last_stats = now
 
         except Exception as e:

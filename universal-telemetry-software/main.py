@@ -18,6 +18,38 @@ import asyncio
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("Main")
 
+
+def _timescale_dsn_reachable() -> bool:
+    """Return True when the configured Timescale/Postgres DSN accepts a connection."""
+    dsn = os.getenv("POSTGRES_DSN")
+    if not dsn:
+        logger.info("Timescale auto mode disabled: POSTGRES_DSN is not set")
+        return False
+
+    try:
+        import psycopg2
+
+        conn = psycopg2.connect(dsn, connect_timeout=1)
+        conn.close()
+        return True
+    except Exception as e:
+        logger.info("Timescale auto mode disabled: database is not reachable (%s)", e)
+        return False
+
+
+def _resolve_timescale_enabled(role: str) -> bool:
+    raw = os.getenv("ENABLE_TIMESCALE_LOGGING", "false").strip().lower()
+    if role != "base":
+        return False
+    if raw == "auto":
+        enabled = _timescale_dsn_reachable()
+        os.environ["TIMESCALE_EFFECTIVE_ENABLED"] = "true" if enabled else "false"
+        logger.info("Timescale auto mode resolved to %s", "enabled" if enabled else "disabled")
+        return enabled
+    enabled = raw == "true"
+    os.environ["TIMESCALE_EFFECTIVE_ENABLED"] = "true" if enabled else "false"
+    return enabled
+
 def start_telemetry(can_event=None, telemetry_event=None):
     # Base station: telemetry runs as its own process; WS bridge is a separate process reading Redis.
     try:
@@ -119,7 +151,6 @@ if __name__ == "__main__":
     remote_ip = os.getenv("REMOTE_IP", "127.0.0.1")
     enable_video = os.getenv("ENABLE_VIDEO", "true").lower() == "true"
     enable_audio = os.getenv("ENABLE_AUDIO", "true").lower() == "true"
-    enable_timescale = os.getenv("ENABLE_TIMESCALE_LOGGING", "false").lower() == "true"
     
     boot_session_id = os.getenv("BOOT_SESSION_ID", str(uuid.uuid4())[:8])
     os.environ["BOOT_SESSION_ID"] = boot_session_id
@@ -141,6 +172,7 @@ if __name__ == "__main__":
 
     # Export ROLE so child processes (e.g. websocket_bridge) can read it
     os.environ["ROLE"] = role
+    enable_timescale = _resolve_timescale_enabled(role)
     logger.info(f"REMOTE_IP={remote_ip} (role={role})")
 
     processes = []

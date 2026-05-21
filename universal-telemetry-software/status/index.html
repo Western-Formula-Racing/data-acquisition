@@ -803,8 +803,18 @@
 
             const connStatusEl = document.getElementById('connStatus');
             if (connStatusEl) {
-                connStatusEl.textContent = overallText;
-                connStatusEl.style.color = health.healthy ? '#4ade80' : (overallStatus === 'error' ? '#ef4444' : '#fbbf24');
+                const carAlive = !!car.alivable;
+                const seen = car.seen_s_ago;
+                if (carAlive) {
+                    connStatusEl.textContent = 'CAR LINKED';
+                    connStatusEl.style.color = '#4ade80';
+                } else if (seen == null) {
+                    connStatusEl.textContent = 'NO CAR';
+                    connStatusEl.style.color = '#ef4444';
+                } else {
+                    connStatusEl.textContent = 'CAR STALE';
+                    connStatusEl.style.color = '#fbbf24';
+                }
             }
         }
 

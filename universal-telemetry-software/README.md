@@ -194,7 +194,7 @@ Use `docker-compose.macbook-base.yml` for MacBook or `docker-compose.rpi-base.ym
 docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 
 # Optional local TimescaleDB writes
-ENABLE_TIMESCALE_LOGGING=true docker compose --profile timescale -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
+docker compose --profile timescale -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 
 # RPi base station (ephemeral, no DB persistence)
 docker compose -f deploy/docker-compose.rpi-base.yml up -d
@@ -220,7 +220,7 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 | `SIMULATE` | `false` | Simulate CAN data (no hardware needed) |
 | `ENABLE_VIDEO` | `false` | Enable video streaming (car: push RTSP; base: unused) |
 | `ENABLE_AUDIO` | `false` | Enable audio streaming |
-| `ENABLE_TIMESCALE_LOGGING` | `false` | Log telemetry to server TimescaleDB (direct write) |
+| `ENABLE_TIMESCALE_LOGGING` | `false` | Log telemetry to TimescaleDB; MacBook default is `auto` |
 | `ENABLE_WS_RELAY` | `false` | Enable downlink-only WebSocket relay for remote viewers |
 | `RELAY_TOKEN` | unset | Optional passcode for relay connections (`?token=...`) |
 | `RELAY_LISTEN_PORT` | `9089` | Local port for the relay WebSocket server |

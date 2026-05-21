@@ -46,7 +46,7 @@ docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.
 Optional:
 
 ```bash
-ENABLE_TIMESCALE_LOGGING=true docker compose --profile timescale -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
+docker compose --profile timescale -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 docker compose --profile media -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 docker compose --profile tunnel -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 ```
