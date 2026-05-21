@@ -299,7 +299,9 @@ v4l2-ctl --device /dev/video0 --set-ctrl focus_absolute=40
 
 ## Monitoring
 
-**Status page** (`http://<ip>:8080`): real-time connection status, packet stats, live packet rate chart.
+**Status page** (`http://<ip>:8080`): real-time connection status, unified system health, packet stats, live packet rate chart.
+
+**Health endpoint** (`http://<ip>:8080/health`): JSON health snapshot for the base stack. It is served by the status server and backed by the telemetry process' `HEALTH_FILE` snapshot, which defaults to `/tmp/daq-health.json`. The endpoint reports infrastructure components separately from car presence, so a powered-off car does not imply Redis/WebSocket/Timescale are unhealthy.
 
 **PECAN dashboard** (`http://<ip>:3000`): live CAN message visualization. Connects automatically to WebSocket on port 9080.
 

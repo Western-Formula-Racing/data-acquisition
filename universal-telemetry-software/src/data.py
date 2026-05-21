@@ -9,6 +9,7 @@ import can
 import redis.asyncio as aioredis
 from collections import deque
 import csv
+import tempfile
 
 from src.config import (
     REMOTE_IP, UDP_PORT, TCP_PORT,
@@ -22,6 +23,7 @@ BATCH_TIMEOUT = 0.05  # 50ms
 BUFFER_DURATION = 60  # 1 minute ring buffer
 MISSING_CHECK_INTERVAL = 10.0
 UPLINK_MAGIC = b'\xCA\xFE'
+HEALTH_FILE = os.getenv("HEALTH_FILE", "/tmp/daq-health.json")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -73,6 +75,8 @@ class TelemetryNode:
         self._second_status: dict[int, int] = {}      # wall-clock second -> aggregate status (0=miss, 1=ok, 2=recovered)
         self.latest_seq = -1
         self.last_udp_time = 0.0
+        self._start_time = time.time()
+        self._udp_listener_bound = False
         self._own_git_hash: str = get_git_hash()
         self._car_git_hash: str | None = None         # None until first successful version check
 
@@ -127,6 +131,121 @@ class TelemetryNode:
     @property
     def _ecu_synced(self) -> bool:
         return self._clock_offset is not None
+
+    def _redis_ok(self) -> bool:
+        if not self.redis_client:
+            return False
+        try:
+            return bool(self.redis_client.ping())
+        except Exception as e:
+            logger.warning(f"Redis health check failed: {e}")
+            return False
+
+    def _build_health_snapshot(self, stats_payload: dict, redis_ok: bool, timescale_status: dict | None) -> dict:
+        now = time.time()
+        seen_s_ago = now - self.last_udp_time if self.last_udp_time else None
+        car_alive = bool(seen_s_ago is not None and seen_s_ago < 5)
+
+        if os.getenv("ENABLE_TIMESCALE_LOGGING", "false").lower() == "true":
+            if not timescale_status:
+                timescale_component = {
+                    "status": "unknown",
+                    "state": "not_reported",
+                    "rows": 0,
+                    "errors": 0,
+                    "detail": "No timescale:status value in Redis",
+                }
+            elif timescale_status.get("ok"):
+                age = now - float(timescale_status.get("ts") or 0)
+                timescale_component = {
+                    "status": "warn" if age > 30 else "ok",
+                    "state": "stale" if age > 30 else "writing",
+                    "rows": timescale_status.get("rows", 0),
+                    "errors": timescale_status.get("errors", 0),
+                    "detail": "Timescale status is stale" if age > 30 else None,
+                }
+            else:
+                timescale_component = {
+                    "status": "error",
+                    "state": "error",
+                    "rows": timescale_status.get("rows", 0),
+                    "errors": timescale_status.get("errors", 0),
+                    "detail": timescale_status.get("error") or "Timescale bridge reported an error",
+                }
+        else:
+            timescale_component = {
+                "status": "warn",
+                "state": "disabled",
+                "rows": 0,
+                "errors": 0,
+                "detail": "ENABLE_TIMESCALE_LOGGING=false",
+            }
+
+        version_mismatch = (
+            self._own_git_hash is not None
+            and self._car_git_hash is not None
+            and self._own_git_hash != self._car_git_hash
+        )
+
+        return {
+            "producer_ts": now,
+            "uptime_s": int(now - self._start_time),
+            "components": {
+                "udp_listener": {
+                    "status": "ok" if self._udp_listener_bound else "error",
+                    "detail": None if self._udp_listener_bound else f"UDP listener is not bound on port {UDP_PORT}",
+                },
+                "redis": {
+                    "status": "ok" if redis_ok else "error",
+                    "detail": None if redis_ok else "Redis PING failed",
+                },
+                "websocket_bridge": {
+                    "status": "ok",
+                    "clients": None,
+                    "detail": "Client count unavailable",
+                },
+                "timescale": timescale_component,
+                "can_bus": {
+                    "status": "warn",
+                    "detail": "Base station receives car CAN over UDP; local can0 is not required",
+                },
+            },
+            "car": {
+                "seen_s_ago": round(seen_s_ago, 3) if seen_s_ago is not None else None,
+                "ip": os.getenv("REMOTE_IP", "unknown"),
+                "alivable": car_alive,
+            },
+            "version": {
+                "own": self._own_git_hash,
+                "car": self._car_git_hash,
+                "mismatch": bool(version_mismatch),
+            },
+            "clock": {
+                "synced": self._ecu_synced,
+                "source": self._sync_source,
+                "car_time_synced": self._car_time_synced,
+                "base_clock_bad": self._base_clock_bad,
+            },
+            "stats": stats_payload,
+        }
+
+    def _write_health_snapshot(self, snapshot: dict) -> None:
+        directory = os.path.dirname(HEALTH_FILE) or "."
+        try:
+            os.makedirs(directory, exist_ok=True)
+            with tempfile.NamedTemporaryFile("w", delete=False, dir=directory, prefix=".daq-health-", suffix=".tmp") as tmp:
+                json.dump(snapshot, tmp, separators=(",", ":"))
+                tmp.flush()
+                os.fsync(tmp.fileno())
+                tmp_path = tmp.name
+            os.replace(tmp_path, HEALTH_FILE)
+        except Exception as e:
+            logger.warning(f"Failed to write health snapshot {HEALTH_FILE}: {e}")
+            try:
+                if "tmp_path" in locals() and os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+            except OSError:
+                pass
 
     def detect_role(self):
         if self.role != "auto":
@@ -425,6 +544,7 @@ class TelemetryNode:
             nonlocal expected_seq
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.bind(('0.0.0.0', UDP_PORT))
+            self._udp_listener_bound = True
             sock.setblocking(False)
             loop = asyncio.get_running_loop()
             
@@ -641,8 +761,15 @@ class TelemetryNode:
         async def stats_publisher():
             while True:
                 await asyncio.sleep(1)
-                timescale_raw = self.redis_client.get("timescale:status") if self.redis_client else None
                 timescale_status = None
+                redis_ok = self._redis_ok()
+                timescale_raw = None
+                if redis_ok:
+                    try:
+                        timescale_raw = self.redis_client.get("timescale:status")
+                    except Exception as e:
+                        logger.warning(f"Failed to read timescale:status from Redis: {e}")
+                        redis_ok = False
                 if timescale_raw:
                     try:
                         timescale_status = json.loads(timescale_raw)
@@ -664,6 +791,8 @@ class TelemetryNode:
                     "car_git_hash": self._car_git_hash,
                     "remote_ip": os.getenv("REMOTE_IP", "unknown"),
                 }
+                health_snapshot = self._build_health_snapshot(payload, redis_ok, timescale_status)
+                self._write_health_snapshot(health_snapshot)
                 self.publish("system_stats", json.dumps(payload))
                 # Prune second_status to last 120s to prevent unbounded growth
                 cutoff = int(time.time()) - 120
