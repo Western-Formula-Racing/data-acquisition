@@ -17,7 +17,7 @@ services:
       - REMOTE_IP=127.0.0.1   # Will be overridden by lan_sender — base listens on all interfaces
       - UDP_PORT=5005
       - TCP_PORT=5006
-      - REDIS_URL=redis://base-redis:***@timescaledb:5432/wfr
+      - REDIS_URL=redis://base-redis:6379/0
       - TIMESCALE_TABLE=wfr26
     depends_on:
       base-redis:
