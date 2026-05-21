@@ -62,7 +62,7 @@ If `GRAFANA_DASHBOARDS_PATH` is not set, the stack falls back to `./grafana/dash
 ```bash
 crontab -e
 # Add:
-0 2 * * * cd /home/ubuntu/projects/daq-internal && python /home/ubuntu/projects/daq-server-components/installer/backup-dashboards.py --output ./grafana-dashboards --git-push >> /var/log/grafana-backup.log 2>&1
+0 2 * * * cd /home/ubuntu/projects/daq-internal && python /home/ubuntu/projects/data-acquisition/server/installer/backup-dashboards.py --output ./grafana-dashboards --git-push >> /var/log/grafana-backup.log 2>&1
 ```
 
 ---

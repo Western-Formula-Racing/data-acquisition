@@ -29,6 +29,7 @@ Open:
 | Pecan dashboard | http://localhost:3000 |
 | Grafana | http://localhost:8087 |
 | Status page | http://localhost:8080 |
+| Health endpoint | http://localhost:8080/health |
 | TimescaleDB | `postgresql://wfr:wfr_password@localhost:5432/wfr` |
 
 ## Configuration
@@ -85,6 +86,8 @@ docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.
 
 **Can't connect to car RPi:** Verify `REMOTE_IP` in `.env.macbook` is correct and the car RPi is reachable.
 
+**No data flow:** Check `http://localhost:8080/health` first. The `udp_listener` component should be OK, and the car section should show recent data after the car starts sending. `docker logs daq-telemetry` should also show `Initial sequence` after the first UDP packet arrives.
+
 **Port conflicts:** If ports 3000, 8080, 8087, 5005, 5006, or 5432 are in use, edit the port mappings in `docker-compose.macbook-base.yml`.
 
 **TimescaleDB not writing:** Check that `ENABLE_TIMESCALE_LOGGING=true` is set (it is by default in the compose file). Verify the `WFR26test_base` table exists: `psql postgresql://wfr:wfr_password@localhost:5432/wfr -c "\dt"`
@@ -94,6 +97,8 @@ docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.
 If you're on Windows with WSL2 (recommended), everything works the same — just run the commands from within your WSL2 Linux shell.
 
 For native Windows Docker Desktop (non-WSL2), the Unix-style volume paths won't work — convert them to Windows paths or use WSL2.
+
+If Windows shows the status page but no telemetry data flows, treat it as a UDP ingress problem first. The car sends UDP to the base station IP on port `5005`, and the MacBook compose publishes `5005:5005/udp` into the telemetry container. On Windows/WSL2, verify the Windows host actually owns the base IP the car targets, Windows Firewall allows inbound UDP `5005`, and Docker Desktop/WSL2 is forwarding LAN UDP to the container.
 
 ## Teardown
 
