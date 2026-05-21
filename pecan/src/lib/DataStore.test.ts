@@ -208,3 +208,100 @@ describe('DataStore', () => {
     expect(dataStore.getLatest('M2')?.rawData).toBe('11');
   });
 });
+
+// ── P0-2: version-counter ─────────────────────────────────────────────────────
+// DataStore exposes a version tick that increments on every write so subscribers
+// (specifically useAllLatestMessages) can skip redundant Map rebuilds.
+describe('DataStore version tick (P0-2)', () => {
+  beforeEach(() => {
+    dataStore.clear();
+    dataStore.setRetentionWindow(30000);
+    vi.useFakeTimers();
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('increments version on every ingestMessage call', () => {
+    const base = Date.now();
+    const v0 = dataStore.getVersion();
+    dataStore.ingestMessage({ msgID: 'V1', messageName: 'V1', data: {}, rawData: '01', timestamp: base });
+    const v1 = dataStore.getVersion();
+    expect(v1).toBeGreaterThan(v0);
+
+    dataStore.ingestMessage({ msgID: 'V1', messageName: 'V1', data: {}, rawData: '02', timestamp: base + 1 });
+    expect(dataStore.getVersion()).toBeGreaterThan(v1);
+  });
+
+  it('increments version on ingestMessagesBatch', () => {
+    const base = Date.now();
+    const v0 = dataStore.getVersion();
+    dataStore.ingestMessagesBatch([
+      { msgID: 'B1', messageName: 'B1', data: {}, rawData: '01', timestamp: base },
+      { msgID: 'B2', messageName: 'B2', data: {}, rawData: '02', timestamp: base },
+    ]);
+    expect(dataStore.getVersion()).toBeGreaterThan(v0);
+  });
+
+  it('increments version on clear and clearMessage', () => {
+    const base = Date.now();
+    dataStore.ingestMessage({ msgID: 'C1', messageName: 'C1', data: {}, rawData: '01', timestamp: base });
+    const v0 = dataStore.getVersion();
+
+    dataStore.clearMessage('C1');
+    expect(dataStore.getVersion()).toBeGreaterThan(v0);
+
+    dataStore.ingestMessage({ msgID: 'C2', messageName: 'C2', data: {}, rawData: '02', timestamp: base });
+    const v2 = dataStore.getVersion();
+    dataStore.clear();
+    expect(dataStore.getVersion()).toBeGreaterThan(v2);
+  });
+});
+
+// ── P0-3: ingestMessage allocation correctness ─────────────────────────────────
+describe('DataStore ingestMessage data handling (P0-3)', () => {
+  beforeEach(() => {
+    dataStore.clear();
+    dataStore.setRetentionWindow(30000);
+    vi.useFakeTimers();
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('rounds fractional sensor readings to 3 decimal places', () => {
+    const base = Date.now();
+    dataStore.ingestMessage({
+      msgID: 'R1',
+      messageName: 'R1',
+      data: { rpm: { sensorReading: 1234.56789, unit: 'rpm' } },
+      rawData: 'BB',
+      timestamp: base,
+    });
+    expect(dataStore.getLatest('R1')!.data.rpm.sensorReading).toBe(1234.568);
+  });
+
+  it('does not mutate the original data object passed to ingestMessage', () => {
+    const base = Date.now();
+    const originalData = { temp: { sensorReading: 99.999999, unit: 'C' } };
+    dataStore.ingestMessage({
+      msgID: 'R2',
+      messageName: 'R2',
+      data: originalData,
+      rawData: 'CC',
+      timestamp: base,
+    });
+    // Store must never alias the caller's object.
+    expect(dataStore.getLatest('R2')!.data).not.toBe(originalData);
+    // And must not have mutated the original.
+    expect(originalData.temp.sensorReading).toBe(99.999999);
+  });
+
+  it('handles empty data gracefully', () => {
+    const base = Date.now();
+    dataStore.ingestMessage({ msgID: 'E1', messageName: 'E1', data: {}, rawData: '', timestamp: base });
+    expect(dataStore.getLatest('E1')!.data).toEqual({});
+  });
+
+  it('defaults direction to rx when not provided', () => {
+    const base = Date.now();
+    dataStore.ingestMessage({ msgID: 'D1', messageName: 'D1', data: {}, rawData: '00', timestamp: base });
+    expect(dataStore.getLatest('D1')!.direction).toBe('rx');
+  });
+});

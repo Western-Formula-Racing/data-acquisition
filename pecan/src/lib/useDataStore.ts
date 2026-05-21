@@ -101,23 +101,29 @@ export function useSignal(msgID: string, signalName: string): {
 }
 
 /**
- * Hook to get all latest messages
- * Updates whenever any message is updated
- * 
+ * Hook to get all latest messages.
+ * Uses the DataStore version counter to skip redundant Map rebuilds — the Map
+ * is only reconstructed when the version has actually changed since last render.
+ *
  * @returns Map of msgID to latest telemetry sample
  */
 export function useAllLatestMessages(source?: TelemetrySource): Map<string, TelemetrySample> {
-  const [allLatest, setAllLatest] = useState<Map<string, TelemetrySample>>(() => 
+  const [allLatest, setAllLatest] = useState<Map<string, TelemetrySample>>(() =>
     dataStore.getAllLatest(source)
   );
 
   useEffect(() => {
-    // Initial value
+    // P0-2: snapshot the version at subscribe time; only rebuild the Map
+    // when the version has actually changed (i.e. data was written).
+    let lastVersion = dataStore.getVersion();
     setAllLatest(dataStore.getAllLatest(source));
 
-    // Subscribe to all updates
     const unsubscribe = dataStore.subscribe(() => {
-      setAllLatest(dataStore.getAllLatest(source));
+      const currentVersion = dataStore.getVersion();
+      if (currentVersion !== lastVersion) {
+        lastVersion = currentVersion;
+        setAllLatest(dataStore.getAllLatest(source));
+      }
     });
 
     return unsubscribe;
@@ -218,29 +224,35 @@ export function useColdStoreState(): {
   coldDurationMs: number;
   coldNearingLimit: boolean;
 } {
-  const [isLoading,       setIsLoading]       = useState(() => dataStore.isColdCacheLoading());
-  const [coldWarning,     setColdWarning]     = useState<string | null>(null);
-  const [coldSizeBytes,   setColdSizeBytes]   = useState(() => dataStore.getColdStoreSizeBytes());
-  const [coldDurationMs,  setColdDurationMs]  = useState(() => dataStore.getColdExtent()?.endMs
-    ? (dataStore.getColdExtent()!.endMs - dataStore.getColdExtent()!.startMs) : 0);
-  const [coldNearingLimit, setColdNearingLimit] = useState(() => dataStore.isColdNearingLimit());
+  const [coldStoreState, setColdStoreState] = useState(() => ({
+    isLoading:       dataStore.isColdCacheLoading(),
+    coldWarning:     null as string | null,
+    coldSizeBytes:   dataStore.getColdStoreSizeBytes(),
+    coldDurationMs:  (() => {
+      const e = dataStore.getColdExtent();
+      return e ? e.endMs - e.startMs : 0;
+    })(),
+    coldNearingLimit: dataStore.isColdNearingLimit(),
+  }));
 
   useEffect(() => {
+    // P0-2 companion: batch all state updates into a single setState to avoid
+    // N separate re-renders (one per field) whenever cold state changes.
     const unsubscribe = dataStore.subscribeColdState(() => {
-      setIsLoading(dataStore.isColdCacheLoading());
-
       const warning = dataStore.consumeColdWarning();
-      if (warning) setColdWarning(warning);
-
-      setColdSizeBytes(dataStore.getColdStoreSizeBytes());
       const extent = dataStore.getColdExtent();
-      setColdDurationMs(extent ? extent.endMs - extent.startMs : 0);
-      setColdNearingLimit(dataStore.isColdNearingLimit());
+      setColdStoreState({
+        isLoading:       dataStore.isColdCacheLoading(),
+        coldWarning:     warning ?? null,
+        coldSizeBytes:   dataStore.getColdStoreSizeBytes(),
+        coldDurationMs:  extent ? extent.endMs - extent.startMs : 0,
+        coldNearingLimit: dataStore.isColdNearingLimit(),
+      });
     });
     return unsubscribe;
   }, []);
 
-  return { isLoading, coldWarning, coldSizeBytes, coldDurationMs, coldNearingLimit };
+  return coldStoreState;
 }
 
 /**

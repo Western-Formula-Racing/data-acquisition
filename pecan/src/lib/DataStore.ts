@@ -159,6 +159,9 @@ class DataStore {
   private recoveredFromSnapshot = false;
   private isRestoringSnapshot = false;
 
+  /** P0-2: monotonic write counter — subscribers can use this to skip redundant Map rebuilds */
+  private _version = 0;
+
   // ── Cold store integration ──────────────────────────────────────────────
 
   /** Decoded warm cache: cold frames re-decoded for the current scrub window. */
@@ -215,6 +218,7 @@ class DataStore {
       this.notifyColdState();
     }
     this.scheduleSnapshotSave();
+    this._version++;
     this.notifyAll();
     this.notifyTrace();
   }
@@ -387,6 +391,7 @@ class DataStore {
     } finally {
       this.isRestoringSnapshot = false;
       this.scheduleSnapshotSave();
+      this._version++;
       this.notifyAll();
       this.notifyTrace();
     }
@@ -556,17 +561,23 @@ class DataStore {
 
     const msgID = message.msgID;
 
-    // Round sensor readings to 3 decimal places for cleaner display
-    const roundedData = { ...message.data };
-    Object.keys(roundedData).forEach((key) => {
-      const signal = roundedData[key];
+    // P0-3: only allocate new signal objects when rounding actually changes the value.
+    // This avoids a per-frame { ...message.data } spread and per-signal spread for
+    // signals that are already at 3 decimal places.
+    const roundedData: typeof message.data = {};
+    for (const key of Object.keys(message.data)) {
+      const signal = message.data[key];
       if (signal && typeof signal.sensorReading === 'number') {
-        roundedData[key] = {
-          ...signal,
-          sensorReading: Math.round(signal.sensorReading * 1000) / 1000,
-        };
+        const rounded = Math.round(signal.sensorReading * 1000) / 1000;
+        // Only allocate a new signal object if rounding changed the value.
+        // This preserves object identity for the common case (already 3 dp).
+        roundedData[key] = rounded === signal.sensorReading
+          ? signal
+          : { ...signal, sensorReading: rounded };
+      } else {
+        roundedData[key] = signal;
       }
-    });
+    }
 
     // Create the sample
     const sample: TelemetrySample = {
@@ -605,6 +616,7 @@ class DataStore {
     this.notifyTrace();
 
     // Notify all subscribers
+    this._version++;
     this.notifyAll(msgID);
   }
 
@@ -645,16 +657,19 @@ class DataStore {
 
       const buffers = this.getSourceBuffers(source);
 
-      const roundedData = { ...message.data };
-      Object.keys(roundedData).forEach((key) => {
-        const signal = roundedData[key];
-        if (signal && typeof signal.sensorReading === "number") {
-          roundedData[key] = {
-            ...signal,
-            sensorReading: Math.round(signal.sensorReading * 1000) / 1000,
-          };
+      // P0-3: same optimisation as ingestMessage — skip allocations when rounding is a no-op.
+      const roundedData: typeof message.data = {};
+      for (const key of Object.keys(message.data)) {
+        const signal = message.data[key];
+        if (signal && typeof signal.sensorReading === 'number') {
+          const rounded = Math.round(signal.sensorReading * 1000) / 1000;
+          roundedData[key] = rounded === signal.sensorReading
+            ? signal
+            : { ...signal, sensorReading: rounded };
+        } else {
+          roundedData[key] = signal;
         }
-      });
+      }
 
       const sample: TelemetrySample = {
         timestamp,
@@ -688,6 +703,7 @@ class DataStore {
     }
     this.scheduleSnapshotSave();
     this.notifyTrace();
+    this._version++;
     this.notifyAll();
   }
 
@@ -979,6 +995,7 @@ class DataStore {
     }
 
     this.scheduleSnapshotSave();
+    this._version++;
     this.notifyAll();
     this.notifyTrace();
   }
@@ -1117,6 +1134,7 @@ class DataStore {
    * as TimelineContext re-read getColdExtent() with up-to-date data.
    */
   public notifyBoundsRefresh(): void {
+    this._version++;
     this.notifyAll();
     this.notifyColdState();
   }
@@ -1143,6 +1161,7 @@ class DataStore {
     this.getSourceBuffers(source).trace = [];
     this.scheduleSnapshotSave();
     this.notifyTrace();
+    this._version++;
   }
 
   private pruneTraceBuffer(referenceTimeMs: number, source: TelemetrySource = this.activeSource): void {
@@ -1223,6 +1242,7 @@ class DataStore {
   public clearMessage(msgID: string, source: TelemetrySource = this.activeSource): void {
     this.getSourceBuffers(source).byMsgId.delete(msgID);
     this.scheduleSnapshotSave();
+    this._version++;
     this.notifyAll(msgID);
   }
 
@@ -1236,6 +1256,7 @@ class DataStore {
     }
 
     this.retentionWindowMs = windowMs;
+    this._version++;
 
     // Prune all messages with new window
     for (const source of ["live", "replay"] as TelemetrySource[]) {
@@ -1255,6 +1276,16 @@ class DataStore {
     this.scheduleSnapshotSave();
     this.notifyAll();
     this.notifyTrace();
+  }
+
+  /**
+   * Returns the current monotonic write version.
+   * Incremented on every mutating operation (ingest, clear, etc.).
+   * Subscribers can snapshot this value and skip expensive recomputations
+   * when the version hasn't changed since their last render.
+   */
+  public getVersion(): number {
+    return this._version;
   }
 
   /**
