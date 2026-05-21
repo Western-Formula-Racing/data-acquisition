@@ -453,13 +453,11 @@ jobs:
     - name: Start lan_sender.py in background
       working-directory: ./universal-telemetry-software
       run: |
-        python3 src/lan_sender.py 127.0.0.1 5005 &
-        LAN_SENDER_PID=$!
-        echo "lan_sender PID: $LAN_SENDER_PID"
-        # Give it time to establish a stream before tests start
-        sleep 5
-        # Keep PID alive for the test duration (background=true keeps it attached to the step)
-        echo "$LAN_SENDER_PID" > /tmp/lan_sender.pid
+        # Run lan_sender inside the container so it shares the same network namespace.
+        # Host-side UDP proxies can lose packets; exec avoids that entirely.
+        docker exec -d daq-lan-base python3 /app/src/lan_sender.py 127.0.0.1 5005
+        echo "lan_sender started inside daq-lan-base"
+        # No sleep needed — tests handle their own timing
 
     - name: Run lan_sender integration tests
       working-directory: ./universal-telemetry-software
@@ -488,10 +486,7 @@ jobs:
       if: always()
       working-directory: ./universal-telemetry-software
       run: |
-        # Kill lan_sender if still running
-        if [ -f /tmp/lan_sender.pid ]; then
-          kill $(cat /tmp/lan_sender.pid) 2>/dev/null || true
-        fi
+        # lan_sender runs inside the container — docker compose down stops it automatically
         docker compose -f deploy/docker-compose.lan-sender-test.yml down -v
 
   publish-telemetry:
