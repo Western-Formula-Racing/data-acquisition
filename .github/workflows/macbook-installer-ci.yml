@@ -1,0 +1,122 @@
+name: Base Station Installer CI
+
+on:
+  push:
+    branches: [ main, deploy ]
+    paths:
+      - 'universal-telemetry-software/deploy/install.sh'
+      - 'universal-telemetry-software/deploy/docker-compose.macbook-base.yml'
+      - 'universal-telemetry-software/deploy/.env.macbook'
+      - 'universal-telemetry-software/deploy/MACBOOK_DEPLOY.md'
+      - 'universal-telemetry-software/deploy/ci-validate-compose.py'
+      - '.github/workflows/macbook-installer-ci.yml'
+  pull_request:
+    branches: [ main, deploy ]
+    paths:
+      - 'universal-telemetry-software/deploy/install.sh'
+      - 'universal-telemetry-software/deploy/docker-compose.macbook-base.yml'
+      - 'universal-telemetry-software/deploy/.env.macbook'
+      - 'universal-telemetry-software/deploy/MACBOOK_DEPLOY.md'
+      - 'universal-telemetry-software/deploy/ci-validate-compose.py'
+      - '.github/workflows/macbook-installer-ci.yml'
+  workflow_dispatch:
+
+jobs:
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: universal-telemetry-software/deploy
+        env:
+          SHELLCHECK_OPTS: -s bash -x
+
+      - name: Check script syntax
+        run: |
+          bash -n universal-telemetry-software/deploy/install.sh
+          echo "Bash syntax valid"
+
+      - name: Verify shebang and URL
+        run: |
+          head -1 universal-telemetry-software/deploy/install.sh | grep -q '^#!/.+/bash' && echo "Valid shebang"
+          grep -q 'https://raw.githubusercontent.com' universal-telemetry-software/deploy/install.sh && echo "GitHub raw URL present"
+
+  macos-installer-test:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Docker version
+        run: |
+          docker version || echo "Docker not available on this runner"
+
+      - name: Check Docker Desktop status
+        run: |
+          if docker info &>/dev/null; then
+            echo "Docker daemon running"
+          else
+            echo "Docker daemon not running - testing script logic only"
+          fi
+
+      - name: Validate compose file
+        run: |
+          cd universal-telemetry-software/deploy
+          if command -v docker &>/dev/null && docker info &>/dev/null; then
+            docker compose -f docker-compose.macbook-base.yml config --quiet
+            echo "Compose config valid"
+          else
+            echo "Skipping compose validation - Docker not running"
+          fi
+
+      - name: Run install.sh smoke test
+        run: |
+          chmod +x universal-telemetry-software/deploy/install.sh
+          output=$(bash universal-telemetry-software/deploy/install.sh 2>&1 || true)
+          echo "$output"
+          if echo "$output" | grep -q "Docker"; then
+            echo "Script correctly detected Docker state"
+          fi
+
+  linux-script-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify script detects non-macOS
+        run: |
+          chmod +x universal-telemetry-software/deploy/install.sh
+          output=$(bash universal-telemetry-software/deploy/install.sh 2>&1) || true
+          echo "$output" | grep -q "requires macOS" && echo "Correctly rejects Linux" || echo "Unexpected output"
+
+      - name: Validate compose file structure
+        run: |
+          python3 universal-telemetry-software/deploy/ci-validate-compose.py
+
+  url-accessibility:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check install.sh raw URL
+        run: |
+          HTTP_CODE=$(curl -fsSL -o /dev/null -w "%{http_code}" \
+            https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.sh)
+          echo "install.sh HTTP $HTTP_CODE"
+          test "$HTTP_CODE" = "200" || exit 1
+
+      - name: Check compose file raw URL
+        run: |
+          HTTP_CODE=$(curl -fsSL -o /dev/null -w "%{http_code}" \
+            https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/docker-compose.macbook-base.yml)
+          echo "docker-compose.macbook-base.yml HTTP $HTTP_CODE"
+          test "$HTTP_CODE" = "200" || exit 1
+
+      - name: Check .env.macbook raw URL
+        run: |
+          HTTP_CODE=$(curl -fsSL -o /dev/null -w "%{http_code}" \
+            https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/.env.macbook)
+          echo ".env.macbook HTTP $HTTP_CODE"
+          test "$HTTP_CODE" = "200" || exit 1

@@ -18,7 +18,6 @@ networks:
 services:
   telemetry:
     image: ghcr.io/western-formula-racing/data-acquisition/universal-telemetry:latest
-    build: ..   # builds locally; remove to use pre-built GHCR image
     container_name: daq-telemetry
     restart: unless-stopped
     ports:
@@ -78,7 +77,6 @@ services:
 
   pecan:
     image: ghcr.io/western-formula-racing/data-acquisition/pecan:latest
-    build: ../../pecan   # builds locally from monorepo pecan/; remove to use pre-built GHCR image
     container_name: daq-pecan
     restart: unless-stopped
     ports:

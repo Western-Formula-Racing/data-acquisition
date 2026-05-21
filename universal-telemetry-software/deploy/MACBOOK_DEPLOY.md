@@ -9,21 +9,29 @@ Docker Compose profiles.
 ## Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
-- Repo cloned with standard directory structure intact
 - Car RPi on the same network, or use simulation mode
 
-## Quick Start
+---
+
+## One-Command Install (Recommended)
+
+**Requires macOS + Docker Desktop (one-time install from docker.com).**
 
 ```bash
-cd universal-telemetry-software/
+curl -fsSL https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.sh | bash
 ```
 
-`deploy/.env.macbook` is committed and should work for normal LAN telemetry.
-Edit it only when the car IP, DBC path, or table name changes.
+That's it. The script:
+1. Verifies Docker Desktop is running
+2. Clones the repo to `~/wfr-base-station/` (or updates if already present)
+3. Pulls the latest images
+4. Starts the stack
 
-```bash
-docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook  up -d --build
-```
+Subsequent updates: run the same command again.
+
+---
+
+## Manual Setup
 
 Open:
 
@@ -104,10 +112,10 @@ docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.
 docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook  up -d
 ```
 
-**Rebuild from source:**
-The compose file already builds locally by default (`build: ..`). To force a rebuild:
+**Rebuild from source (for development):**
+Set `build: ..` back in `docker-compose.macbook-base.yml` for telemetry and run:
 ```bash
-docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook  up -d --build
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d --build
 ```
 
 ## Troubleshooting
@@ -120,13 +128,16 @@ docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.
 
 **TimescaleDB not writing:** Start with `docker compose --profile timescale ... up -d`. In `auto` mode, telemetry probes the configured database at boot and starts the writer only when it is reachable. Verify the `WFR26test_base` table exists: `psql postgresql://wfr:wfr_password@localhost:5432/wfr -c "\dt"`
 
-## Windows / WSL2
+## Windows / WSL2 — Limited Support
 
-If you're on Windows with WSL2 (recommended), everything works the same — just run the commands from within your WSL2 Linux shell.
+The base station stack is designed for macOS and native Linux. Windows support is limited:
 
-For native Windows Docker Desktop (non-WSL2), the Unix-style volume paths won't work — convert them to Windows paths or use WSL2.
+- **UDP telemetry (port 5005)** does not work reliably on Windows/WSL2 Docker. The car sends UDP directly to the base station IP, and WSL2 does not automatically forward LAN UDP packets into containers. This is the critical path.
+- **WSL2 Ubuntu inside Windows** — If you must use Windows, run the entire stack inside a WSL2 Ubuntu Linux environment. Networking then behaves like native Linux.
 
-If Windows shows the status page but no telemetry data flows, treat it as a UDP ingress problem first. The car sends UDP to the base station IP on port `5005`, and the MacBook compose publishes `5005:5005/udp` into the telemetry container. On Windows/WSL2, verify the Windows host actually owns the base IP the car targets, Windows Firewall allows inbound UDP `5005`, and Docker Desktop/WSL2 is forwarding LAN UDP to the container.
+**Recommended for Windows teammates:** Use a MacBook or Linux machine as the base station. Others connect to the Pecan dashboard at `http://<base-station-ip>:3000`.
+
+For Windows WSL2 setup (if needed), see the [AGENTS.md](../AGENTS.md) Windows notes.
 
 ## Teardown
 

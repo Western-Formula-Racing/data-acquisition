@@ -6,6 +6,12 @@
 
 Comprehensive telemetry and data acquisition system for real-time monitoring of formula racing vehicle performance. This system captures CAN bus data from the vehicle, transmits it to a base station, and visualizes it through an interactive web dashboard.
 
+> 🚀 **Quick Start — macOS Base Station**
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.sh | bash
+> ```
+> [Full setup guide →](./universal-telemetry-software/deploy/MACBOOK_DEPLOY.md)
+
 ![pecan dashboard](pecan/docs-assets/PECAN-Dashboard.jpg)
 
 
