@@ -496,8 +496,10 @@ function Trace() {
     });
   }, [frames, filter, paused, selectedTimeMs]);
 
-  const enriched = useMemo(() => buildEnriched(filteredFrames), [filteredFrames]);
-  const fixed = useMemo(() => enriched, [enriched]);
+  // buildEnriched is cheap; no need for a chain of memos.
+  // fixed was a no-op: useMemo(() => enriched, [enriched]) always === enriched.
+  const enriched = buildEnriched(filteredFrames);
+  const fixed = enriched;
 
   const totalFrames = frames.length;
 
