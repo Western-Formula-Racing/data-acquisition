@@ -155,7 +155,7 @@ The service file currently sets `REMOTE_IP=10.71.1.20` for the base station. Edi
 
 MacBook base station:
 ```bash
-docker compose -f deploy/docker-compose.macbook-base.yml up -d
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 ```
 
 Raspberry Pi base station:
@@ -190,8 +190,11 @@ docker compose -f deploy/docker-compose.macbook-base.yml logs -f telemetry
 Use `docker-compose.macbook-base.yml` for MacBook or `docker-compose.rpi-base.yml` for Pi base station. Both pull pre-built images from GHCR. The car does not use these Docker images in production; use `deploy/car-telemetry.service` instead.
 
 ```bash
-# MacBook full stack
-docker compose -f deploy/docker-compose.macbook-base.yml up -d
+# MacBook minimal LAN stack
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
+
+# Optional local TimescaleDB writes
+ENABLE_TIMESCALE_LOGGING=true docker compose --profile timescale -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 
 # RPi base station (ephemeral, no DB persistence)
 docker compose -f deploy/docker-compose.rpi-base.yml up -d
@@ -313,7 +316,7 @@ The base station can publish the live telemetry WebSocket through a downlink-onl
 
 ### Enable the relay
 
-For the MacBook base stack this is already enabled in `deploy/docker-compose.macbook-base.yml`:
+For the MacBook base stack the local relay process is enabled in the telemetry container:
 
 ```yaml
 ENABLE_WS_RELAY=true
@@ -440,7 +443,7 @@ universal-telemetry-software/
 ├── deploy/
 │   ├── car-telemetry.service           # Native car systemd service
 │   ├── CAR_DEPLOY.md                   # Car RPi systemd deployment
-│   ├── docker-compose.macbook-base.yml # MacBook full stack (TimescaleDB + Grafana)
+│   ├── docker-compose.macbook-base.yml # MacBook base stack with optional profiles
 │   ├── docker-compose.rpi-base.yml     # RPi lightweight base (ephemeral)
 │   ├── docker-compose.staging.yml      # Staging (:test-latest images)
 │   ├── docker-compose.test.yml         # Integration test stack (CI)

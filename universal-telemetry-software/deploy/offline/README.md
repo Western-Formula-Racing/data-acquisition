@@ -9,11 +9,17 @@ cd universal-telemetry-software/deploy
 docker save \
   ghcr.io/western-formula-racing/data-acquisition/universal-telemetry:latest \
   ghcr.io/western-formula-racing/data-acquisition/pecan:latest \
-  timescale/timescaledb:latest-pg16 \
   redis:8.2 \
-  bluenviron/mediamtx:latest \
-  grafana/grafana:latest \
   -o offline/wfr-docker-images.tar
+```
+
+Add optional profile images to that `docker save` command only when needed:
+
+```bash
+timescale/timescaledb:latest-pg16   # --profile timescale
+bluenviron/mediamtx:latest          # --profile media
+nginx:alpine                        # --profile media
+cloudflare/cloudflared:latest       # --profile tunnel
 ```
 
 ## Load the tarball (on site, no internet)
@@ -32,5 +38,4 @@ docker compose -f docker-compose.macbook-base.yml --env-file .env.macbook up -d
 
 Then access at:
 - Pecan: http://localhost:3000
-- Grafana: http://localhost:8087 (admin / admin)
 - Status: http://localhost:8080

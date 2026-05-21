@@ -1,7 +1,10 @@
 # MacBook Base Station Setup
 
-Full local telemetry stack with TimescaleDB persistence, Pecan dashboard, and Grafana.
-The MacBook acts as a base station and records all CAN data to a local TimescaleDB instance.
+Local telemetry stack for a MacBook base station. The default startup is minimal:
+telemetry receiver, Redis, and the Pecan dashboard.
+
+TimescaleDB writes, local media services, and the Cloudflare tunnel are opt-in
+Docker Compose profiles.
 
 ## Prerequisites
 
@@ -13,10 +16,10 @@ The MacBook acts as a base station and records all CAN data to a local Timescale
 
 ```bash
 cd universal-telemetry-software/
-cp deploy/.env.macbook deploy/.env
 ```
 
-Edit `deploy/.env` if needed — defaults should work for local development.
+`deploy/.env.macbook` is committed and should work for normal LAN telemetry.
+Edit it only when the car IP, DBC path, or table name changes.
 
 ```bash
 docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook  up -d --build
@@ -27,10 +30,29 @@ Open:
 | Service | URL |
 |---------|-----|
 | Pecan dashboard | http://localhost:3000 |
-| Grafana | http://localhost:8087 |
 | Status page | http://localhost:8080 |
 | Health endpoint | http://localhost:8080/health |
-| TimescaleDB | `postgresql://wfr:wfr_password@localhost:5432/wfr` |
+
+Optional profiles:
+
+| Command | Starts |
+|---------|--------|
+| `ENABLE_TIMESCALE_LOGGING=true ... --profile timescale` | Local TimescaleDB and telemetry writes |
+| `--profile media` | MediaMTX and stream overlay |
+| `--profile tunnel` | cloudflared relay |
+
+Examples:
+
+```bash
+# Minimal LAN stack
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
+
+# Add local TimescaleDB writes
+ENABLE_TIMESCALE_LOGGING=true docker compose --profile timescale -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
+
+# Add TimescaleDB and local media helpers
+ENABLE_TIMESCALE_LOGGING=true docker compose --profile timescale --profile media -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
+```
 
 ## Configuration
 
@@ -39,9 +61,12 @@ All configuration is done through `deploy/.env.macbook`. Key variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `REMOTE_IP` | `10.71.1.10` | Car RPi IP address |
+| `ENABLE_TIMESCALE_LOGGING` | `false` | Set `true` when running with `--profile timescale` |
 | `TIMESCALE_TABLE` | `WFR26test` | Season table name (no `_base` suffix — added automatically) |
 | `DBC_HOST_PATH` | `./example.dbc` | Path to DBC file |
-| `GRAFANA_ADMIN_PASSWORD` | `admin` | Grafana admin password |
+| `RELAY_TOKEN` | blank | Optional relay token |
+| `CLOUDFLARED_CONFIG` | `./cloudflared/config.yml` | Private tunnel config path for `--profile tunnel` |
+| `CLOUDFLARED_CREDENTIALS` | `./cloudflared/credentials.json` | Private tunnel credentials path for `--profile tunnel` |
 
 ## Services
 
@@ -49,8 +74,11 @@ All configuration is done through `deploy/.env.macbook`. Key variables:
 |---------|-------------|
 | telemetry | Base station receiver — UDP/TCP from car, WebSocket to Pecan |
 | redis | Message broker for CAN frames |
-| timescaledb | Local TimescaleDB — writes `WFR26test_base` table |
 | pecan | Live telemetry dashboard |
+| timescaledb | Optional local TimescaleDB — writes `WFR26test_base` table with `--profile timescale` |
+| mediamtx | Optional local video transport with `--profile media` |
+| stream-overlay | Optional local stream overlay with `--profile media` |
+| cloudflared | Optional tunnel relay with `--profile tunnel` |
 
 ## Common Tasks
 
@@ -88,9 +116,9 @@ docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.
 
 **No data flow:** Check `http://localhost:8080/health` first. The `udp_listener` component should be OK, and the car section should show recent data after the car starts sending. `docker logs daq-telemetry` should also show `Initial sequence` after the first UDP packet arrives.
 
-**Port conflicts:** If ports 3000, 8080, 8087, 5005, 5006, or 5432 are in use, edit the port mappings in `docker-compose.macbook-base.yml`.
+**Port conflicts:** If ports 3000, 8080, 5005, or 5006 are in use, edit the port mappings in `docker-compose.macbook-base.yml`. Optional profiles also use 5432 for TimescaleDB, 8554/8889/8189/9997 for media, and 8085 for the stream overlay.
 
-**TimescaleDB not writing:** Check that `ENABLE_TIMESCALE_LOGGING=true` is set (it is by default in the compose file). Verify the `WFR26test_base` table exists: `psql postgresql://wfr:wfr_password@localhost:5432/wfr -c "\dt"`
+**TimescaleDB not writing:** Start with `ENABLE_TIMESCALE_LOGGING=true docker compose --profile timescale ... up -d`, or set `ENABLE_TIMESCALE_LOGGING=true` in `.env.macbook`. Verify the `WFR26test_base` table exists: `psql postgresql://wfr:wfr_password@localhost:5432/wfr -c "\dt"`
 
 ## Windows / WSL2
 

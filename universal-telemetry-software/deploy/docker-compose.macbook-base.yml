@@ -1,12 +1,15 @@
-# MacBook base station — full local stack with TimescaleDB persistence
-# Use this for development and testing with full telemetry recording.
+# MacBook base station — local LAN stack.
+# Default starts telemetry, Redis, and PECAN only.
+# Add --profile media for local MediaMTX and stream overlay.
+# Add --profile timescale for local TimescaleDB writes.
+# Add --profile tunnel for cloudflared relay.
 # Run from universal-telemetry-software/:
-#   docker compose -f deploy/docker-compose.macbook-base.yml up -d --build
+#   docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d --build
 #
 # Access points:
 #   Pecan dashboard:  http://localhost:3000
-#   Grafana:          http://localhost:8087
-#   TimescaleDB:      postgresql://wfr:wfr_password@localhost:5432/wfr
+#   Status page:      http://localhost:8080
+#   TimescaleDB:      postgresql://wfr:wfr_password@localhost:5432/wfr  (timescale profile only)
 
 networks:
   datalink:
@@ -36,7 +39,7 @@ services:
       - ENABLE_VIDEO=false
       - ENABLE_AUDIO=false
       - SET_TIME_ENABLED=false
-      - ENABLE_TIMESCALE_LOGGING=true
+      - ENABLE_TIMESCALE_LOGGING=${ENABLE_TIMESCALE_LOGGING:-false}
       - POSTGRES_DSN=postgresql://wfr:wfr_password@timescaledb:5432/wfr
       - TIMESCALE_TABLE=${TIMESCALE_TABLE:-WFR26test}_base
       - DBC_FILE_PATH=/app/dbc_uploads/active.dbc
@@ -60,6 +63,7 @@ services:
         condition: service_started
       timescaledb:
         condition: service_healthy
+        required: false
     networks:
       - datalink
 
@@ -87,6 +91,8 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: daq-cloudflared
+    profiles:
+      - tunnel
     restart: unless-stopped
     command: tunnel --config /etc/cloudflared/config.yml run daq-ws-relay
     volumes:
@@ -100,6 +106,8 @@ services:
   mediamtx:
     image: bluenviron/mediamtx:latest
     container_name: daq-mediamtx
+    profiles:
+      - media
     restart: unless-stopped
     ports:
       - "8554:8554/tcp"   # RTSP — car Pi pushes here
@@ -115,6 +123,8 @@ services:
   stream-overlay:
     image: nginx:alpine
     container_name: daq-stream-overlay
+    profiles:
+      - media
     restart: unless-stopped
     ports:
       - "8085:80"
@@ -127,6 +137,8 @@ services:
   timescaledb:
     image: timescale/timescaledb:latest-pg16
     container_name: daq-timescaledb
+    profiles:
+      - timescale
     restart: unless-stopped
     ports:
       - "5432:5432"

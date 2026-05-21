@@ -160,16 +160,16 @@ Convenience deployment for the PECAN WebSocket broadcast server. The dashboard i
 
 ### Base Station (MacBook / Laptop)
 
-The MacBook base station runs the UTS telemetry stack + Pecan dashboard locally, writing directly to the server's TimescaleDB over the network:
+The MacBook base station runs the UTS telemetry stack + Pecan dashboard locally.
+The committed `deploy/.env.macbook` has the LAN defaults most teammates need.
 
 ```bash
 cd universal-telemetry-software/
-cp deploy/.env.macbook deploy/.env
-# Edit deploy/.env — set REMOTE_IP (car RPi) and TIMESCALE_DSN (server TimescaleDB)
-docker compose -f deploy/docker-compose.macbook-base.yml up -d
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 ```
 
 Open `http://localhost:3000` for Pecan, `http://localhost:8080` for the status page.
+Add `--profile timescale`, `--profile media`, or `--profile tunnel` only when those optional services are needed.
 
 See [`deploy/MACBOOK_DEPLOY.md`](./universal-telemetry-software/deploy/MACBOOK_DEPLOY.md) for full setup details.
 
@@ -234,8 +234,7 @@ npm run dev
 #### Universal Telemetry Software (local dev)
 ```bash
 cd universal-telemetry-software/
-cp deploy/.env.macbook deploy/.env
-docker compose -f deploy/docker-compose.macbook-base.yml up -d
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 ```
 
 #### Car Simulator
