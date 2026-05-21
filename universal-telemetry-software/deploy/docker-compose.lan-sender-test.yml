@@ -33,7 +33,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-      start_period: 15s
+      start_period: 30s
 
   base-redis:
     image: redis:8.2
@@ -47,9 +47,10 @@ services:
       - daq-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
 
   timescaledb:
     image: timescale/timescaledb:2.17.1-pg16
@@ -69,9 +70,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wfr -d wfr"]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 10
-      start_period: 15s
+      start_period: 30s
 
 volumes:
   lan_base_redis_data:
