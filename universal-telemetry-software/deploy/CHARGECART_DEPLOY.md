@@ -4,15 +4,45 @@ Chargecart is a Pi 4B kiosk/control appliance. It should run the minimum UTS pat
 
 Do not run TimescaleDB, Grafana, server installer services, hot/cold persistence, video, or audio on the chargecart Pi.
 
-## Pi Services
+## One-click deploy
 
-Install the minimal UTS service:
+Run from the repo root on the chargecart Pi (after cloning/pulling):
 
 ```bash
-sudo cp universal-telemetry-software/deploy/chargecart-uts.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now chargecart-uts
+sudo ./universal-telemetry-software/deploy/chargecart-deploy.sh
 ```
+
+This idempotently installs and starts everything below. It is safe to re-run
+after a `git pull` — it will restart services and rebuild the PECAN frontend.
+
+### What the script does
+
+| Step | What happens |
+|------|-------------|
+| `can0.service` | Installs + enables SocketCAN at boot, brings up can0 at 500 kbps |
+| Python deps | Runs `uv sync` as the `chargecart` user |
+| `chargecart-uts` | Installs, enables, and restarts the UTS service |
+| PECAN kiosk | Runs `npm ci && npm run build`, syncs `dist/` to `/var/www/chargecart`, configures nginx |
+| Cloudflare tunnel | Installed **only** if the credential JSON already exists (see below); otherwise skipped with a warning |
+
+If `can0` is not up yet (device-tree overlay added for the first time), the
+script installs everything and exits cleanly. After a reboot `can0.service` and
+`chargecart-uts.service` will both start in the correct order.
+
+## Pi Services (manual reference)
+
+The deploy script handles this automatically. The following documents what it
+sets up and why.
+
+### SocketCAN (`can0`)
+
+`chargecart-uts.service` declares `Wants=can0.service` and `After=can0.service`
+so systemd orders the CAN interface up before UTS starts. `can0.service` is the
+unit installed by the deploy script (500 kbps). Works with any CAN HAT
+(MCP2515, MCP2517FD, etc.) as long as the correct device-tree overlay is
+present in `/boot/firmware/config.txt` and the kernel module is loaded.
+
+### Chargecart UTS
 
 The service runs `main_chargecart.py` and binds:
 

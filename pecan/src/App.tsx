@@ -19,6 +19,7 @@ import FloatingTools from "./components/FloatingTools";
 import { useRemoteConfig } from "./lib/useRemoteConfig";
 import { updateCategories } from "./config/categories";
 import { useTimeline } from "./context/TimelineContext";
+import { isChargecartPath } from "./lib/chargecartRuntime";
 
 function App() {
   const location = useLocation();
@@ -60,7 +61,7 @@ function App() {
   const closeSettings = () => setIsSettingsOpen(false);
   const openAuth = () => setIsAuthOpen(true);
   const closeAuth = () => setIsAuthOpen(false);
-  const isChargeCart = location.pathname === "/chargecart";
+  const isChargeCart = isChargecartPath(location.pathname);
   const showAppBanners = location.pathname !== "/" && !isChargeCart;
 
   const handleClearRecoveredSession = async () => {

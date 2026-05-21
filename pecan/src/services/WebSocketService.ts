@@ -1,5 +1,6 @@
 import { createCanProcessor, setActiveDbcText } from '../utils/canProcessor';
 import { listDBCFiles, fetchAndApplyDBC } from './DbcService';
+import { isChargecartPath } from '../lib/chargecartRuntime';
 
 export type MessageHandler = (data: any) => void;
 
@@ -127,7 +128,7 @@ export class WebSocketService {
   }
 
   private isChargecartRoute(): boolean {
-    return window.location.pathname === '/chargecart';
+    return isChargecartPath(window.location.pathname);
   }
 
   private getChargecartWsUrl(): string {

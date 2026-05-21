@@ -10,11 +10,14 @@
 #   sudo cp chargecart-uts.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl enable --now chargecart-uts
+#
+# Requires can0.service from setup-socketcan.sh (or equivalent) to bring up
+# the SocketCAN interface before this service tries to read it.
 
 [Unit]
 Description=WFR Chargecart Minimal UTS
-Wants=network-online.target
-After=network-online.target
+Wants=network-online.target can0.service
+After=network-online.target can0.service
 
 [Service]
 Type=simple
