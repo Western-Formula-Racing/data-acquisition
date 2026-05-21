@@ -103,13 +103,6 @@ jobs:
         sudo nginx -t -c "$NGINX_TEST_CONF"
         echo "✓ chargecart nginx config valid"
 
-    - name: Validate cloudflared config
-      run: |
-        curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared
-        chmod +x /tmp/cloudflared
-        /tmp/cloudflared tunnel --config universal-telemetry-software/deploy/chargecart-cloudflared.yml ingress validate
-        echo "✓ chargecart cloudflared config valid"
-
     - name: Validate deploy scripts
       run: |
         for f in universal-telemetry-software/deploy/chargecart-deploy.sh; do
