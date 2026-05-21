@@ -521,7 +521,7 @@ jobs:
         python-version: '3.12'
 
     - name: Install Python test dependencies
-      run: pip install pytest pytest-asyncio pytest-timeout websockets requests
+      run: pip install pytest pytest-asyncio pytest-timeout websockets redis requests
 
     - name: Start MacBook base stack
       working-directory: ./universal-telemetry-software
