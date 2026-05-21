@@ -7,8 +7,8 @@ This folder contains a tarball of all Docker images needed to run the MacBook st
 ```bash
 cd universal-telemetry-software/deploy
 docker save \
-  ghcr.io/western-formula-racing/daq-radio/universal-telemetry:latest \
-  ghcr.io/western-formula-racing/daq-radio/pecan:latest \
+  ghcr.io/western-formula-racing/data-acquisition/universal-telemetry:latest \
+  ghcr.io/western-formula-racing/data-acquisition/pecan:latest \
   timescale/timescaledb:latest-pg16 \
   redis:8.2 \
   bluenviron/mediamtx:latest \

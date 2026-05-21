@@ -67,7 +67,7 @@ For the detailed WebSocket message contract between PECAN and UTS, see [`WEBSOCK
 
 ### PECAN Dashboard (`/pecan`)
 
-**Demo:** https://western-formula-racing.github.io/daq-radio/dashboard
+**Demo:** https://western-formula-racing.github.io/data-acquisition/dashboard
 
 A modern React + TypeScript web application for real-time telemetry visualization.
 
@@ -333,7 +333,7 @@ This project is licensed under the AGPL-3.0 License. See the [LICENSE](./LICENSE
 ## Related Resources
 
 - **PECAN Project Page**: [Project PECAN](https://western-formula-racing.github.io/project-pecan-website/)
-- **Live Demo**: [Demo](https://western-formula-racing.github.io/daq-radio/dashboard)
+- **Live Demo**: [Demo](https://western-formula-racing.github.io/data-acquisition/dashboard)
 
 
 ## Support

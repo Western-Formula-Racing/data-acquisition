@@ -85,7 +85,7 @@ docker info | grep "Server Version"
 ## Step 4 — Start the Docker stack
 
 ```bash
-cd /home/ubuntu/projects/daq-server-components/installer
+cd /home/ubuntu/projects/data-acquisition/server/installer
 docker compose up -d
 ```
 

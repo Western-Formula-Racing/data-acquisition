@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const PORT = 3000;
-const BASE_PATH = '/daq-radio';
+const BASE_PATH = '/data-acquisition';
 const DIST_DIR = join(__dirname, 'dist');
 
 const mimeTypes = {
@@ -65,5 +65,5 @@ server.listen(PORT, () => {
   console.log(`📍 Base path: ${BASE_PATH}`);
   console.log(`🌐 Server: http://localhost:${PORT}${BASE_PATH}/`);
   console.log(`🔗 Dashboard: http://localhost:${PORT}${BASE_PATH}/dashboard`);
-  console.log(`\nThis simulates: https://western-formula-racing.github.io/daq-radio/\n`);
+  console.log(`\nThis simulates: https://western-formula-racing.github.io/data-acquisition/\n`);
 });
