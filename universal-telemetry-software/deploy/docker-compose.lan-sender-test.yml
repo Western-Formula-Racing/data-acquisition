@@ -12,6 +12,7 @@ services:
     ports:
       - "8080:8080/tcp"   # Status HTTP server
       - "9080:9080/tcp"   # WebSocket bridge
+      - "5005:5005/udp"   # UDP receiver for lan_sender
     environment:
       - ROLE=base
       - REMOTE_IP=127.0.0.1   # Will be overridden by lan_sender — base listens on all interfaces
@@ -19,6 +20,7 @@ services:
       - TCP_PORT=5006
       - REDIS_URL=redis://base-redis:6379/0
       - TIMESCALE_TABLE=wfr26
+      - ENABLE_TIMESCALE_LOGGING=true
     depends_on:
       base-redis:
         condition: service_healthy

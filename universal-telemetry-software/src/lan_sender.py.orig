@@ -72,6 +72,7 @@ def build_packet(seq: int, frames: list[bytes]) -> bytes:
 
 def make_fake_values() -> dict[int, bytes]:
     """Generate realistic-looking CAN data for all IDs."""
+    t = time.time()
     return {
         192:  struct.pack("<I", 0b00001),                    # VCU_State=1, Safety_Loop=0, Inverter=0
         193:  struct.pack("<HH", 500, 500) +                # APPS1=50%, APPS2=50%
