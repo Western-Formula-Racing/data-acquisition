@@ -220,10 +220,15 @@ class TestLanSenderTimescaleDB:
     def test_timescaledb_writing(self, redis_helper):
         """TimescaleDB rows are incrementing."""
         import time
-        time.sleep(3)
-        # Read the timescale:status key that data.py updates
-        val = redis_helper.client.get("timescale:status")
-        assert val is not None, "timescale:status key not found in Redis"
+        # TimescaleBridge publishes timescale:status every 10 seconds.
+        # Poll for up to 15s so we reliably catch the first publish.
+        val = None
+        for _ in range(15):
+            val = redis_helper.client.get("timescale:status")
+            if val is not None:
+                break
+            time.sleep(1)
+        assert val is not None, "timescale:status key not found in Redis after 15s"
         status = json.loads(val)
         rows = status.get("rows", 0)
         assert rows > 0, f"TimescaleDB rows should be > 0, got {rows}"
