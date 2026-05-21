@@ -5,6 +5,7 @@ import os
 import logging
 import json
 import time
+import ipaddress
 
 from src.config import (
     REDIS_URL,
@@ -12,6 +13,7 @@ from src.config import (
     REDIS_STATS_CHANNEL,
     REDIS_UPLINK_CHANNEL,
     REDIS_DIAG_CHANNEL,
+    REDIS_WS_CLIENTS_KEY,
     ENABLE_UPLINK,
 )
 from src import redis_utils, utils
@@ -39,6 +41,45 @@ _next_client_id = 0
 
 # Direct CAN bus handle (car mode only)
 _can_bus = None
+
+
+def _is_internal_client(websocket) -> bool:
+    """Return True for loopback clients such as the local WS relay upstream."""
+    try:
+        host = websocket.remote_address[0]
+        return ipaddress.ip_address(host).is_loopback
+    except Exception:
+        return False
+
+
+def _client_count_snapshot() -> dict[str, int]:
+    internal = sum(1 for client in connected_clients if _is_internal_client(client))
+    total = len(connected_clients)
+    return {
+        "total": total,
+        "internal": internal,
+        "external": max(0, total - internal),
+    }
+
+
+async def _publish_client_count() -> None:
+    """Publish the current WebSocket client count for the HTTP health snapshot."""
+    try:
+        r = redis.from_url(REDIS_URL)
+        await r.set(REDIS_WS_CLIENTS_KEY, json.dumps(_client_count_snapshot()), ex=10)
+        await r.aclose()
+    except Exception as e:
+        logger.debug("Could not publish WebSocket client count: %s", e)
+
+
+async def _client_count_publisher() -> None:
+    """Keep the health snapshot client count fresh even when no clients churn."""
+    while not shutdown_event.is_set():
+        await _publish_client_count()
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=2.0)
+        except asyncio.TimeoutError:
+            pass
 
 
 def _init_can_bus():
@@ -443,6 +484,7 @@ async def ws_handler(websocket):
     _next_client_id += 1
     _client_ids[websocket] = client_id
     logger.info(f"Client connected: {client_info} ({client_id}). Total: {len(connected_clients)}")
+    await _publish_client_count()
 
     redis_client = None
     if ENABLE_UPLINK and ROLE != "car":
@@ -473,6 +515,7 @@ async def ws_handler(websocket):
         if redis_client:
             await redis_client.aclose()
         logger.info(f"Client disconnected: {client_info} ({client_id}). Total: {len(connected_clients)}")
+        await _publish_client_count()
         if had_locks:
             await _broadcast_page_lock_state()
 
@@ -500,9 +543,14 @@ async def run_websocket_bridge(heartbeat_event=None, direct_queue: asyncio.Queue
     # Start WebSocket server
     async with websockets.serve(ws_handler, "0.0.0.0", WS_PORT):
         logger.info(f"WebSocket server running at ws://0.0.0.0:{WS_PORT}")
+        await _publish_client_count()
 
         listener = direct_queue_listener(direct_queue) if direct_queue is not None else redis_listener()
-        await asyncio.gather(listener, utils.heartbeat_coro(heartbeat_event, shutdown_event))
+        await asyncio.gather(
+            listener,
+            _client_count_publisher(),
+            utils.heartbeat_coro(heartbeat_event, shutdown_event),
+        )
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

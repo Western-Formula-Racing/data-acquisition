@@ -113,8 +113,9 @@ export class WebSocketService {
       wsUrl = import.meta.env.VITE_WS_URL;
     } else {
       const hostname = window.location.hostname;
+      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
       const isRpiNetwork = hostname.startsWith('192.');
-      if (isRpiNetwork) {
+      if (isLocalhost || isRpiNetwork) {
         wsUrl = `${protocol}://${hostname}:${port}`;
       } else {
         wsUrl = `wss://ws-demo.westernformularacing.org`;
@@ -178,9 +179,13 @@ export class WebSocketService {
       return [this.getPrimaryWsUrl()];
     }
 
-    return DEFAULT_WS_FAILOVER_URLS.map((u) =>
-      this.normalizeWsUrl(u, protocol)
-    );
+    const hostname = window.location.hostname;
+    const defaultUrls = [...DEFAULT_WS_FAILOVER_URLS];
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+      defaultUrls.unshift(`${protocol}://${hostname}:9080`);
+    }
+
+    return [...new Set(defaultUrls)].map((u) => this.normalizeWsUrl(u, protocol));
   }
 
   private orderFailoverCandidates(urls: string[]): string[] {

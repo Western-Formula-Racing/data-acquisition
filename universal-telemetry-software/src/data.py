@@ -14,6 +14,7 @@ import tempfile
 from src.config import (
     REMOTE_IP, UDP_PORT, TCP_PORT,
     REDIS_URL, REDIS_CAN_CHANNEL, REDIS_UPLINK_CHANNEL, ENABLE_UPLINK,
+    REDIS_WS_CLIENTS_KEY,
 )
 from src import redis_utils, utils
 from src.version import get_git_hash
@@ -141,6 +142,38 @@ class TelemetryNode:
             logger.warning(f"Redis health check failed: {e}")
             return False
 
+    def _websocket_client_counts(self) -> dict[str, int] | None:
+        if not self.redis_client:
+            return None
+        try:
+            raw = self.redis_client.get(REDIS_WS_CLIENTS_KEY)
+        except Exception as e:
+            logger.debug(f"WebSocket client count unavailable: {e}")
+            return None
+        if raw is None:
+            return None
+        try:
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                total = int(parsed.get("total", 0))
+                internal = int(parsed.get("internal", 0))
+                external = int(parsed.get("external", max(0, total - internal)))
+                return {
+                    "total": total,
+                    "internal": internal,
+                    "external": external,
+                }
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+        try:
+            total = int(raw)
+            return {"total": total, "internal": 0, "external": total}
+        except (TypeError, ValueError):
+            logger.debug(f"Invalid WebSocket client count in Redis: {raw!r}")
+            return None
+
     def _build_health_snapshot(self, stats_payload: dict, redis_ok: bool, timescale_status: dict | None) -> dict:
         now = time.time()
         seen_s_ago = now - self.last_udp_time if self.last_udp_time else None
@@ -201,6 +234,7 @@ class TelemetryNode:
                 if seen_s_ago is None
                 else f"No CAN frames received for {seen_s_ago:.1f}s"
             )
+        websocket_clients = self._websocket_client_counts()
 
         return {
             "producer_ts": now,
@@ -216,8 +250,10 @@ class TelemetryNode:
                 },
                 "websocket_bridge": {
                     "status": "ok",
-                    "clients": None,
-                    "detail": "Client count unavailable",
+                    "clients": websocket_clients["total"] if websocket_clients else None,
+                    "internal_clients": websocket_clients["internal"] if websocket_clients else None,
+                    "external_clients": websocket_clients["external"] if websocket_clients else None,
+                    "detail": None if websocket_clients is not None else "Client count unavailable",
                 },
                 "timescale": timescale_component,
                 "can_bus": {

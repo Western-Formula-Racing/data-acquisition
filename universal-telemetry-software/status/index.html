@@ -791,7 +791,9 @@
                     const seen = car.seen_s_ago == null ? 'never' : `${car.seen_s_ago.toFixed ? car.seen_s_ago.toFixed(1) : car.seen_s_ago}s ago`;
                     detail = `Car ${car.ip} / seen ${seen}`;
                 } else if (id === 'websocket_bridge' && component.clients != null) {
-                    detail = `${component.clients} clients`;
+                    const external = component.external_clients ?? component.clients;
+                    const internal = component.internal_clients ?? 0;
+                    detail = `${external} external / ${internal} internal`;
                 } else if (id === 'timescale') {
                     const rowsWritten = Number(component.rows || 0).toLocaleString();
                     detail = component.state ? `${component.state} / rows ${rowsWritten}` : detail;
