@@ -19,8 +19,8 @@ Use these first:
 | Target | File / doc | Notes |
 |--------|------------|-------|
 | Car RPi | `CAR_DEPLOY.md` + `car-telemetry.service` | Native systemd, no Docker/Redis on the car |
-| MacBook base | `docker-compose.macbook-base.yml` | Default LAN stack with optional TimescaleDB, media, and tunnel profiles |
-| RPi base | `docker-compose.rpi-base.yml` | Lightweight base station, no local TimescaleDB persistence |
+| MacBook / Linux / RPi 4B base | `docker-compose.macbook-base.yml` + `install.sh` | One-command curl install; optional `--profile timescale`, `--hotspot` on Linux |
+| RPi base (manual, deprecating) | `docker-compose.rpi-base.yml` | Lightweight ephemeral base, host networking; no one-click installer |
 
 ---
 

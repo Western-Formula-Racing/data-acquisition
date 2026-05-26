@@ -1,0 +1,19 @@
+# WFR Base Station Wi-Fi Hotspot
+# Installed automatically by install.sh --hotspot
+# Manual install:
+#   sudo cp wfr-hotspot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now wfr-hotspot
+
+[Unit]
+Description=WFR Base Station Wi-Fi Hotspot
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/nmcli con up wfr-hotspot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

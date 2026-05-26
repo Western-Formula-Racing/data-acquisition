@@ -9,6 +9,7 @@ on:
       - 'universal-telemetry-software/deploy/.env.macbook'
       - 'universal-telemetry-software/deploy/MACBOOK_DEPLOY.md'
       - 'universal-telemetry-software/deploy/ci-validate-compose.py'
+      - 'universal-telemetry-software/deploy/wfr-hotspot.service'
       - '.github/workflows/macbook-installer-ci.yml'
   pull_request:
     branches: [ main, deploy ]
@@ -18,6 +19,7 @@ on:
       - 'universal-telemetry-software/deploy/.env.macbook'
       - 'universal-telemetry-software/deploy/MACBOOK_DEPLOY.md'
       - 'universal-telemetry-software/deploy/ci-validate-compose.py'
+      - 'universal-telemetry-software/deploy/wfr-hotspot.service'
       - '.github/workflows/macbook-installer-ci.yml'
   workflow_dispatch:
 
@@ -65,9 +67,13 @@ jobs:
 
       - name: Validate compose file
         run: |
-          cd universal-telemetry-software/deploy
           if command -v docker &>/dev/null && docker info &>/dev/null; then
-            docker compose -f docker-compose.macbook-base.yml config --quiet
+            # Run from repo root so DBC_HOST_PATH (./universal-telemetry-software/deploy/example.dbc) resolves correctly.
+            docker compose \
+              --project-directory "${{ github.workspace }}" \
+              -f universal-telemetry-software/deploy/docker-compose.macbook-base.yml \
+              --env-file universal-telemetry-software/deploy/.env.macbook \
+              config --quiet
             echo "Compose config valid"
           else
             echo "Skipping compose validation - Docker not running"
@@ -82,20 +88,89 @@ jobs:
             echo "Script correctly detected Docker state"
           fi
 
-  linux-script-test:
+  linux-e2e:
     runs-on: ubuntu-latest
+    # Docker Engine and git are pre-installed on ubuntu-latest runners.
+    # install_linux_deps() detects them and skips the apt-get paths.
+    # Images are pulled from ghcr.io (public) and stack runs in-band.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify script detects non-macOS
-        run: |
-          chmod +x universal-telemetry-software/deploy/install.sh
-          output=$(bash universal-telemetry-software/deploy/install.sh 2>&1) || true
-          echo "$output" | grep -q "requires macOS" && echo "Correctly rejects Linux" || echo "Unexpected output"
+      - name: Syntax check
+        run: bash -n universal-telemetry-software/deploy/install.sh
 
-      - name: Validate compose file structure
+      - name: --help exits 0
+        run: bash universal-telemetry-software/deploy/install.sh --help
+
+      - name: Compose config validates against PR branch files
+        # Runs from repo root so DBC_HOST_PATH (./universal-telemetry-software/deploy/example.dbc) resolves correctly.
         run: |
-          python3 universal-telemetry-software/deploy/ci-validate-compose.py
+          docker compose \
+            --project-directory "${{ github.workspace }}" \
+            -f universal-telemetry-software/deploy/docker-compose.macbook-base.yml \
+            --env-file universal-telemetry-software/deploy/.env.macbook \
+            config --quiet
+          echo "Compose config valid"
+
+      - name: Python compose structural check
+        run: python3 universal-telemetry-software/deploy/ci-validate-compose.py
+
+      - name: Run full installer end-to-end
+        # Clones ~/wfr-base-station from the main branch, pulls images, starts stack.
+        # Uses sudo docker compose (as install.sh does on Linux) — fine on GHA runners.
+        run: bash universal-telemetry-software/deploy/install.sh
+
+      - name: Assert all core containers are running
+        run: |
+          docker ps
+          docker ps --format '{{.Names}}' | grep -q daq-telemetry || { echo "daq-telemetry not running"; exit 1; }
+          docker ps --format '{{.Names}}' | grep -q daq-redis    || { echo "daq-redis not running";    exit 1; }
+          docker ps --format '{{.Names}}' | grep -q daq-pecan    || { echo "daq-pecan not running";    exit 1; }
+          echo "All 3 core containers are up"
+
+      - name: Wait for Pecan on port 3000
+        run: |
+          echo "Polling http://localhost:3000 ..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000 -o /dev/null; then
+              echo "Pecan is serving on port 3000"
+              exit 0
+            fi
+            echo "  attempt $i/30 — retrying in 3 s"
+            sleep 3
+          done
+          echo "Pecan did not become ready within 90 s"
+          docker logs daq-pecan || true
+          exit 1
+
+      - name: Wait for telemetry status page on port 8080
+        run: |
+          echo "Polling http://localhost:8080 ..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080 -o /dev/null; then
+              echo "Status page is serving on port 8080"
+              exit 0
+            fi
+            echo "  attempt $i/30 — retrying in 3 s"
+            sleep 3
+          done
+          echo "Telemetry status page did not become ready within 90 s"
+          docker logs daq-telemetry || true
+          exit 1
+
+      - name: Idempotency — re-run installer over existing clone
+        run: bash universal-telemetry-software/deploy/install.sh
+
+      - name: --hotspot skips gracefully in non-interactive CI
+        # stdin from /dev/null makes [[ ! -t 0 ]] true → prints skip message, returns 1.
+        # The outer script still reaches print_success and exits 0.
+        run: |
+          output=$(bash universal-telemetry-software/deploy/install.sh --hotspot </dev/null 2>&1) || true
+          echo "$output"
+          echo "$output" | grep -q "Not an interactive terminal" \
+            || { echo "Expected hotspot-skip message was not found in output"; exit 1; }
+          echo "Non-interactive hotspot skip verified"
 
   url-accessibility:
     runs-on: ubuntu-latest

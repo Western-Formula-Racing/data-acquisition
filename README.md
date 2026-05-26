@@ -6,9 +6,13 @@
 
 Comprehensive telemetry and data acquisition system for real-time monitoring of formula racing vehicle performance. This system captures CAN bus data from the vehicle, transmits it to a base station, and visualizes it through an interactive web dashboard.
 
-> 🚀 **Quick Start — macOS Base Station**
+> 🚀 **Quick Start — Base Station (macOS or Linux)**
 > ```bash
 > curl -fsSL https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.sh | bash
+> ```
+> **Linux with Wi-Fi hotspot for pit devices (RPi at track):**
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.sh | bash -s -- --hotspot
 > ```
 > [Full setup guide →](./universal-telemetry-software/deploy/MACBOOK_DEPLOY.md)
 
