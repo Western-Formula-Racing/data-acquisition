@@ -12,6 +12,7 @@ RUN python -c "from langchain_community.embeddings import FastEmbedEmbeddings; F
 # Copy application code
 COPY code_generator.py .
 COPY stats_report.py .
+COPY anomaly_scan.py .
 COPY prompt-guide.txt.example ./
 # prompt-guide.txt is optional (local customization); fall back to example if absent
 RUN if [ ! -f prompt-guide.txt ]; then cp prompt-guide.txt.example prompt-guide.txt; fi
