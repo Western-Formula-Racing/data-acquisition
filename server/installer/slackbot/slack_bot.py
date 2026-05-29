@@ -518,7 +518,7 @@ def handle_aistats(user, thread_ts=None, channel=None):
             )
 
 
-
+def handle_help(user, thread_ts=None, channel=None):
     channel = channel or DEFAULT_CHANNEL
     help_text = (
         f"📘 <@{user}> Available Commands:\n"
