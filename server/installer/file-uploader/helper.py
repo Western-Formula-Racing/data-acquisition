@@ -109,7 +109,7 @@ class CANTimescaleStreamer:
         postgres_dsn: str,
         table: str,                       # e.g. "wfr26"
         dbc_path: Optional[str] = None,
-        batch_size: int = 5000,
+        batch_size: int = 500,
     ):
         self.postgres_dsn = postgres_dsn
         self.table = table.lower()        # Postgres names are lowercase
@@ -478,7 +478,7 @@ class CANTimescaleStreamer:
                     f.write(data)
                 print(f"💾 Saved {filename} ({len(data):,} bytes)")
 
-            # Fast line-count pre-scan (no CSV parse, no DBC decode)
+            # Count rows for progress (yields control briefly between files)
             print("🔢 Counting rows for progress tracking…")
             total_rows = 0
             for csv_path, filename in _iter_csv_files_under_dir(temp_dir):
@@ -487,8 +487,17 @@ class CANTimescaleStreamer:
                 except ValueError:
                     continue
                 try:
-                    with open(csv_path, "rb") as f:
-                        total_rows += sum(1 for _ in f)
+                    with open(csv_path, "r", encoding="utf-8", errors="replace") as f:
+                        for row in csv.reader(f):
+                            if len(row) < 11 or not row[0]:
+                                continue
+                            try:
+                                bvs = [int(b) for b in row[3:11] if b]
+                                if len(bvs) == 8:
+                                    int(row[2])
+                                    total_rows += 1
+                            except Exception:
+                                pass
                 except Exception:
                     pass
                 await asyncio.sleep(0)  # yield to event loop
