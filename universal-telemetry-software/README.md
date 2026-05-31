@@ -218,6 +218,7 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 | `WS_PORT` | `9080` | WebSocket port for PECAN |
 | `STATUS_PORT` | `8080` | HTTP port for status page |
 | `SIMULATE` | `false` | Simulate CAN data (no hardware needed) |
+| `OFF_THE_SHELF` | `true` | Set `false` when using the custom PoE injection board + status LEDs; disables PoE and LED services |
 | `ENABLE_VIDEO` | `false` | Enable video streaming (car: push RTSP; base: unused) |
 | `ENABLE_AUDIO` | `false` | Enable audio streaming |
 | `ENABLE_TIMESCALE_LOGGING` | `false` | Log telemetry to TimescaleDB; MacBook default is `auto` |
@@ -431,11 +432,20 @@ systemctl status can0   # check the bring-up service
 universal-telemetry-software/
 ├── main.py                     # Main orchestrator
 ├── src/
+│   ├── config.py               # Shared configuration and env-var loading
 │   ├── data.py                 # UDP/TCP + Redis (car & base)
 │   ├── audio.py                # Audio streaming
 │   ├── video.py                # Video streaming
 │   ├── websocket_bridge.py     # Redis -> WebSocket for PECAN
+│   ├── websocket_bridge_tx.py  # Uplink (PECAN -> car) WebSocket handler
+│   ├── ws_relay.py             # Downlink-only relay for remote viewers
 │   ├── timescale_bridge.py     # TimescaleDB logging (Redis → server TimescaleDB)
+│   ├── status_server.py        # HTTP status and health endpoint
+│   ├── throughput_listener.py  # Packet throughput monitoring
+│   ├── lan_sender.py           # LAN broadcast sender
+│   ├── redis_utils.py          # Redis helpers
+│   ├── utils.py                # Shared utilities
+│   ├── version.py              # Version reporting
 │   ├── leds.py                 # LED status indicators
 │   ├── link_diagnostics.py     # Radio link health
 │   └── poe.py                  # PoE monitor
@@ -445,11 +455,13 @@ universal-telemetry-software/
 │   ├── CAR_DEPLOY.md                   # Car RPi systemd deployment
 │   ├── docker-compose.macbook-base.yml # MacBook base stack with optional profiles
 │   ├── docker-compose.rpi-base.yml     # RPi lightweight base (ephemeral)
+│   ├── docker-compose.rpi4.yml         # RPi 4B specific base stack
 │   ├── docker-compose.staging.yml      # Staging (:test-latest images)
 │   ├── docker-compose.test.yml         # Integration test stack (CI)
 │   ├── docker-compose.can-test.yml     # vCAN pipeline tests
+│   ├── docker-compose.lan-sender-test.yml # LAN sender integration test
 │   ├── docker-compose.jitsi.yml        # Optional Jitsi comms addon
-│   └── WHICH_ONE.md                # Compose file reference
+│   └── WHICH_ONE.md                    # Compose file reference
 ├── Dockerfile
 └── requirements.txt
 ```

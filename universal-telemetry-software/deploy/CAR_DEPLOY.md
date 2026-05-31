@@ -133,7 +133,7 @@ docker compose -f deploy/docker-compose.rpi-base.yml up -d
 ## Troubleshooting
 
 **Service fails to start:** Check `journalctl -u car-telemetry -e`. Common causes:
-- `can0` not up — run `sudo ip link set can0 up type can bitrate 1000000` or check CAN hat wiring
+- `can0` not up — run `sudo ip link set can0 up type can bitrate 500000` or check CAN hat wiring
 - `uv sync` not run after a code update — Python deps missing
 
 **Base shows version mismatch banner:** Git hash on car doesn't match base. Re-stamp and restart:

@@ -185,7 +185,7 @@ The base station stack is designed for macOS and native Linux. Windows support i
 
 **Recommended for Windows teammates:** Use a MacBook or Linux machine as the base station. Others connect to the Pecan dashboard at `http://<base-station-ip>:3000`.
 
-For Windows WSL2 setup (if needed), see the [AGENTS.md](../AGENTS.md) Windows notes.
+For Windows WSL2 setup (if needed), use WSL2 Ubuntu as described above.
 
 ## Teardown
 

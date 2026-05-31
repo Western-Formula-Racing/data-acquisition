@@ -39,7 +39,7 @@ Environment=ENABLE_TIMESCALE_LOGGING=false
 # Set OFF_THE_SHELF=false when using our custom PoE injection board + status LEDs
 Environment=OFF_THE_SHELF=true
 # Set at install time: sed -i "s/GIT_HASH=unknown/GIT_HASH=$(git rev-parse --short HEAD)/" car-telemetry.service
-Environment=GIT_HASH=c2827a4
+Environment=GIT_HASH=unknown
 # REDIS_URL points to localhost — Redis is optional on the car.
 # Without it the WS bridge uses the direct in-process queue instead.
 
