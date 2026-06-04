@@ -8,6 +8,10 @@ interface ImportMetaEnv {
   readonly VITE_GITHUB_DBC_READONLY_TOKEN?: string;
   readonly VITE_RELAY_TOKEN?: string;
   readonly VITE_GRAFANA_BRIDGE_URL?: string;
+  /** Charging dashboard relay base URL (slackbot HTTP receiver, behind CF Zero Trust) */
+  readonly VITE_CHARGE_RELAY_URL?: string;
+  /** Optional shared secret sent as X-Charge-Token to the charging relay */
+  readonly VITE_CHARGE_RELAY_TOKEN?: string;
   readonly VITE_WS_URL?: string;
   readonly VITE_WS_PRESETS?: string;
   readonly VITE_FIREBASE_API_KEY?: string;

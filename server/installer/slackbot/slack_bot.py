@@ -558,6 +558,39 @@ def handle_help(user, thread_ts=None, channel=None):
     send_slack_message(channel, text=help_text, thread_ts=thread_ts)
 
 
+# --- AI chat helpers ---
+
+def _ai_chat(system: str, user_msg: str) -> str:
+    """Call the Anthropic-compatible AI endpoint (single-turn)."""
+    return _ai_chat_with_history(system, [{"role": "user", "content": user_msg}])
+
+
+def _ai_chat_with_history(system: str, messages: list) -> str:
+    """Call the Anthropic-compatible AI endpoint with full message history."""
+    api_key  = os.environ.get("ANTHROPIC_API_KEY", "")
+    base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic").rstrip("/")
+    model    = os.environ.get("ANTHROPIC_MODEL", "MiniMax-M3")
+    resp = requests.post(
+        f"{base_url}/v1/messages",
+        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+        json={"model": model, "max_tokens": 150,
+              "system": system,
+              "messages": messages},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()["content"][0]["text"].strip()
+
+
+def _load_character_sheet() -> str:
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        with open(os.path.join(here, "lappy_character.md")) as f:
+            return f.read()
+    except Exception:
+        return "You are Lappy, the WFR DAQ bot. Be witty and dry."
+
+
 # --- Daily Reporting ---
 
 def _db_conn():
@@ -809,6 +842,20 @@ if __name__ == "__main__":
         print(f"❌ Cannot reach Slack API: {e}")
     
     threading.Thread(target=_schedule_daily_report, daemon=True).start()
+
+    # Charging dashboard: HTTP receiver for Pecan accumulator snapshots (pecan-dev,
+    # behind Cloudflare Zero Trust). Posts one self-updating Slack message per session.
+    try:
+        from charge_dashboard import ChargeDashboard, start_http_server
+        _charge_dash = ChargeDashboard(web_client, DEFAULT_CHANNEL)
+        start_http_server(
+            _charge_dash,
+            port=int(os.environ.get("CHARGE_DASHBOARD_PORT", "9099")),
+            token=os.environ.get("CHARGE_RELAY_TOKEN") or None,
+        )
+    except Exception as e:
+        print(f"⚠️ Charge dashboard not started: {e}")
+
     socket_client.socket_mode_request_listeners.append(process_events)
     try:
         print("🔌 Connecting to Slack WebSocket...")

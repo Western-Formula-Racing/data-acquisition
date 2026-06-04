@@ -89,6 +89,12 @@ services:
       SLACK_DEFAULT_CHANNEL: ${SLACK_DEFAULT_CHANNEL:-C0123456789}
       ENABLE_SLACK: ${ENABLE_SLACK:-false}
       CODE_GENERATOR_URL: "http://code-generator:3030"
+      # Charging dashboard receiver (Pecan accumulator → Slack, behind CF Zero Trust)
+      CHARGE_DASHBOARD_PORT: "9099"
+      CHARGE_RELAY_TOKEN: ${CHARGE_RELAY_TOKEN:-}
+    ports:
+      # Expose only behind Cloudflare Zero Trust / tunnel — do not publish publicly.
+      - "${CHARGE_DASHBOARD_PORT:-9099}:9099"
     volumes:
       - ./slackbot:/app
     working_dir: /app
