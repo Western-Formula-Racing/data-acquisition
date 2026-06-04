@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { MessageGroup, SensorsGroupedResponse } from "../types";
 
 // ── Subsystem colour palette (8 hues, light + dark) ──────────────────────────
@@ -84,7 +84,7 @@ interface GroupRowProps {
   collapsed: boolean;
   onToggle: () => void;
   onPick: (s: string) => void;
-  badge?: React.ReactNode;
+  badge?: ReactNode;
 }
 
 function GroupRow({ groupKey, name, signals, colors, count, collapsed, onToggle, onPick, badge }: GroupRowProps) {
@@ -129,12 +129,18 @@ function GroupRow({ groupKey, name, signals, colors, count, collapsed, onToggle,
 }
 
 export function SensorGroupedGrid({ grouped, theme, onPick }: Props) {
+  // Track which groups are collapsed; default is all expanded so signals are
+  // visible (and findable via browser Ctrl+F) without clicking into each group.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const toggle = (key: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
       return next;
     });
 
@@ -175,7 +181,7 @@ export function SensorGroupedGrid({ grouped, theme, onPick }: Props) {
                     borderColor: colors.border + "55",
                   }}
                 >
-                  {msg.can_id_hex}
+                  {msg.can_id_hex} · {msg.can_id}
                 </span>
               </>
             }
