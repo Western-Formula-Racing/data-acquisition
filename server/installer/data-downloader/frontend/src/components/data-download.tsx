@@ -20,6 +20,7 @@ interface Props {
   sensors: string[];
   season?: string;
   externalSelection?: ExternalSelection;
+  theme?: "light" | "dark";
 }
 
 const INPUT_FORMAT = "yyyy-LL-dd'T'HH:mm";
@@ -61,7 +62,7 @@ const toUtcTooltip = (value: string) => {
   return dt.isValid ? `${dt.toFormat("yyyy-LL-dd HH:mm:ss")} UTC` : value;
 };
 
-export function DataDownload({ runs, sensors, season, externalSelection }: Props) {
+export function DataDownload({ runs, sensors, season, externalSelection, theme = "light" }: Props) {
   const [selectedRunKey, setSelectedRunKey] = useState<string>("");
   const [selectedRunTimezone, setSelectedRunTimezone] = useState<string | null>(null);
   const [selectedSensor, setSelectedSensor] = useState<string>("");
@@ -219,6 +220,11 @@ export function DataDownload({ runs, sensors, season, externalSelection }: Props
     }
   };
 
+  const isDark = theme === "dark";
+  const chartFont = isDark ? "#e6e8eb" : "#111827";
+  const chartGrid = isDark ? "#2c313a" : "#e5e7eb";
+  const chartLine = isDark ? "#60a5fa" : "#2563eb";
+
   const plotData = useMemo(
     () =>
       series.length === 0
@@ -230,12 +236,12 @@ export function DataDownload({ runs, sensors, season, externalSelection }: Props
             customdata: series.map((point) => toUtcTooltip(point.time)),
             type: "scatter",
             mode: "lines",
-            line: { color: "#2563eb", width: 2 },
+            line: { color: chartLine, width: 2 },
             hovertemplate: "%{y}<br>%{customdata}<extra></extra>",
             name: selectedSensor || "Sensor"
           }
         ],
-    [series, selectedSensor]
+    [series, selectedSensor, chartLine]
   );
 
   const plotLayout = useMemo(
@@ -243,19 +249,23 @@ export function DataDownload({ runs, sensors, season, externalSelection }: Props
       autosize: true,
       margin: { t: 10, r: 20, b: 40, l: 50, pad: 4 },
       hovermode: "x unified",
+      font: { color: chartFont },
       xaxis: {
         title: "Time (UTC)",
         type: "date",
-        tickformat: "%H:%M\n%b %d"
+        tickformat: "%H:%M\n%b %d",
+        gridcolor: chartGrid,
+        zerolinecolor: chartGrid
       },
       yaxis: {
         title: selectedSensor || "Value",
-        zeroline: false
+        zeroline: false,
+        gridcolor: chartGrid
       },
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: "rgba(0,0,0,0)"
     }),
-    [selectedSensor]
+    [selectedSensor, chartFont, chartGrid]
   );
 
   const plotConfig = useMemo(

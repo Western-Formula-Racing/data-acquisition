@@ -14,6 +14,7 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
 from http.client import HTTPConnection
 from unittest.mock import patch, MagicMock
 
@@ -83,23 +84,101 @@ class _MockHandler:
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
-    def test_unknown_endpoint_returns_404(self):
-        """Any unknown path should return 404."""
-        from src.status_server import StatusHTTPRequestHandler
 
-        handler = _MockHandler()
-        handler.path = "/completely-unknown"
-        response_codes = []
+def test_load_health_snapshot_valid_file(tmp_path, monkeypatch):
+    """A fresh health file should be returned with computed top-level health."""
+    from src import status_server
 
-        def capture_response(code):
-            response_codes.append(code)
+    health_file = tmp_path / "health.json"
+    health_file.write_text(json.dumps({
+        "producer_ts": time.time(),
+        "uptime_s": 12,
+        "components": {
+            "udp_listener": {"status": "ok", "detail": None},
+            "redis": {"status": "ok", "detail": None},
+            "websocket_bridge": {"status": "warn", "clients": None, "detail": "client count unavailable"},
+        },
+        "car": {"seen_s_ago": None, "ip": "10.71.1.10", "alivable": False},
+        "stats": {"received": 1},
+    }))
+    monkeypatch.setattr(status_server, "HEALTH_FILE", str(health_file))
+    monkeypatch.setattr(status_server, "HEALTH_STALE_SECONDS", 5)
 
-        with patch.object(StatusHTTPRequestHandler, "__init__", lambda self, *a, **kw: None):
-            h = object.__new__(StatusHTTPRequestHandler)
-            h.log_message = MagicMock()
-            h.path = "/completely-unknown"
-            h.send_response = capture_response
-            h.end_headers = MagicMock()
-            h.do_POST()
+    payload = status_server._load_health_snapshot()
 
-        assert response_codes == [404], f"Expected 404, got {response_codes}"
+    assert payload["healthy"] is True
+    assert payload["overall"] == "ok"
+    assert payload["stale"] is False
+    assert payload["stats"]["received"] == 1
+
+
+def test_load_health_snapshot_missing_file_returns_unknown(tmp_path, monkeypatch):
+    """Missing health file should not crash the endpoint."""
+    from src import status_server
+
+    monkeypatch.setattr(status_server, "HEALTH_FILE", str(tmp_path / "missing-health.json"))
+
+    payload = status_server._load_health_snapshot()
+
+    assert payload["healthy"] is False
+    assert payload["overall"] == "unknown"
+    assert payload["components"]["udp_listener"]["status"] == "unknown"
+
+
+def test_load_health_snapshot_malformed_file_returns_unknown(tmp_path, monkeypatch):
+    """Partial health JSON should return an unknown snapshot."""
+    from src import status_server
+
+    health_file = tmp_path / "health.json"
+    health_file.write_text('{"producer_ts":')
+    monkeypatch.setattr(status_server, "HEALTH_FILE", str(health_file))
+
+    payload = status_server._load_health_snapshot()
+
+    assert payload["healthy"] is False
+    assert payload["overall"] == "unknown"
+    assert "invalid JSON" in payload["detail"]
+
+
+def test_load_health_snapshot_stale_file_marks_udp_error(tmp_path, monkeypatch):
+    """A stale producer timestamp must not keep the system looking healthy."""
+    from src import status_server
+
+    health_file = tmp_path / "health.json"
+    health_file.write_text(json.dumps({
+        "producer_ts": time.time() - 60,
+        "components": {
+            "udp_listener": {"status": "ok", "detail": None},
+            "redis": {"status": "ok", "detail": None},
+        },
+    }))
+    monkeypatch.setattr(status_server, "HEALTH_FILE", str(health_file))
+    monkeypatch.setattr(status_server, "HEALTH_STALE_SECONDS", 5)
+
+    payload = status_server._load_health_snapshot()
+
+    assert payload["healthy"] is False
+    assert payload["stale"] is True
+    assert payload["components"]["udp_listener"]["status"] == "error"
+
+
+def test_unknown_endpoint_returns_404():
+    """Any unknown path should return 404."""
+    from src.status_server import StatusHTTPRequestHandler
+
+    handler = _MockHandler()
+    handler.path = "/completely-unknown"
+    response_codes = []
+
+    def capture_response(code):
+        response_codes.append(code)
+
+    with patch.object(StatusHTTPRequestHandler, "__init__", lambda self, *a, **kw: None):
+        h = object.__new__(StatusHTTPRequestHandler)
+        h.log_message = MagicMock()
+        h.path = "/completely-unknown"
+        h.send_response = capture_response
+        h.end_headers = MagicMock()
+        h.do_POST()
+
+    assert response_codes == [404], f"Expected 404, got {response_codes}"

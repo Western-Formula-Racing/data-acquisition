@@ -243,6 +243,29 @@ class DataDownloaderService:
         except Exception as exc:
             return False, str(exc)
 
+    def check_db_lag(self) -> tuple[bool, str, float | None]:
+        """
+        Return (ok, detail, lag_seconds).
+        lag_seconds = seconds elapsed since the latest entry in the newest season table.
+        None if no seasons are configured or the table has no data yet.
+        """
+        if not self._seasons:
+            return False, "no seasons configured", None
+        table = self._seasons[0].table
+        try:
+            with psycopg2.connect(self.settings.postgres_dsn) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(f'SELECT MAX(time) FROM "{table}"')
+                    row = cur.fetchone()[0]
+            if row is None:
+                return True, f"no data in {table}", None
+            if row.tzinfo is None:
+                row = row.replace(tzinfo=timezone.utc)
+            lag = (datetime.now(timezone.utc) - row).total_seconds()
+            return True, table, lag
+        except Exception as exc:
+            return False, str(exc), None
+
     def _log_db_connectivity(self) -> None:
         ok, detail = self.check_db_connectivity()
         if ok:

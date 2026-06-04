@@ -6,10 +6,8 @@
 // scale is applied by get() and getHistory() so waveforms and readouts are consistent.
 // Throttle/Brake: DBC factor is 0.01, Candied gives 0.0–1.0 → scale *100 to get %.
 const SIGNAL_ALIASES = {
-  rpm:        'INV_Motor_Speed',
-  motor_speed:'INV_Motor_Speed',
-  motor_temp: 'INV_Motor_Temp',
-  torque:     'Torque_Act',
+  rpm:        'INV_Fast_Motor_Speed',
+  motor_speed:'INV_Fast_Motor_Speed',
   throttle:   ['Throttle',     100],  // DBC factor 0.01 → *100 = %
   brake:      ['Brake_Percent', 100], // DBC factor 0.01 → *100 = %
   steer:      null,                   // not available in WFR25
@@ -17,6 +15,9 @@ const SIGNAL_ALIASES = {
   pack_v:     'Pack_Inst_Voltage',
   pack_i:     'Pack_Current',
   pack_t:     'High_Temperature',
+  torch_t:    ['M1_Thermistor1', 0.001],  // TORCH BMS cell temp (DBC scale 0.001 → °C)
+  coolant_t:  'INV_Coolant_Temp',         // INV cooling temp (M162, °C)
+  dc_bus:     'INV_DC_Bus_Voltage',       // INV DC bus (M167, V)
   ax:         'Front_Accel_X',
   ay:         'Front_Accel_Y',
   az:         'Front_Accel_Z',

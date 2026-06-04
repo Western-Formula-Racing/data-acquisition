@@ -21,6 +21,7 @@ REDIS_CAN_CHANNEL   = "can_messages"
 REDIS_UPLINK_CHANNEL = "can_uplink"
 REDIS_STATS_CHANNEL = "system_stats"
 REDIS_DIAG_CHANNEL  = "link_diagnostics"
+REDIS_WS_CLIENTS_KEY = "websocket_bridge:clients"
 
 # ── Feature flags ─────────────────────────────────────────────────────────────
 ENABLE_UPLINK = os.getenv("ENABLE_UPLINK", "false").lower() == "true"

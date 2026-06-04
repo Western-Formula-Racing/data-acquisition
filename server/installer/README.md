@@ -76,7 +76,7 @@ All secrets and tokens are defined in `.env`. The defaults provided in `.env.exa
 | `sandbox` | n/a | Custom Python execution environment for running AI-generated code and TimescaleDB queries. |
 | `code-generator` | `3030` (internal) | AI-powered code generation service using Cohere. Generates Python code from natural language. |
 | `health-monitor` | n/a | Monitors container health and scanner status. |
-| `lap-detector` | `8050` | Dash-based lap analysis web application (shelved). |
+| `lap-detector` | `8050` | Dash-based lap analysis web application, tabled until GPS hardware is available. |
 | `startup-data-loader` | n/a | Seeds TimescaleDB with sample CAN frames on first boot. |
 
 ## Data and DBC files

@@ -13,10 +13,14 @@ function OverlayBroadcastBar({ carNumber = 33 }) {
   const soc = store.get('soc')?.value ?? 0;
   const packV = store.get('pack_v')?.value ?? 0;
   const packI = store.get('pack_i')?.value ?? 0;
-  const motorT = store.get('motor_temp')?.value ?? 0;
-  const packT = store.get('pack_t')?.value ?? 0;
+  const torchT = store.get('torch_t')?.value ?? 0;
+  const coolantT = store.get('coolant_t')?.value ?? 0;
+  const dcBus = store.get('dc_bus')?.value ?? 0;
   const steer = store.get('steer')?.value ?? 0;
-  const speedKmh = rpm / 500;
+  const gearRatio = 4.51;
+  const wheelRadiusM = 0.25;
+  const wheelRpm = rpm / gearRatio;
+  const speedKmh = wheelRpm * (2 * Math.PI / 60) * wheelRadiusM * 3.6;
 
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none',
@@ -91,19 +95,16 @@ function OverlayBroadcastBar({ carNumber = 33 }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6,
             borderLeft: `1px solid ${window.COL.chrome}`, paddingLeft: 36, flex: 1 }}>
             <div style={{ display: 'flex', gap: 32 }}>
-              <window.BigNumber label="SOC" value={soc} unit="%" size={36}
-                tone={soc < 20 ? 'warn' : 'default'} digits={0} />
+              <window.BigNumber label="DC BUS" value={dcBus} unit="V" size={36} digits={1} />
               <window.BigNumber label="PACK V" value={packV} unit="V" size={36} digits={1} />
               <window.BigNumber label="PACK I" value={packI} unit="A" size={36} digits={1} />
             </div>
             <div style={{ display: 'flex', gap: 32, marginTop: 2 }}>
               <div style={{ fontFamily: window.FONT.mono, fontSize: 11, color: window.COL.textDim }}>
-                MOT <span style={{ color: motorT > 80 ? window.COL.red : window.COL.text }}>
-                  {motorT.toFixed(0)}°C</span>
+                TORCH <span style={{ color: window.COL.text }}>{torchT.toFixed(0)}°C</span>
               </div>
               <div style={{ fontFamily: window.FONT.mono, fontSize: 11, color: window.COL.textDim }}>
-                PACK <span style={{ color: packT > 55 ? window.COL.red : window.COL.text }}>
-                  {packT.toFixed(0)}°C</span>
+                COOL <span style={{ color: window.COL.text }}>{coolantT.toFixed(0)}°C</span>
               </div>
             </div>
           </div>
@@ -138,9 +139,14 @@ function OverlayCornerHud({ carNumber = 33 }) {
   const brake = store.get('brake')?.value ?? 0;
   const soc = store.get('soc')?.value ?? 0;
   const packV = store.get('pack_v')?.value ?? 0;
-  const motorT = store.get('motor_temp')?.value ?? 0;
+  const dcBus = store.get('dc_bus')?.value ?? 0;
+  const torchT = store.get('torch_t')?.value ?? 0;
+  const coolantT = store.get('coolant_t')?.value ?? 0;
   const steer = store.get('steer')?.value ?? 0;
-  const speedKmh = rpm / 500;
+  const gearRatio = 4.51;
+  const wheelRadiusM = 0.25;
+  const wheelRpm = rpm / gearRatio;
+  const speedKmh = wheelRpm * (2 * Math.PI / 60) * wheelRadiusM * 3.6;
 
   const cornerBox = {
     background: 'rgba(10,10,11,0.55)',
@@ -194,10 +200,9 @@ function OverlayCornerHud({ carNumber = 33 }) {
             gap: '10px 22px', marginBottom: 10 }}>
             <window.BigNumber label="SOC" value={soc} unit="%" size={28}
               tone={soc < 20 ? 'warn' : 'default'} />
-            <window.BigNumber label="PACK" value={packV} unit="V" size={28} digits={0} />
-            <window.BigNumber label="MOT T" value={motorT} unit="°C" size={28}
-              tone={motorT > 80 ? 'warn' : 'default'} />
-            <window.BigNumber label="STEER" value={steer} unit="°" size={28} />
+            <window.BigNumber label="DC BUS" value={dcBus} unit="V" size={28} digits={0} />
+            <window.BigNumber label="TORCH" value={torchT} unit="°C" size={28} />
+            <window.BigNumber label="COOL" value={coolantT} unit="°C" size={28} />
           </div>
         </div>
         <window.RpmGauge rpm={rpm} max={8000} redline={6500} size={200} />

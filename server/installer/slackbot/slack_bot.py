@@ -2,10 +2,14 @@ import os
 import base64
 import json
 import datetime
+import threading
 from pathlib import Path
 from threading import Event
+from zoneinfo import ZoneInfo
 
 import requests
+import psycopg2
+import psycopg2.extras
 from slack_sdk.web import WebClient
 from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.socket_mode.request import SocketModeRequest
@@ -44,6 +48,8 @@ socket_client = SocketModeClient(
 WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL")
 DEFAULT_CHANNEL = os.environ.get("SLACK_DEFAULT_CHANNEL", "C08NTG6CXL5")
 CODE_GENERATOR_URL = os.environ.get("CODE_GENERATOR_URL", "http://code-generator:3030")
+POSTGRES_DSN = os.environ.get("POSTGRES_DSN", "postgresql://wfr:wfr_password@timescaledb:5432/wfr")
+TZ_ET = ZoneInfo("America/Toronto")
 
 
 # --- Public helper functions ---
@@ -261,8 +267,8 @@ def handle_agent(user, command_full, thread_ts=None, timeout=120, channel=None):
             send_slack_message(
                 channel,
                 text=(
-                    f"_React with :+1: to save this as a verified example, "
-                    f"or type `!approve` in this thread._"
+                    "_React with :+1: to save this as a verified example, "
+                    "or type `!approve` in this thread._"
                 ),
                 thread_ts=thread_ts,
             )
@@ -518,7 +524,7 @@ def handle_aistats(user, thread_ts=None, channel=None):
             )
 
 
-
+def handle_help(user, thread_ts=None, channel=None):
     channel = channel or DEFAULT_CHANNEL
     help_text = (
         f"📘 <@{user}> Available Commands:\n"
@@ -541,12 +547,165 @@ def handle_aistats(user, thread_ts=None, channel=None):
         "!aistats                   - Show AI code-generator observability dashboard:\n"
         "                              cache hit rates, success rate, sandbox duration,\n"
         "                              retry distribution, and RAG vector space stats.\n"
+        "!stats                     - Show DAQ activity: rows logged, CAN messages,\n"
+        "                              testing duration for today and the past 7 days.\n"
+        "                              Also posted automatically every day at 9 AM ET.\n"
         "```\n"
         "💬 React with :+1: on the result message — same as !approve, just quicker.\n"
         "💬 Verified examples make future !agent queries smarter.\n"
         "💬 Tip: You can also DM me these commands directly!"
     )
     send_slack_message(channel, text=help_text, thread_ts=thread_ts)
+
+
+# --- AI chat helpers ---
+
+def _ai_chat(system: str, user_msg: str) -> str:
+    """Call the Anthropic-compatible AI endpoint (single-turn)."""
+    return _ai_chat_with_history(system, [{"role": "user", "content": user_msg}])
+
+
+def _ai_chat_with_history(system: str, messages: list) -> str:
+    """Call the Anthropic-compatible AI endpoint with full message history."""
+    api_key  = os.environ.get("ANTHROPIC_API_KEY", "")
+    base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic").rstrip("/")
+    model    = os.environ.get("ANTHROPIC_MODEL", "MiniMax-M3")
+    resp = requests.post(
+        f"{base_url}/v1/messages",
+        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+        json={"model": model, "max_tokens": 150,
+              "system": system,
+              "messages": messages},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()["content"][0]["text"].strip()
+
+
+def _load_character_sheet() -> str:
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        with open(os.path.join(here, "lappy_character.md")) as f:
+            return f.read()
+    except Exception:
+        return "You are Lappy, the WFR DAQ bot. Be witty and dry."
+
+
+# --- Daily Reporting ---
+
+def _db_conn():
+    return psycopg2.connect(POSTGRES_DSN)
+
+
+def _generate_report() -> str:
+    try:
+        conn = _db_conn()
+    except Exception as e:
+        return f"❌ Could not connect to database: {e}"
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT
+                    DATE(time AT TIME ZONE 'America/Toronto') AS day,
+                    COUNT(*) AS rows,
+                    COUNT(DISTINCT message_name) AS messages,
+                    ROUND(EXTRACT(epoch FROM MAX(time) - MIN(time)) / 60) AS duration_min
+                FROM wfr26
+                WHERE time > NOW() - INTERVAL '8 days'
+                GROUP BY day
+                ORDER BY day DESC
+            """)
+            days = cur.fetchall()
+
+            cur.execute("""
+                SELECT value_float, value_text, time
+                FROM monitoring
+                WHERE measurement = 'uploader.performance'
+                  AND field = 'rows_per_second'
+                ORDER BY time DESC
+                LIMIT 5
+            """)
+            uploads = cur.fetchall()
+
+            cur.execute("""
+                SELECT service, SUM(value_float) AS restarts
+                FROM monitoring
+                WHERE measurement = 'monitor.container'
+                  AND field = 'restart_count'
+                  AND time > NOW() - INTERVAL '24 hours'
+                GROUP BY service
+                HAVING SUM(value_float) > 0
+                ORDER BY restarts DESC
+            """)
+            restarts = cur.fetchall()
+    except Exception as e:
+        conn.close()
+        return f"❌ Query failed: {e}"
+    finally:
+        conn.close()
+
+    now_et = datetime.datetime.now(TZ_ET)
+    lines = [f"*WFR DAQ Daily Report* — {now_et.strftime('%a %b %d, %Y')}"]
+
+    if days:
+        today = now_et.date()
+        label = "Today" if days[0][0] == today else (
+            "Yesterday" if (today - days[0][0]).days == 1 else str(days[0][0])
+        )
+        d_rows, d_msgs, d_dur = days[0][1], days[0][2], days[0][3]
+        lines.append(f"\n*{label}*")
+        lines.append(f"  `{d_rows:,}` rows  ·  `{d_msgs}` CAN messages  ·  `{int(d_dur)} min` of data")
+
+    if len(days) > 1:
+        lines.append("\n*Past 7 days*")
+        lines.append("```")
+        lines.append(f"{'Date':<12} {'Rows':>10} {'Msgs':>5} {'Duration':>10}")
+        lines.append("-" * 42)
+        for day, rows, msgs, dur in days[:7]:
+            lines.append(f"{str(day):<12} {rows:>10,} {msgs:>5} {int(dur):>8} min")
+        lines.append("```")
+    else:
+        lines.append("\n_No data in the past 7 days._")
+
+    if uploads:
+        avg_rate = sum(r[0] for r in uploads) / len(uploads)
+        last_upload = uploads[0][2].astimezone(TZ_ET).strftime("%b %d %H:%M ET")
+        lines.append(f"\n*Uploader* — avg `{avg_rate:,.0f}` rows/s  ·  last upload {last_upload}")
+
+    if restarts:
+        lines.append("\n⚠️ *Container restarts (last 24h)*")
+        for svc, count in restarts:
+            lines.append(f"  `{svc}`: {int(count)} restart(s)")
+
+    return "\n".join(lines)
+
+
+def handle_stats(user, thread_ts=None, channel=None):
+    channel = channel or DEFAULT_CHANNEL
+    send_slack_message(channel, text=f"<@{user}> Pulling stats...", thread_ts=thread_ts)
+    send_slack_message(channel, text=_generate_report(), thread_ts=thread_ts)
+
+
+def _schedule_daily_report():
+    """Post the daily report at 9:00 AM ET every day."""
+    import time as _time
+
+    def secs_until_9am():
+        now = datetime.datetime.now(TZ_ET)
+        target = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        if now >= target:
+            target += datetime.timedelta(days=1)
+        return (target - now).total_seconds()
+
+    while True:
+        secs = secs_until_9am()
+        print(f"📅 Daily report scheduled in {secs/3600:.1f}h")
+        _time.sleep(secs)
+        try:
+            send_slack_message(DEFAULT_CHANNEL, text=_generate_report())
+        except Exception as e:
+            print(f"❌ Daily report failed: {e}")
 
 
 # --- Event Processing Logic ---
@@ -643,6 +802,8 @@ def process_events(client: SocketModeClient, req: SocketModeRequest):
             handle_approve(user, thread_ts, response_channel)
         elif main_command == "aistats":
             handle_aistats(user, thread_ts, response_channel)
+        elif main_command == "stats":
+            handle_stats(user, thread_ts, response_channel)
         else:
             send_slack_message(
                 response_channel,
@@ -680,6 +841,26 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Cannot reach Slack API: {e}")
     
+    threading.Thread(target=_schedule_daily_report, daemon=True).start()
+
+    # Charging dashboard: HTTP receiver for Pecan accumulator snapshots (pecan-dev,
+    # behind Cloudflare Zero Trust). Posts one self-updating Slack message per session.
+    try:
+        from charge_dashboard import ChargeDashboard, start_http_server
+        # Require a shared token: the receiver port is published on the host and
+        # accepting unauthenticated POSTs would let anyone reach it post to Slack.
+        token = (os.environ.get("CHARGE_RELAY_TOKEN") or "").strip()
+        if not token:
+            raise RuntimeError("CHARGE_RELAY_TOKEN not set — refusing to start an unauthenticated receiver")
+        _charge_dash = ChargeDashboard(web_client, DEFAULT_CHANNEL)
+        start_http_server(
+            _charge_dash,
+            port=int(os.environ.get("CHARGE_DASHBOARD_PORT", "9099")),
+            token=token,
+        )
+    except Exception as e:
+        print(f"⚠️ Charge dashboard not started: {e}")
+
     socket_client.socket_mode_request_listeners.append(process_events)
     try:
         print("🔌 Connecting to Slack WebSocket...")

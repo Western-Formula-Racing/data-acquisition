@@ -211,7 +211,7 @@ __marimo__/
 base-station/.DS_Store
 .DS_Store
 /.vscode
-daq-radio.code-workspace
+data-acquisition.code-workspace
 
 # Conda environments
 conda-env/
@@ -252,7 +252,7 @@ flight-recorder/.env.local
 /.cursor
 *.claude
 
-# ── daq-server-components (server/) ──────────────────────────────────────────
+# ── data-acquisition server/ ─────────────────────────────────────────────────
 .idea
 car-to-influx/testing_data/cleaned_can.csv
 

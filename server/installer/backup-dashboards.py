@@ -19,7 +19,7 @@ Sets "id": null in each exported JSON so they import cleanly on any instance.
 
 Cron example (daily at 2am, push to daq-internal):
     0 2 * * * cd /path/to/daq-internal && \
-        python /path/to/daq-server-components/installer/backup-dashboards.py \
+        python /path/to/data-acquisition/server/installer/backup-dashboards.py \
         --output ./grafana-dashboards --git-push >> /var/log/grafana-backup.log 2>&1
 """
 

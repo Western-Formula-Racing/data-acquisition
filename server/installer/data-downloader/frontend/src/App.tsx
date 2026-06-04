@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchRuns, fetchSensors, fetchScannerStatus, triggerScan, updateNote, fetchSeasons } from "./api";
+import { Moon, Sun } from "lucide-react";
 import { RunRecord, RunsResponse, ScannerStatus, SensorsResponse, Season } from "./types";
 import { RunTable } from "./components/RunTable";
 import { DataDownload } from "./components/data-download";
 
 type ScanState = "idle" | "running" | "success" | "error";
+type Theme = "light" | "dark";
+
+function getInitialTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+  const saved = window.localStorage.getItem("theme");
+  if (saved === "light" || saved === "dark") return saved;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
 
 interface DownloaderSelection {
   runKey?: string;
@@ -27,6 +36,7 @@ export default function App() {
   const [scanSeason, setScanSeason] = useState<string>("");
   const [downloaderSelection, setDownloaderSelection] = useState<DownloaderSelection | null>(null);
   const [scannerStatus, setScannerStatus] = useState<ScannerStatus | null>(null);
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const sensorsSectionRef = useRef<HTMLElement | null>(null);
   const downloaderSectionRef = useRef<HTMLElement | null>(null);
   const statusFinishedRef = useRef<string | null>(null);
@@ -88,6 +98,11 @@ export default function App() {
     },
     [loadData]
   );
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    window.localStorage.setItem("theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     void loadData();
@@ -230,36 +245,46 @@ export default function App() {
             </p>
           </div>
 
-          {seasons.length > 0 && (
-            <div style={{ textAlign: "right" }}>
-              <p style={{ fontSize: "0.7rem", color: "#6b7280", margin: "0 0 0.25rem 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>Active Season</p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0", border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden", maxWidth: "320px" }}>
-                {seasons.map(s => {
-                  const active = s.name === selectedSeason;
-                  const sc = seasonColor(s.name);
-                  return (
-                    <button
-                      key={s.name}
-                      onClick={() => setSelectedSeason(s.name)}
-                      style={{
-                        padding: "0.35rem 0.75rem",
-                        border: "none",
-                        borderRight: "1px solid #e5e7eb",
-                        background: active ? sc : "transparent",
-                        color: active ? "#fff" : sc,
-                        fontWeight: active ? "bold" : "normal",
-                        fontSize: "0.85rem",
-                        cursor: "pointer",
-                        transition: "background 0.15s",
-                      }}
-                    >
-                      {s.name}
-                    </button>
-                  );
-                })}
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+            {seasons.length > 0 && (
+              <div style={{ textAlign: "right" }}>
+                <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", margin: "0 0 0.25rem 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>Active Season</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0", border: "1px solid var(--border)", borderRadius: "6px", overflow: "hidden", maxWidth: "320px" }}>
+                  {seasons.map(s => {
+                    const active = s.name === selectedSeason;
+                    const sc = seasonColor(s.name);
+                    return (
+                      <button
+                        key={s.name}
+                        onClick={() => setSelectedSeason(s.name)}
+                        style={{
+                          padding: "0.35rem 0.75rem",
+                          border: "none",
+                          borderRight: "1px solid var(--border)",
+                          background: active ? sc : "transparent",
+                          color: active ? "#fff" : sc,
+                          fontWeight: active ? "bold" : "normal",
+                          fontSize: "0.85rem",
+                          cursor: "pointer",
+                          transition: "background 0.15s",
+                        }}
+                      >
+                        {s.name}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+            <button
+              className="theme-toggle"
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            >
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -275,7 +300,7 @@ export default function App() {
             value={scanSeason}
             onChange={(e) => setScanSeason(e.target.value)}
             disabled={scanButtonDisabled}
-            style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid #ccc", fontSize: "0.9rem" }}
+            style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid var(--border-strong)", fontSize: "0.9rem", background: "var(--surface)", color: "var(--text)" }}
           >
             {seasons.map(s => (
               <option key={s.name} value={s.name}>{s.name}</option>
@@ -288,7 +313,7 @@ export default function App() {
         <button className="button secondary" onClick={() => void handleRefreshClick()} disabled={loading}>
           {loading ? "Refreshing..." : "Refresh Data"}
         </button>
-        <p style={{ fontSize: "0.75rem", color: "#9ca3af", margin: "0" }}>
+        <p style={{ fontSize: "0.75rem", color: "var(--text-subtle)", margin: "0" }}>
           Use the top right season selector to switch the active season.
         </p>
         {scanState !== "idle" && (
@@ -309,7 +334,7 @@ export default function App() {
       </div>
 
       {error && (
-        <div className="card" style={{ border: "1px solid #fecaca", background: "#fef2f2" }}>
+        <div className="card" style={{ border: "1px solid var(--error-card-border)", background: "var(--error-card-bg)", color: "var(--error-text)" }}>
           <strong>Heads up:</strong> {error}
         </div>
       )}
@@ -361,6 +386,7 @@ export default function App() {
           sensors={sensorsPreview}
           season={selectedSeason}
           externalSelection={downloaderSelection ?? undefined}
+          theme={theme}
         />
       </section>
     </div>

@@ -73,6 +73,16 @@ describe("WebSocketService", () => {
     expect(MockWebSocket.instances[0].url).toBe("ws://my-host:1234");
   });
 
+  it("tries localhost WebSocket first on localhost pages", async () => {
+    localStorage.clear();
+    window.history.pushState({}, "", "http://localhost:3000/");
+    const { WebSocketService } = await import("./WebSocketService");
+
+    const svc = new WebSocketService();
+
+    expect((svc as any).resolveCandidateUrls()[0]).toBe("ws://localhost:9080");
+  });
+
   it("emits decoded events from processor", async () => {
     processWebSocketMessage.mockReturnValue({ canId: 256 });
     const { WebSocketService } = await import("./WebSocketService");

@@ -12,10 +12,21 @@ update, and troubleshooting instructions.
 
 ---
 
-## docker-compose.yml — General purpose (RPi or MacBook)
+## Recommended Production/Track Choices
 
-Default compose with `network_mode: host` + `privileged`. Base station only.
-Pulls `:latest` images from GHCR.
+Use these first:
+
+| Target | File / doc | Notes |
+|--------|------------|-------|
+| Car RPi | `CAR_DEPLOY.md` + `car-telemetry.service` | Native systemd, no Docker/Redis on the car |
+| MacBook / Linux / RPi 4B base | `docker-compose.macbook-base.yml` + `install.sh` | One-command curl install; optional `--profile timescale`, `--hotspot` on Linux |
+| RPi base (manual, deprecating) | `docker-compose.rpi-base.yml` | Lightweight ephemeral base, host networking; no one-click installer |
+
+---
+
+## docker-compose.yml — Legacy/general base stack
+
+Older base-station compose with `network_mode: host` + `privileged`. It is base station only and is kept for compatibility with older setups. Prefer `docker-compose.macbook-base.yml` or `docker-compose.rpi-base.yml` for new work.
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d
@@ -23,20 +34,27 @@ docker compose -f deploy/docker-compose.yml up -d
 
 ---
 
-## docker-compose.macbook-base.yml — MacBook full local stack
+## docker-compose.macbook-base.yml — MacBook base stack
 
-Full local development stack on MacBook: telemetry + redis + timescaledb + pecan + grafana.
-TimescaleDB persists to `WFR26test` by default. Use this for development and testing
-with full telemetry recording and local dashboards.
+Default local stack on MacBook: telemetry + Redis + Pecan.
+TimescaleDB writes, MediaMTX/stream overlay, and cloudflared are opt-in profiles.
 
 ```bash
-docker compose -f deploy/docker-compose.macbook-base.yml up -d --build
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d --build
+```
+
+Optional:
+
+```bash
+docker compose --profile timescale -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
+docker compose --profile media -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
+docker compose --profile tunnel -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 ```
 
 **Access points:**
 - Pecan dashboard: http://localhost:3000
-- Grafana: http://localhost:8087
-- TimescaleDB: `postgresql://wfr:wfr_password@localhost:5432/wfr`
+- Status page: http://localhost:8080
+- TimescaleDB with `--profile timescale`: `postgresql://wfr:wfr_password@localhost:5432/wfr`
 
 ---
 

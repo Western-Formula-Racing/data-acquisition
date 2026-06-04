@@ -282,11 +282,9 @@ function Waveform({ signal, width = 320, height = 70, color = COL.accent, label,
 function WarningFlash() {
   const store = window.telemetryStore;
   const soc = store.get('soc')?.value;
-  const motorT = store.get('motor_temp')?.value;
   const packT = store.get('pack_t')?.value;
   const warnings = [];
   if (typeof soc === 'number' && soc < 20) warnings.push({ code: 'LOW SOC', msg: `${soc.toFixed(0)}%` });
-  if (typeof motorT === 'number' && motorT > 80) warnings.push({ code: 'MOTOR TEMP', msg: `${motorT.toFixed(0)}°C` });
   if (typeof packT === 'number' && packT > 55) warnings.push({ code: 'PACK TEMP', msg: `${packT.toFixed(0)}°C` });
   if (!warnings.length) return null;
   return (

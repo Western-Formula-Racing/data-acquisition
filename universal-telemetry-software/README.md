@@ -1,6 +1,6 @@
 # Universal Telemetry Software
 
-Complete DAQ telemetry system for Formula Racing vehicles. Runs on both the car and base station Raspberry Pis, automatically detecting its role based on CAN bus availability.
+Complete DAQ telemetry system for Formula Racing vehicles. The car and base station share the same Python source and role-specific runtime logic. The car Raspberry Pi runs that code natively as `car-telemetry.service`; base stations run it through Docker Compose with Redis, WebSocket/status services, video relay, and optional TimescaleDB logging.
 
 ---
 
@@ -8,7 +8,7 @@ Complete DAQ telemetry system for Formula Racing vehicles. Runs on both the car 
 
 ```mermaid
 graph LR
-  subgraph CAR["CAR — Raspberry Pi"]
+  subgraph CAR["CAR — Raspberry Pi (systemd)"]
     CAN["CAN Reader\n(can0)"] --> UDP["UDP Sender\n(batch 20msg/50ms)"]
     CAN --> RB["Ring Buffer\n(60 sec)"]
     RB --> TCP_S["TCP Resend Server\n(:5006)"]
@@ -33,7 +33,7 @@ graph LR
   PECAN -. "quality change\nHTTP :8081" .-> CTRL
 ```
 
-**Car mode** is auto-detected when `can0` is present. Otherwise the software runs in **base station mode**.
+The deployed car service sets `ROLE=car` explicitly in `deploy/car-telemetry.service`. Base deployments run the same code with the base role inside Docker Compose. Auto-detection still exists for local development, but production deployment should use the role-specific wrappers: systemd on the car, Docker Compose on the base station.
 
 ---
 
@@ -126,36 +126,53 @@ Once `can0` is confirmed working, proceed to deployment.
 
 ### Prerequisites
 - Raspberry Pi 4/5 with Ubuntu
-- Docker and Docker Compose installed
+- `uv` installed on the car Pi
+- Docker and Docker Compose installed on the base station
 - CAN HAT set up (see Hardware Setup above)
 - Network connection between car and base (LAN cable or Ubiquiti radios)
 
-### Installation
+### Car RPi Installation
 
 Clone the repository:
 ```bash
-git clone https://github.com/Western-Formula-Racing/daq-radio.git
-cd daq-radio/universal-telemetry-software
+git clone https://github.com/Western-Formula-Racing/data-acquisition.git /home/car/data-acquisition
+cd /home/car/data-acquisition/universal-telemetry-software
 ```
 
-Set `REMOTE_IP` in `deploy/docker-compose.yml` to the IP of the other RPi:
-```yaml
-environment:
-  - REMOTE_IP=192.168.1.20   # car sets this to base IP, base sets this to car IP
-```
-
-Start services:
+Install dependencies and the native systemd service:
 ```bash
-docker compose up -d
+uv sync
+sed -i "s/GIT_HASH=unknown/GIT_HASH=$(git rev-parse --short HEAD)/" deploy/car-telemetry.service
+sudo cp deploy/car-telemetry.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable car-telemetry
+sudo systemctl start car-telemetry
+```
+
+The service file currently sets `REMOTE_IP=10.71.1.20` for the base station. Edit `deploy/car-telemetry.service` before installing it if the base station IP changes.
+
+### Base Station Installation
+
+MacBook base station:
+```bash
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
+```
+
+Raspberry Pi base station:
+```bash
+docker compose -f deploy/docker-compose.rpi-base.yml up -d
 ```
 
 ### Verify
 
-Check logs:
+Check car logs:
 ```bash
-docker compose logs -f telemetry
-# Car should show:  "Auto-detected Role: car"
-# Base should show: "Auto-detected Role: base"
+journalctl -u car-telemetry -f
+```
+
+Check base logs:
+```bash
+docker compose -f deploy/docker-compose.macbook-base.yml logs -f telemetry
 ```
 
 ### Access
@@ -170,12 +187,14 @@ docker compose logs -f telemetry
 
 ## Deploying with Pre-built Images (GHCR)
 
-Use `docker-compose.macbook-base.yml` for MacBook or `docker-compose.rpi-base.yml` for Pi base station.
-Both pull pre-built images from GHCR:
+Use `docker-compose.macbook-base.yml` for MacBook or `docker-compose.rpi-base.yml` for Pi base station. Both pull pre-built images from GHCR. The car does not use these Docker images in production; use `deploy/car-telemetry.service` instead.
 
 ```bash
-# MacBook full stack
-docker compose -f deploy/docker-compose.macbook-base.yml up -d
+# MacBook minimal LAN stack
+docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
+
+# Optional local TimescaleDB writes
+docker compose --profile timescale -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 
 # RPi base station (ephemeral, no DB persistence)
 docker compose -f deploy/docker-compose.rpi-base.yml up -d
@@ -201,7 +220,7 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 | `SIMULATE` | `false` | Simulate CAN data (no hardware needed) |
 | `ENABLE_VIDEO` | `false` | Enable video streaming (car: push RTSP; base: unused) |
 | `ENABLE_AUDIO` | `false` | Enable audio streaming |
-| `ENABLE_TIMESCALE_LOGGING` | `false` | Log telemetry to server TimescaleDB (direct write) |
+| `ENABLE_TIMESCALE_LOGGING` | `false` | Log telemetry to TimescaleDB; MacBook default is `auto` |
 | `ENABLE_WS_RELAY` | `false` | Enable downlink-only WebSocket relay for remote viewers |
 | `RELAY_TOKEN` | unset | Optional passcode for relay connections (`?token=...`) |
 | `RELAY_LISTEN_PORT` | `9089` | Local port for the relay WebSocket server |
@@ -283,7 +302,9 @@ v4l2-ctl --device /dev/video0 --set-ctrl focus_absolute=40
 
 ## Monitoring
 
-**Status page** (`http://<ip>:8080`): real-time connection status, packet stats, live packet rate chart.
+**Status page** (`http://<ip>:8080`): real-time connection status, unified system health, packet stats, live packet rate chart.
+
+**Health endpoint** (`http://<ip>:8080/health`): JSON health snapshot for the base stack. It is served by the status server and backed by the telemetry process' `HEALTH_FILE` snapshot, which defaults to `/tmp/daq-health.json`. The endpoint reports infrastructure components separately from car presence, so a powered-off car does not imply Redis/WebSocket/Timescale are unhealthy.
 
 **PECAN dashboard** (`http://<ip>:3000`): live CAN message visualization. Connects automatically to WebSocket on port 9080.
 
@@ -295,7 +316,7 @@ The base station can publish the live telemetry WebSocket through a downlink-onl
 
 ### Enable the relay
 
-For the MacBook base stack this is already enabled in `deploy/docker-compose.macbook-base.yml`:
+For the MacBook base stack the local relay process is enabled in the telemetry container:
 
 ```yaml
 ENABLE_WS_RELAY=true
@@ -383,8 +404,8 @@ Published by base station every second.
 
 **No data flowing**
 ```bash
-docker compose ps                                      # check containers running
-docker compose logs telemetry | grep "UDP"             # car: confirm sending
+systemctl status car-telemetry                         # car: check native service
+journalctl -u car-telemetry -f                         # car: confirm sending
 docker compose logs telemetry | grep "Initial sequence" # base: confirm receiving
 ping <other-rpi-ip>                                    # confirm network
 ```
@@ -420,8 +441,9 @@ universal-telemetry-software/
 │   └── poe.py                  # PoE monitor
 ├── tests/
 ├── deploy/
-│   ├── docker-compose.yml              # General purpose (RPi or MacBook)
-│   ├── docker-compose.macbook-base.yml # MacBook full stack (TimescaleDB + Grafana)
+│   ├── car-telemetry.service           # Native car systemd service
+│   ├── CAR_DEPLOY.md                   # Car RPi systemd deployment
+│   ├── docker-compose.macbook-base.yml # MacBook base stack with optional profiles
 │   ├── docker-compose.rpi-base.yml     # RPi lightweight base (ephemeral)
 │   ├── docker-compose.staging.yml      # Staging (:test-latest images)
 │   ├── docker-compose.test.yml         # Integration test stack (CI)

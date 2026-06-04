@@ -43,8 +43,8 @@ jobs:
 
       - name: Pull all required images
         run: |
-          docker pull ghcr.io/western-formula-racing/daq-radio/universal-telemetry:latest
-          docker pull ghcr.io/western-formula-racing/daq-radio/pecan:latest
+          docker pull ghcr.io/western-formula-racing/data-acquisition/universal-telemetry:latest
+          docker pull ghcr.io/western-formula-racing/data-acquisition/pecan:latest
           docker pull timescale/timescaledb:latest-pg16
           docker pull redis:8.2
           docker pull bluenviron/mediamtx:latest
@@ -54,8 +54,8 @@ jobs:
         run: |
           cd universal-telemetry-software/deploy
           docker save \
-            ghcr.io/western-formula-racing/daq-radio/universal-telemetry:latest \
-            ghcr.io/western-formula-racing/daq-radio/pecan:latest \
+            ghcr.io/western-formula-racing/data-acquisition/universal-telemetry:latest \
+            ghcr.io/western-formula-racing/data-acquisition/pecan:latest \
             timescale/timescaledb:latest-pg16 \
             redis:8.2 \
             bluenviron/mediamtx:latest \

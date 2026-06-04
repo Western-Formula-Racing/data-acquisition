@@ -184,61 +184,71 @@
             box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
         }
 
-        .pipeline-flow {
+        .system-health {
             display: flex;
-            align-items: center;
+            flex-direction: column;
+            gap: 8px;
             padding: 12px 15px;
             margin-bottom: 10px;
             background: #0a0a0a;
             border: 1px solid #222;
-            overflow-x: auto;
             font-family: 'JetBrains Mono', monospace;
         }
 
-        .pipe-node {
+        .health-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 0.75rem;
+            min-height: 18px;
+        }
+
+        .health-left,
+        .health-right {
             display: flex;
             align-items: center;
             gap: 7px;
-            flex-shrink: 0;
+            min-width: 0;
         }
 
-        .pipe-dot {
+        .health-name,
+        .health-detail {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .health-name {
+            color: #d1d5db;
+            text-transform: uppercase;
+        }
+
+        .health-detail {
+            color: #8e8eab;
+            text-align: right;
+        }
+
+        .health-dot {
             width: 8px;
             height: 8px;
             background: #2a2a2a;
             flex-shrink: 0;
         }
 
-        .pipe-dot.active {
+        .health-ok {
             background: #4ade80;
             box-shadow: 0 0 6px rgba(74, 222, 128, 0.4);
         }
 
-        .pipe-dot.error {
+        .health-warn {
+            background: #fbbf24;
+            box-shadow: 0 0 6px rgba(251, 191, 36, 0.4);
+        }
+
+        .health-error {
             background: #ef4444;
             box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
-        }
-
-        .pipe-label {
-            font-size: 0.7rem;
-            color: #8e8eab;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .pipe-sep {
-            flex: 1;
-            min-width: 24px;
-            text-align: center;
-            font-size: 0.7rem;
-            color: #2a2a2a;
-            padding: 0 4px;
-            letter-spacing: 2px;
-            user-select: none;
-        }
-
-        .pipe-sep.active {
-            color: #4ade80;
         }
 
         .chart-container {
@@ -418,25 +428,48 @@
             <div class="remote-ip-indicator" id="remoteIpIndicator"></div>
         </div>
 
-        <div class="pipeline-flow">
-            <div class="pipe-node">
-                <div class="pipe-dot" id="pipeDot_car"></div>
-                <span class="pipe-label" id="pipeLabelCar">CAR</span>
+        <div class="system-health" id="systemHealth">
+            <div class="health-row">
+                <div class="health-left">
+                    <div class="health-dot" id="healthDot_overall"></div>
+                    <span class="health-name">Overall</span>
+                </div>
+                <span class="health-detail" id="healthDetail_overall">Waiting for /health</span>
             </div>
-            <div class="pipe-sep" id="pipeSep_car">──▶</div>
-            <div class="pipe-node">
-                <div class="pipe-dot" id="pipeDot_telem"></div>
-                <span class="pipe-label">TELEMETRY</span>
+            <div class="health-row">
+                <div class="health-left">
+                    <div class="health-dot" id="healthDot_udp_listener"></div>
+                    <span class="health-name">UDP Listener</span>
+                </div>
+                <span class="health-detail" id="healthDetail_udp_listener">--</span>
             </div>
-            <div class="pipe-sep" id="pipeSep_telem">──▶</div>
-            <div class="pipe-node">
-                <div class="pipe-dot" id="pipeDot_redis"></div>
-                <span class="pipe-label">REDIS</span>
+            <div class="health-row">
+                <div class="health-left">
+                    <div class="health-dot" id="healthDot_redis"></div>
+                    <span class="health-name">Redis</span>
+                </div>
+                <span class="health-detail" id="healthDetail_redis">--</span>
             </div>
-            <div class="pipe-sep" id="pipeSep_redis">──▶</div>
-            <div class="pipe-node">
-                <div class="pipe-dot active" id="pipeDot_browser"></div>
-                <span class="pipe-label">BROWSER</span>
+            <div class="health-row">
+                <div class="health-left">
+                    <div class="health-dot" id="healthDot_websocket_bridge"></div>
+                    <span class="health-name">WebSocket Bridge</span>
+                </div>
+                <span class="health-detail" id="healthDetail_websocket_bridge">--</span>
+            </div>
+            <div class="health-row">
+                <div class="health-left">
+                    <div class="health-dot" id="healthDot_timescale"></div>
+                    <span class="health-name">Timescale</span>
+                </div>
+                <span class="health-detail" id="healthDetail_timescale">--</span>
+            </div>
+            <div class="health-row">
+                <div class="health-left">
+                    <div class="health-dot" id="healthDot_can_bus"></div>
+                    <span class="health-name">CAN Bus</span>
+                </div>
+                <span class="health-detail" id="healthDetail_can_bus">--</span>
             </div>
         </div>
 
@@ -487,7 +520,7 @@
                     <span class="metric-value" id="uptime">--</span>
                 </div>
                 <div class="metric">
-                    <span class="metric-label">Last Message</span>
+                    <span class="metric-label">Last Health</span>
                     <span class="metric-value" id="lastMsg">--</span>
                 </div>
             </div>
@@ -599,7 +632,7 @@
             <canvas id="healthMosaic" class="seq-tape" style="height: 180px;"></canvas>
             <div class="seq-legend" style="justify-content: space-between;">
                 <span>60s ago</span>
-                <span>50 UDP batches/sec</span>
+                <span>1 cell = 1 second</span>
                 <span>now</span>
             </div>
             <div class="seq-legend">
@@ -622,19 +655,16 @@
 
     <div class="performance-footer">
         <div class="performance-stats">
-            <span>WebSocket: <span id="wsStatus">Disconnected</span></span>
+            <span>Health: <span id="wsStatus">Waiting</span></span>
             <span>Messages/sec: <span id="msgRate">0</span></span>
             <span>Uptime: <span id="footerUptime">00:00:00</span></span>
         </div>
     </div>
 
     <script>
-        const REDIS_WS_URL = 'ws://' + window.location.hostname + ':9080';
         const STATS_TIMEOUT = 5000;
         const CAR_TIMEOUT = 3000; // Stats come every 1s; heartbeat every 2s — give breathing room
 
-        let ws = null;
-        let wsConnected = false;
         let startTime = Date.now();
         let lastMessageTime = null;
         let lastCarDataTime = null;
@@ -643,9 +673,9 @@
         let totalMissing = 0;
         let totalRecovered = 0;
         let packetHistory = [];
+        let healthMosaicPulseUntil = 0;
         const MOSAIC_SECONDS = 60;
-        const UDP_BATCHES_PER_SECOND = 50;
-        const MOSAIC_CELLS = MOSAIC_SECONDS * UDP_BATCHES_PER_SECOND;
+        let secondBuffer = [];
         let ecuSynced = false;
 
         const mosaicCanvas = document.getElementById('healthMosaic');
@@ -658,53 +688,23 @@
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
 
-        function connect() {
+        async function pollHealth() {
             try {
-                ws = new WebSocket(REDIS_WS_URL);
-
-                ws.onopen = () => {
-                    console.log('Connected to base station');
-                    wsConnected = true;
-                    hideError();
-                    updatePipeline();
-                    document.getElementById('wsStatus').textContent = 'Connected';
-                };
-
-                ws.onmessage = (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-
-                        if (data.type === 'system_stats' || (data.received !== undefined && !data.type)) {
-                            updateStats(data);
-                        } else if (data.type === 'ping') {
-                            updatePing(data);
-                        } else if (data.type === 'throughput') {
-                            updateThroughput(data);
-                        }
-
-                        lastMessageTime = Date.now();
-                    } catch (error) {
-                        console.error('Error parsing message:', error);
-                    }
-                };
-
-                ws.onerror = (error) => {
-                    console.error('WebSocket error:', error);
-                    showError('WebSocket connection error');
-                    document.getElementById('wsStatus').textContent = 'Error';
-                };
-
-                ws.onclose = () => {
-                    console.log('Disconnected from base station');
-                    wsConnected = false;
-                    updatePipeline();
-                    document.getElementById('wsStatus').textContent = 'Disconnected';
-                    setTimeout(connect, 2000);
-                };
+                const res = await fetch('/health');
+                const health = await res.json();
+                if (!res.ok) throw new Error(health.error || 'health request failed');
+                hideError();
+                updateSystemHealth(health);
+                if (health.stats) {
+                    updateStats(health.stats);
+                }
+                lastMessageTime = (health.producer_ts || health.ts || Date.now() / 1000) * 1000;
+                document.getElementById('wsStatus').textContent = (health.overall || 'unknown').toUpperCase();
             } catch (error) {
-                console.error('Failed to connect:', error);
-                showError('Failed to connect to base station');
-                setTimeout(connect, 2000);
+                console.error('Health polling error:', error);
+                showError('Health endpoint error');
+                document.getElementById('wsStatus').textContent = 'ERROR';
+                setHealthRow('overall', 'error', 'Health endpoint unavailable');
             }
         }
 
@@ -761,6 +761,65 @@
             }
         }
 
+        function healthDotClass(status) {
+            if (status === 'ok') return 'health-ok';
+            if (status === 'warn') return 'health-warn';
+            if (status === 'error') return 'health-error';
+            return '';
+        }
+
+        function setHealthRow(id, status, detail) {
+            const dot = document.getElementById('healthDot_' + id);
+            const detailEl = document.getElementById('healthDetail_' + id);
+            if (dot) dot.className = 'health-dot ' + healthDotClass(status);
+            if (detailEl) detailEl.textContent = detail || status.toUpperCase();
+        }
+
+        function updateSystemHealth(health) {
+            const overallStatus = health.healthy ? 'ok' : (health.overall === 'error' ? 'error' : 'warn');
+            const overallText = health.healthy ? 'OK' : (health.stale ? 'STALE' : (health.overall === 'unknown' ? 'UNKNOWN' : 'DEGRADED'));
+            setHealthRow('overall', overallStatus, overallText);
+
+            const components = health.components || {};
+            const car = health.car || {};
+            const rows = ['udp_listener', 'redis', 'websocket_bridge', 'timescale', 'can_bus'];
+
+            rows.forEach((id) => {
+                const component = components[id] || { status: 'unknown' };
+                let detail = (component.status || 'unknown').toUpperCase();
+                if (id === 'udp_listener' && car.ip) {
+                    const seen = car.seen_s_ago == null ? 'never' : `${car.seen_s_ago.toFixed ? car.seen_s_ago.toFixed(1) : car.seen_s_ago}s ago`;
+                    detail = `Car ${car.ip} / seen ${seen}`;
+                } else if (id === 'websocket_bridge' && component.clients != null) {
+                    const external = component.external_clients ?? component.clients;
+                    const internal = component.internal_clients ?? 0;
+                    detail = `${external} external / ${internal} internal`;
+                } else if (id === 'timescale') {
+                    const rowsWritten = Number(component.rows || 0).toLocaleString();
+                    detail = component.state ? `${component.state} / rows ${rowsWritten}` : detail;
+                } else if (component.detail) {
+                    detail = component.detail;
+                }
+                setHealthRow(id, component.status || 'unknown', detail);
+            });
+
+            const connStatusEl = document.getElementById('connStatus');
+            if (connStatusEl) {
+                const carAlive = !!car.alivable;
+                const seen = car.seen_s_ago;
+                if (carAlive) {
+                    connStatusEl.textContent = 'CAR LINKED';
+                    connStatusEl.style.color = '#4ade80';
+                } else if (seen == null) {
+                    connStatusEl.textContent = 'NO CAR';
+                    connStatusEl.style.color = '#ef4444';
+                } else {
+                    connStatusEl.textContent = 'CAR STALE';
+                    connStatusEl.style.color = '#fbbf24';
+                }
+            }
+        }
+
         function updateStats(stats) {
             const { received, missing, recovered, messages, last_udp_time, status_buffer } = stats;
 
@@ -791,8 +850,6 @@
 
             if (stats.remote_ip) {
                 document.getElementById('remoteIp').textContent = stats.remote_ip;
-                const pipeLabel = document.getElementById('pipeLabelCar');
-                if (pipeLabel) pipeLabel.textContent = stats.remote_ip;
             }
 
             // Update remote IP banner color based on car alive status
@@ -852,8 +909,8 @@
                 : 0;
             document.getElementById('lossPercent').textContent = lossPercent + '%';
 
-            if (status_buffer) {
-                packetHistory = status_buffer.slice(-MOSAIC_CELLS);
+            if (stats.second_buffer) {
+                secondBuffer = stats.second_buffer;
             }
 
             updateTimescale(stats.timescale);
@@ -892,72 +949,46 @@
             }
         }
 
-        function updatePipeline() {
-            const now = Date.now();
-            const carActive  = !!(lastCarDataTime  && (now - lastCarDataTime  < CAR_TIMEOUT));
-            const redisActive = !!(lastMessageTime && (now - lastMessageTime  < STATS_TIMEOUT));
-
-            setNode('car',     carActive   ? 'active' : (wsConnected ? 'error' : ''));
-            setNode('telem',   wsConnected ? 'active' : 'error');
-            setNode('redis',   redisActive ? 'active' : (wsConnected ? 'error' : ''));
-
-            setSep('car',   carActive   ? 'active' : '');
-            setSep('telem', redisActive ? 'active' : '');
-            setSep('redis', redisActive ? 'active' : '');
-
-            const connStatusEl = document.getElementById('connStatus');
-            if (!wsConnected) {
-                connStatusEl.textContent = 'Offline';
-                connStatusEl.style.color = '#ef4444';
-            } else if (carActive) {
-                connStatusEl.textContent = 'Active';
-                connStatusEl.style.color = '#4ade80';
-            } else {
-                connStatusEl.textContent = 'Idle';
-                connStatusEl.style.color = '#fbbf24';
-            }
-        }
-
-        function setNode(id, state) {
-            const dot = document.getElementById('pipeDot_' + id);
-            if (!dot) return;
-            dot.className = 'pipe-dot' + (state ? ' ' + state : '');
-        }
-
-        function setSep(id, state) {
-            const sep = document.getElementById('pipeSep_' + id);
-            if (!sep) return;
-            sep.className = 'pipe-sep' + (state ? ' ' + state : '');
-        }
-
         function drawHealthMosaic() {
             mosaicCtx.clearRect(0, 0, mosaicCanvas.width, mosaicCanvas.height);
 
             const cols = MOSAIC_SECONDS;
-            const rows = UDP_BATCHES_PER_SECOND;
             const colGap = 2;
-            const rowGap = 1;
             const colWidth = mosaicCanvas.width / cols;
             const cellWidth = Math.max(1, colWidth - colGap);
-            const cellHeight = Math.max(1, (mosaicCanvas.height - rowGap * (rows - 1)) / rows);
-            const start = MOSAIC_CELLS - packetHistory.length;
+            const cellHeight = mosaicCanvas.height;
 
-            for (let cell = 0; cell < MOSAIC_CELLS; cell++) {
-                const status = packetHistory[cell - start];
-                const second = Math.floor(cell / rows);
-                const row = cell % rows;
-                const x = second * colWidth;
-                const y = row * (cellHeight + rowGap);
-                mosaicCtx.fillStyle = packetStatusColor(status);
-                mosaicCtx.fillRect(x + 1, y, cellWidth, cellHeight);
+            for (let col = 0; col < cols; col++) {
+                const status = secondBuffer[col] ?? -1;
+                const x = col * colWidth;
+                const pulsingNow = col === cols - 1 && Date.now() < healthMosaicPulseUntil;
+                const lastReceived = lastCarDataTime && (Date.now() - lastCarDataTime > CAR_TIMEOUT);
+                let color = packetStatusColor(status);
+                // If car is offline, dim all non-recovered cells
+                if (lastReceived && status !== 2) {
+                    color = '#1a1a1a';
+                }
+                // Pulsing "now" column
+                if (pulsingNow) {
+                    color = status === 1 ? '#374151' : status === 2 ? '#1e3a5f' : status === 0 ? '#4a3a00' : '#1a1a1a';
+                }
+                mosaicCtx.fillStyle = color;
+                mosaicCtx.fillRect(x + 1, 0, cellWidth, cellHeight);
             }
         }
 
         function packetStatusColor(status) {
-            if (status === 0) return '#fbbf24';
-            if (status === 1) return '#4ade80';
-            if (status === 2) return '#3b82f6';
-            return '#1a1a1a';
+            if (status === 0) return '#fbbf24'; // missed
+            if (status === 1) return '#4ade80'; // ok
+            if (status === 2) return '#3b82f6'; // recovered
+            return '#1a1a1a';                  // idle
+        }
+
+        function advanceHealthMosaic() {
+            // Backend now handles buffer content; just pulse the now column
+            healthMosaicPulseUntil = Date.now() + 180;
+            drawHealthMosaic();
+            setTimeout(drawHealthMosaic, 180);
         }
 
         function updateUI() {
@@ -982,20 +1013,16 @@
                 document.getElementById('lastMsg').textContent = 'Never';
             }
 
-            updatePipeline();
-
             document.getElementById('timestamp').textContent =
                 'Last updated: ' + new Date().toLocaleTimeString();
 
-            // Range warning — only when car is not alive and timeout expired
+            // Range warning styling only; the status text comes from /health infrastructure state.
             const connCard = document.querySelector('.card');
             const now = Date.now();
             const carAlive = lastCarDataTime && (now - lastCarDataTime <= CAR_TIMEOUT);
 
             if (!carAlive) {
                 connCard.classList.add('out-of-range');
-                document.getElementById('connStatus').textContent = 'OUT OF RANGE';
-                document.getElementById('connStatus').style.color = '#ef4444';
             } else {
                 connCard.classList.remove('out-of-range');
             }
@@ -1161,8 +1188,10 @@
 
         initDbcDropzone();
         loadRelayInfo();
-        connect();
+        pollHealth();
         setInterval(updateUI, 100);
+        setInterval(pollHealth, 2000);
+        setInterval(advanceHealthMosaic, 1000);
     </script>
 </body>
 

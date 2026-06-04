@@ -1,0 +1,11 @@
+name = "flight-recorder-relay"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+
+[[durable_objects.bindings]]
+name = "RELAY_ROOM"
+class_name = "TelemetryRelayRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TelemetryRelayRoom"]

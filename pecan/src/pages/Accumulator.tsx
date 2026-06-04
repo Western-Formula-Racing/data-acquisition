@@ -19,6 +19,7 @@ import { BatteryStatus } from '../components/accumulator/BatteryStatus';
 import DraggablePlot from '../components/DraggablePlot';
 import { type PlotSignal } from '../components/PlotManager';
 import { dataStore } from '../lib/DataStore';
+import { useChargingDashboard } from '../lib/useChargingDashboard';
 import TourGuide, { type TourStep } from '../components/TourGuide';
 import { HelpCircle } from 'lucide-react';
 
@@ -44,6 +45,9 @@ const TOUR_STEPS: TourStep[] = [
 ];
 
 export default function Accumulator() {
+  // Charging dashboard relay (internal/pecan-dev build + Kvaser source only).
+  useChargingDashboard();
+
   // Time window for charging curve (5 minutes default)
   const [chartTimeWindow, setChartTimeWindow] = useState(300000);
 

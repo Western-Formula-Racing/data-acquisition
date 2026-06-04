@@ -1,0 +1,100 @@
+name: Slackbot CI
+
+on:
+  push:
+    paths:
+      - 'server/installer/slackbot/**'
+      - '.github/workflows/slackbot-ci.yml'
+  pull_request:
+    paths:
+      - 'server/installer/slackbot/**'
+      - '.github/workflows/slackbot-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  lint-and-import:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server/installer/slackbot
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: server/installer/slackbot/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt ruff
+
+      - name: Lint
+        run: ruff check slack_bot.py
+
+      - name: Import smoke-test (catches missing def, bad module-level code)
+        env:
+          SLACK_APP_TOKEN: xapp-test-000000000000
+          SLACK_BOT_TOKEN: xoxb-test-000000000000
+        run: |
+          # slack_bot.py creates /app/logs at module import; the CI user can't
+          # write under / by default, so provision it before the smoke-test.
+          sudo mkdir -p /app/logs && sudo chmod 777 /app/logs
+          python - <<'EOF'
+          import importlib, sys, types
+
+          # Stub out slack_sdk and requests so the import doesn't need real network/tokens
+          for mod in ["slack_sdk", "slack_sdk.web", "slack_sdk.socket_mode",
+                      "slack_sdk.socket_mode.request", "slack_sdk.socket_mode.response"]:
+              sys.modules.setdefault(mod, types.ModuleType(mod))
+
+          # Minimal stubs the module actually uses at import time
+          web_mod = sys.modules["slack_sdk.web"]
+          web_mod.WebClient = lambda **_: None  # type: ignore[attr-defined]
+
+          sm_mod = sys.modules["slack_sdk.socket_mode"]
+          class _FakeSMC:
+              def __init__(self, **_): pass
+              socket_mode_request_listeners = []
+          sm_mod.SocketModeClient = _FakeSMC  # type: ignore[attr-defined]
+
+          # slack_bot imports SocketModeRequest/Response from these submodules at
+          # module load; the stubs need the attributes or the import raises.
+          sys.modules["slack_sdk.socket_mode.request"].SocketModeRequest = type(  # type: ignore[attr-defined]
+              "SocketModeRequest", (), {})
+          sys.modules["slack_sdk.socket_mode.response"].SocketModeResponse = type(  # type: ignore[attr-defined]
+              "SocketModeResponse", (), {})
+
+          import requests as _req
+          _orig_get = _req.get
+          def _no_net(*a, **kw): raise RuntimeError("network disabled in CI")
+          _req.get = _no_net  # type: ignore[attr-defined]
+
+          bot = importlib.import_module("slack_bot")
+
+          # Verify all command handlers are callable
+          required = ["handle_help", "handle_wx", "handle_agent", "handle_approve",
+                      "handle_aistats", "handle_testimage", "process_events"]
+          missing = [fn for fn in required if not callable(getattr(bot, fn, None))]
+          if missing:
+              print(f"FAIL: missing callables: {missing}")
+              sys.exit(1)
+          print("OK: all command handlers are defined and callable")
+          EOF
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: server/installer/slackbot
+          push: false
+          tags: lappy-slackbot:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

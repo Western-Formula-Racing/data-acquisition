@@ -61,8 +61,21 @@ def healthcheck() -> dict:
     ok, detail = service.check_db_connectivity()
     return {
         "status": "ok" if ok else "degraded",
+        "healthy": ok,
         "timescaledb": ok,
         "timescaledb_detail": detail,
+    }
+
+
+@app.get("/api/timescale-health")
+def timescale_health() -> dict:
+    """TimescaleDB health check including data freshness lag for the newest season table."""
+    ok, detail, lag = service.check_db_lag()
+    return {
+        "status": "up" if ok else "down",
+        "timescaledb": ok,
+        "timescaledb_detail": detail,
+        "lag_seconds": lag,
     }
 
 

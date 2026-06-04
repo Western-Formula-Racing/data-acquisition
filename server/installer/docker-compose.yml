@@ -89,6 +89,12 @@ services:
       SLACK_DEFAULT_CHANNEL: ${SLACK_DEFAULT_CHANNEL:-C0123456789}
       ENABLE_SLACK: ${ENABLE_SLACK:-false}
       CODE_GENERATOR_URL: "http://code-generator:3030"
+      # Charging dashboard receiver (Pecan accumulator → Slack, behind CF Zero Trust)
+      CHARGE_DASHBOARD_PORT: "9099"
+      CHARGE_RELAY_TOKEN: ${CHARGE_RELAY_TOKEN:-}
+    ports:
+      # Expose only behind Cloudflare Zero Trust / tunnel — do not publish publicly.
+      - "${CHARGE_DASHBOARD_PORT:-9099}:9099"
     volumes:
       - ./slackbot:/app
     working_dir: /app
@@ -261,6 +267,12 @@ services:
     build:
       context: ./sandbox
       dockerfile: Dockerfile.sandbox
+      # slicks lives outside the build context (sibling repo at
+      # /home/ubuntu/projects/slicks), so we pass it in as an additional
+      # build context. The Dockerfile uses `COPY --from=slicks ...` to
+      # pull files from it. Override SLICKS_HOST_PATH to relocate.
+      additional_contexts:
+        - slicks=${SLICKS_HOST_PATH:-/home/ubuntu/projects/slicks}
     container_name: sandbox
     restart: unless-stopped
     environment:
@@ -268,8 +280,18 @@ services:
       SANDBOX_TIMEOUT: 120
       SANDBOX_MAX_FILE_MB: 20
       SANDBOX_MAX_FILES: 20
-      # TimescaleDB connection for user scripts (follow-up: add psycopg2 boilerplate)
+      # TimescaleDB connection for user scripts (consumed by `slicks`).
+      # slicks v0.3.0 reads TIMESCALE_TABLE (with TIMESCALE_SEASON fallback);
+      # we also keep POSTGRES_TABLE for backward compat with older code paths.
       POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
+      TIMESCALE_TABLE: "${TIMESCALE_TABLE:-${POSTGRES_TABLE:-wfr26}}"
+      TIMESCALE_SEASON: "${TIMESCALE_SEASON:-${POSTGRES_TABLE:-wfr26}}"
+      POSTGRES_TABLE: "${POSTGRES_TABLE:-wfr26}"
+    volumes:
+      # slicks source (TimescaleDB-migration branch). Editable-installed at
+      # image build time; the bind mount below lets live source edits show
+      # up on the next container recreate without an image rebuild.
+      - ${SLICKS_HOST_PATH:-/home/ubuntu/projects/slicks}:/slicks_src:rw
     depends_on:
       timescaledb:
         condition: service_healthy
@@ -314,7 +336,7 @@ services:
     environment:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
       ANTHROPIC_BASE_URL: "${ANTHROPIC_BASE_URL:-https://api.minimaxi.com/anthropic}"
-      ANTHROPIC_MODEL: "${ANTHROPIC_MODEL:-MiniMax-M2.7}"
+      ANTHROPIC_MODEL: "${ANTHROPIC_MODEL:-MiniMax-M3}"
       SANDBOX_URL: "http://sandbox:8080"
       MAX_RETRIES: "${MAX_RETRIES:-2}"
       CODE_GEN_PORT: 3030
