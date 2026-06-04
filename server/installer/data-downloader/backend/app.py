@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from backend.config import get_settings
+from backend.dbc_utils import group_sensors_by_message, load_dbc_db, refresh_dbc
 from backend.services import DataDownloaderService
 
 
@@ -122,6 +123,36 @@ def list_runs(season: str | None = None) -> dict:
 @app.get("/api/sensors")
 def list_sensors(season: str | None = None) -> dict:
     return service.get_sensors(season=season)
+
+
+@app.get("/api/sensors/grouped")
+def list_sensors_grouped(season: str | None = None) -> dict:
+    """
+    Return sensors grouped by their DBC CAN message and transmitter node.
+
+    Each entry in ``messages`` contains only signals that actually have data in
+    TimescaleDB (left-join: DB is truth, DBC is the categorisation guide).
+    Sensors with no matching DBC entry appear in ``ungrouped``.
+
+    Falls back gracefully to ``{"messages": [], "ungrouped": all_sensors}``
+    when no DBC is configured.
+    """
+    sensor_payload = service.get_sensors(season=season)
+    sensor_names: list[str] = sensor_payload.get("sensors", [])
+    db, source = load_dbc_db(settings)
+    grouped = group_sensors_by_message(sensor_names, db)
+    return {
+        "updated_at": sensor_payload.get("updated_at"),
+        "dbc_source": source,
+        **grouped,
+    }
+
+
+@app.post("/api/dbc/refresh")
+def dbc_refresh() -> dict:
+    """Force-reload the DBC from GitHub (or local file). Returns the new source."""
+    source = refresh_dbc(settings)
+    return {"status": "ok", "dbc_source": source}
 
 
 @app.get("/api/scanner-status")

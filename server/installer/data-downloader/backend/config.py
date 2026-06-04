@@ -110,6 +110,25 @@ class Settings(BaseModel):
         default_factory=lambda: _parse_origins(os.getenv("ALLOWED_ORIGINS", "*"))
     )
 
+    # DBC source — GitHub takes priority over local file
+    github_dbc_token: str = Field(
+        default_factory=lambda: os.getenv("GITHUB_DBC_TOKEN", "")
+    )
+    github_dbc_repo: str = Field(
+        default_factory=lambda: os.getenv("GITHUB_DBC_REPO", "Western-Formula-Racing/DBC")
+    )
+    github_dbc_branch: str = Field(
+        default_factory=lambda: os.getenv("GITHUB_DBC_BRANCH", "main")
+    )
+    # Specific file path within the repo, e.g. "WFR26.dbc"
+    github_dbc_path: str = Field(
+        default_factory=lambda: os.getenv("GITHUB_DBC_PATH", "")
+    )
+    # Fallback: local DBC file path
+    dbc_file_path: str | None = Field(
+        default_factory=lambda: os.getenv("DBC_FILE_PATH") or None
+    )
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
