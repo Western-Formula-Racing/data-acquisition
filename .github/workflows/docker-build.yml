@@ -93,6 +93,20 @@ jobs:
       run: |
         cd server/installer
         cp .env.example .env
+        mkdir -p .ci-slicks/src/slicks
+        cat > .ci-slicks/pyproject.toml <<'EOF'
+        [project]
+        name = "slicks"
+        version = "0.0.0"
+        [build-system]
+        requires = ["setuptools>=68"]
+        build-backend = "setuptools.build_meta"
+        [tool.setuptools.packages.find]
+        where = ["src"]
+        EOF
+        touch .ci-slicks/README.md
+        echo '__version__ = "0.0.0"' > .ci-slicks/src/slicks/__init__.py
+        echo "SLICKS_HOST_PATH=${PWD}/.ci-slicks" >> .env
 
     - name: Pull pre-built images
       run: |
