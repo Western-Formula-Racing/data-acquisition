@@ -19,6 +19,7 @@ services:
       - UDP_PORT=5005
       - TCP_PORT=5006
       - REDIS_URL=redis://base-redis:6379/0
+      - POSTGRES_DSN=postgresql://wfr:password@timescaledb:5432/wfr
       - TIMESCALE_TABLE=wfr26
       - ENABLE_TIMESCALE_LOGGING=true
     depends_on:

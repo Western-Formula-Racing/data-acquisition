@@ -66,8 +66,10 @@ async def _publish_client_count() -> None:
     """Publish the current WebSocket client count for the HTTP health snapshot."""
     try:
         r = redis.from_url(REDIS_URL)
-        await r.set(REDIS_WS_CLIENTS_KEY, json.dumps(_client_count_snapshot()), ex=10)
-        await r.aclose()
+        try:
+            await r.set(REDIS_WS_CLIENTS_KEY, json.dumps(_client_count_snapshot()), ex=10)
+        finally:
+            await r.aclose()
     except Exception as e:
         logger.debug("Could not publish WebSocket client count: %s", e)
 

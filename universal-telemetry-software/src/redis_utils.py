@@ -19,9 +19,9 @@ def get_sync_client(url: str, retries: int = 5, backoff: float = 1.0):
 
     Args:
         url: Redis connection URL.
-        retries: Maximum connection attempts before giving up (default 10).
+        retries: Maximum connection attempts before giving up (default 5).
         backoff: Seconds to wait between retries, multiplied by 1.5 each attempt.
-                 With default values: ~25s total (1+1.5+2.25+3.375+...).
+                 With default values: ~8s total sleep (1+1.5+2.25+3.375).
     """
     client = redis.from_url(url)
     attempt = 0

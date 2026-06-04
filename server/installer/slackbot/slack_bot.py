@@ -847,11 +847,16 @@ if __name__ == "__main__":
     # behind Cloudflare Zero Trust). Posts one self-updating Slack message per session.
     try:
         from charge_dashboard import ChargeDashboard, start_http_server
+        # Require a shared token: the receiver port is published on the host and
+        # accepting unauthenticated POSTs would let anyone reach it post to Slack.
+        token = (os.environ.get("CHARGE_RELAY_TOKEN") or "").strip()
+        if not token:
+            raise RuntimeError("CHARGE_RELAY_TOKEN not set — refusing to start an unauthenticated receiver")
         _charge_dash = ChargeDashboard(web_client, DEFAULT_CHANNEL)
         start_http_server(
             _charge_dash,
             port=int(os.environ.get("CHARGE_DASHBOARD_PORT", "9099")),
-            token=os.environ.get("CHARGE_RELAY_TOKEN") or None,
+            token=token,
         )
     except Exception as e:
         print(f"⚠️ Charge dashboard not started: {e}")

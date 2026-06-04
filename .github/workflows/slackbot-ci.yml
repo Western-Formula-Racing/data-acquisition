@@ -38,6 +38,9 @@ jobs:
           SLACK_APP_TOKEN: xapp-test-000000000000
           SLACK_BOT_TOKEN: xoxb-test-000000000000
         run: |
+          # slack_bot.py creates /app/logs at module import; the CI user can't
+          # write under / by default, so provision it before the smoke-test.
+          sudo mkdir -p /app/logs && sudo chmod 777 /app/logs
           python - <<'EOF'
           import importlib, sys, types
 
@@ -55,6 +58,13 @@ jobs:
               def __init__(self, **_): pass
               socket_mode_request_listeners = []
           sm_mod.SocketModeClient = _FakeSMC  # type: ignore[attr-defined]
+
+          # slack_bot imports SocketModeRequest/Response from these submodules at
+          # module load; the stubs need the attributes or the import raises.
+          sys.modules["slack_sdk.socket_mode.request"].SocketModeRequest = type(  # type: ignore[attr-defined]
+              "SocketModeRequest", (), {})
+          sys.modules["slack_sdk.socket_mode.response"].SocketModeResponse = type(  # type: ignore[attr-defined]
+              "SocketModeResponse", (), {})
 
           import requests as _req
           _orig_get = _req.get
