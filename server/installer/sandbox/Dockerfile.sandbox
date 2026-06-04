@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -29,10 +30,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv (replaces pip for dependency management)
+RUN pip install --no-cache-dir uv
+
+# Install runtime deps via uv. slicks itself is installed editable below.
 COPY requirements-docker.txt /tmp/requirements-docker.txt
-RUN pip install --upgrade pip \
-    && pip install --no-cache-dir -r /tmp/requirements-docker.txt \
-    && rm -rf /root/.cache/pip
+RUN uv pip install --system --no-cache -r /tmp/requirements-docker.txt \
+    && rm -rf /root/.cache/uv
+
+# Install slicks editable. The `slicks` build context is passed in by
+# docker-compose.yml's `additional_contexts:` (lives outside this repo's
+# build context). At runtime, the docker-compose `volumes:` entry
+# bind-mounts the same host path over /slicks_src so live source edits
+# show up on the next container recreate (no image rebuild needed for
+# code-only changes; pyproject changes still need a rebuild).
+COPY --from=slicks pyproject.toml /slicks_src/pyproject.toml
+COPY --from=slicks README.md /slicks_src/README.md
+COPY --from=slicks src /slicks_src/src
+RUN uv pip install --system --no-cache -e /slicks_src
 
 # Tell Kaleido where Chromium lives
 ENV CHROME_PATH=/usr/bin/chromium
@@ -42,10 +57,11 @@ RUN python3 - <<EOF
 import plotly.express as px
 fig = px.line(x=[1,2,3], y=[1,4,9])
 fig.write_image("test.png")
-print("PNG export OK")
+import slicks
+print("slicks OK from", slicks.__file__)
 EOF
 
-COPY . /app
+COPY . /app/
 
 EXPOSE 8080
 CMD ["python3", "sandbox_server.py"]

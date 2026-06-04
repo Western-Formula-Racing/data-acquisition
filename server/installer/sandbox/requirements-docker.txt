@@ -1,10 +1,13 @@
 # Docker container requirements for sandbox execution environment
 # These are the dependencies needed inside the Docker container
+#
+# NOTE: `slicks` is NOT pinned here — it is installed editable from
+# /slicks (a host bind mount) in Dockerfile.sandbox so source edits
+# land in the running container without a pip rebuild. The published
+# 0.2.x line on PyPI is the InfluxDB backend, which is not what we want.
 
-# WFR's telemetry analysis stack (pandas, matplotlib)
-slicks>=0.2.0
-
-# SQL access for TimescaleDB (explicitly listed — slicks dep is indirect)
+# SQL access for TimescaleDB (slicks depends on these; listing explicitly
+# in case slicks changes its extras and to keep the layer order stable)
 sqlalchemy
 psycopg2-binary
 

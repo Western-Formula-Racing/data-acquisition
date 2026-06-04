@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # ── Config ─────────────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 ANTHROPIC_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic")
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "MiniMax-M2.7")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "MiniMax-M3")
 SANDBOX_URL = os.getenv("SANDBOX_URL", "http://sandbox:8080")
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "2"))
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))

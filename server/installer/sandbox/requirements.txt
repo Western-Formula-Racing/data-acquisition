@@ -11,6 +11,7 @@ chromadb
 fastembed
 diskcache
 requests
+psycopg2-binary
 duckdb
 matplotlib
 pandas
