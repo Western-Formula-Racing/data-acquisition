@@ -686,6 +686,9 @@ jobs:
         labels: ${{ steps.meta-pecan.outputs.labels }}
         build-args: |
           VITE_WS_PRESETS=[{"label":"Radio Link","url":"ws://10.71.1.20:9080"}]
+          VITE_INTERNAL=${{ vars.PECAN_VITE_INTERNAL || '' }}
+          VITE_CHARGE_RELAY_URL=${{ vars.PECAN_CHARGE_RELAY_URL || '' }}
+          VITE_CHARGE_RELAY_TOKEN=${{ secrets.PECAN_CHARGE_RELAY_TOKEN || '' }}
         cache-from: type=gha
         cache-to: type=gha,mode=max,ignore-error=true
 

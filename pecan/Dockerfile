@@ -7,6 +7,14 @@ ARG VITE_WS_URL
 ENV VITE_WS_URL=$VITE_WS_URL
 ARG VITE_WS_PRESETS
 ENV VITE_WS_PRESETS=$VITE_WS_PRESETS
+# Charging dashboard relay (Pecan internal build → slackbot HTTP receiver).
+# Inlined at build time; leave unset for public/test builds to disable the dashboard.
+ARG VITE_INTERNAL
+ENV VITE_INTERNAL=$VITE_INTERNAL
+ARG VITE_CHARGE_RELAY_URL
+ENV VITE_CHARGE_RELAY_URL=$VITE_CHARGE_RELAY_URL
+ARG VITE_CHARGE_RELAY_TOKEN
+ENV VITE_CHARGE_RELAY_TOKEN=$VITE_CHARGE_RELAY_TOKEN
 
 # Copy package files
 COPY package*.json ./
