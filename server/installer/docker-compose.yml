@@ -171,7 +171,7 @@ services:
     environment:
       POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
       SEASONS: "${SEASONS:-}"
-      # DBC grouping — same token as file-uploader; newest .dbc auto-selected
+      # DBC grouping — same token as file-uploader; most recently committed .dbc auto-selected
       GITHUB_DBC_TOKEN: "${GITHUB_DBC_TOKEN:-}"
       GITHUB_DBC_REPO: "${GITHUB_DBC_REPO:-Western-Formula-Racing/DBC}"
       GITHUB_DBC_BRANCH: "${GITHUB_DBC_BRANCH:-main}"

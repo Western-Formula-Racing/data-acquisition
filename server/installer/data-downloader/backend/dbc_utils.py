@@ -39,17 +39,29 @@ def _github_headers(token: str) -> dict:
 
 
 def _list_github_dbc_paths(token: str, repo: str, branch: str) -> list[str]:
-    """Return all .dbc paths in the repo, sorted alphabetically (newest last)."""
+    """Return all .dbc blob paths in the repo."""
     import requests
     url = f"https://api.github.com/repos/{repo}/git/trees/{branch}?recursive=1"
     r = requests.get(url, headers=_github_headers(token), timeout=20)
     r.raise_for_status()
     tree = r.json().get("tree", [])
-    paths = sorted(
+    return [
         item["path"] for item in tree
         if item.get("type") == "blob" and item["path"].lower().endswith(".dbc")
-    )
-    return paths
+    ]
+
+
+def _last_commit_date(token: str, repo: str, branch: str, path: str) -> str:
+    """Return the ISO-8601 committer date of the most recent commit touching path."""
+    import requests
+    enc = quote(path, safe="")
+    url = f"https://api.github.com/repos/{repo}/commits?path={enc}&sha={branch}&per_page=1"
+    r = requests.get(url, headers=_github_headers(token), timeout=20)
+    r.raise_for_status()
+    commits = r.json()
+    if not commits:
+        return ""
+    return commits[0].get("commit", {}).get("committer", {}).get("date", "")
 
 
 def _fetch_github_dbc_bytes(token: str, repo: str, branch: str, path: str) -> bytes:
@@ -66,16 +78,32 @@ def _resolve_github_dbc_path(token: str, repo: str, branch: str, explicit_path: 
     """
     Return the DBC path to download.
     - If explicit_path is set, use it directly.
-    - Otherwise list all .dbc files in the repo and return the alphabetically
-      last one (WFR25.dbc < WFR26.dbc, so this reliably picks the newest season).
+    - Otherwise find all .dbc files in the repo and return the one most
+      recently modified (by last commit date), using one commits API call
+      per file.
     """
     if explicit_path:
         return explicit_path
     paths = _list_github_dbc_paths(token, repo, branch)
     if not paths:
         raise ValueError(f"No .dbc files found in {repo}@{branch}")
-    chosen = paths[-1]
-    logger.info("Auto-selected newest DBC from GitHub: %s (found %d total)", chosen, len(paths))
+    if len(paths) == 1:
+        return paths[0]
+    # Fetch last-commit date for each and pick the most recent
+    dated = []
+    for p in paths:
+        try:
+            date = _last_commit_date(token, repo, branch, p)
+        except Exception:
+            date = ""
+        dated.append((date, p))
+        logger.debug("DBC candidate: %s  last commit: %s", p, date or "unknown")
+    dated.sort(key=lambda x: x[0], reverse=True)
+    chosen = dated[0][1]
+    logger.info(
+        "Auto-selected most recently modified DBC: %s (last commit: %s)",
+        chosen, dated[0][0] or "unknown",
+    )
     return chosen
 
 
