@@ -6,8 +6,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download the FastEmbed ONNX model so first startup is instant
-RUN python -c "from langchain_community.embeddings import FastEmbedEmbeddings; FastEmbedEmbeddings()"
+# Best-effort FastEmbed ONNX prefetch. Do not fail image builds when external
+# model hosts rate-limit CI; the service can download the model at runtime.
+RUN python -c "from langchain_community.embeddings import FastEmbedEmbeddings; FastEmbedEmbeddings()" \
+    || echo "FastEmbed model prefetch failed; continuing build"
 
 # Copy application code
 COPY code_generator.py .
