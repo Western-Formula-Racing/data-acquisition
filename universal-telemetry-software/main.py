@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import uuid
 import multiprocessing
@@ -284,11 +285,26 @@ if __name__ == "__main__":
     try:
         while True:
             time.sleep(1)
-            # Monitor children
-            for p in processes:
-                if not p.is_alive():
-                    logger.error(f"Process {p.name} died!")
-                    # Optional: Restart logic
+            # Monitor children. A dead child means the pipeline is degraded —
+            # e.g. the telemetry or WebSocket process crashed. The parent stays
+            # alive in this loop, so neither Docker's `restart: unless-stopped`
+            # nor systemd's `Restart=always` ever sees the failure and the stack
+            # silently keeps running half-dead. Fail fast instead: tear down the
+            # surviving children and exit non-zero so the supervisor restarts the
+            # whole stack cleanly.
+            dead = [p for p in processes if not p.is_alive()]
+            if dead:
+                for p in dead:
+                    logger.error(
+                        f"Process {p.name} died (exitcode={p.exitcode}). "
+                        "Shutting down for supervisor restart."
+                    )
+                for p in processes:
+                    if p.is_alive():
+                        p.terminate()
+                for p in processes:
+                    p.join(timeout=5)
+                sys.exit(1)
     except KeyboardInterrupt:
         logger.info("Shutting down...")
         for p in processes:
