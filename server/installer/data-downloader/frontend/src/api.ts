@@ -4,6 +4,7 @@ import {
   ScannerStatus,
   Season,
   SensorDataResponse,
+  SensorsGroupedResponse,
   SensorsResponse
 } from "./types";
 
@@ -46,6 +47,15 @@ export function fetchRuns(season?: string): Promise<RunsResponse> {
 export function fetchSensors(season?: string): Promise<SensorsResponse> {
   const query = season ? `?season=${encodeURIComponent(season)}` : "";
   return request(`/api/sensors${query}`);
+}
+
+export function fetchSensorsGrouped(season?: string): Promise<SensorsGroupedResponse> {
+  const query = season ? `?season=${encodeURIComponent(season)}` : "";
+  return request(`/api/sensors/grouped${query}`);
+}
+
+export function refreshDbc(): Promise<{ status: string; dbc_source: string }> {
+  return request("/api/dbc/refresh", { method: "POST" });
 }
 
 export function fetchScannerStatus(): Promise<ScannerStatus> {

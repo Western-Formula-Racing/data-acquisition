@@ -4,7 +4,7 @@ import Papa from "papaparse";
 import { Download } from "lucide-react";
 import Plot from "react-plotly.js";
 
-import { RunRecord, SensorDataPoint, SensorDataResponse } from "../types";
+import { RunRecord, SensorDataPoint, SensorDataResponse, SensorsGroupedResponse } from "../types";
 import { querySensorData } from "../api";
 
 interface ExternalSelection {
@@ -18,6 +18,7 @@ interface ExternalSelection {
 interface Props {
   runs: RunRecord[];
   sensors: string[];
+  sensorsGrouped?: SensorsGroupedResponse;
   season?: string;
   externalSelection?: ExternalSelection;
   theme?: "light" | "dark";
@@ -62,7 +63,7 @@ const toUtcTooltip = (value: string) => {
   return dt.isValid ? `${dt.toFormat("yyyy-LL-dd HH:mm:ss")} UTC` : value;
 };
 
-export function DataDownload({ runs, sensors, season, externalSelection, theme = "light" }: Props) {
+export function DataDownload({ runs, sensors, sensorsGrouped, season, externalSelection, theme = "light" }: Props) {
   const [selectedRunKey, setSelectedRunKey] = useState<string>("");
   const [selectedRunTimezone, setSelectedRunTimezone] = useState<string | null>(null);
   const [selectedSensor, setSelectedSensor] = useState<string>("");
@@ -370,7 +371,24 @@ export function DataDownload({ runs, sensors, season, externalSelection, theme =
               value={selectedSensor}
               onChange={(event) => setSelectedSensor(event.target.value)}
             >
-              {sensors.length === 0 ? (
+              {sensorsGrouped && sensorsGrouped.messages.length > 0 ? (
+                <>
+                  {sensorsGrouped.messages.map((msg) => (
+                    <optgroup key={msg.name} label={`${msg.name} — ${msg.can_id_hex} (${msg.subsystem})`}>
+                      {msg.signals.map((signal) => (
+                        <option key={signal} value={signal}>{signal}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  {sensorsGrouped.ungrouped.length > 0 && (
+                    <optgroup label="Other">
+                      {sensorsGrouped.ungrouped.map((signal) => (
+                        <option key={signal} value={signal}>{signal}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </>
+              ) : sensors.length === 0 ? (
                 <option value="">No sensors available</option>
               ) : (
                 sensors.map((sensor) => (

@@ -453,3 +453,111 @@ body {
   font-weight: 600;
   box-shadow: 0 6px 20px -12px rgba(148, 107, 33, 0.6);
 }
+
+/* ── Grouped sensor browser ───────────────────────────────────────────────── */
+
+.message-groups-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  max-height: 440px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.message-group {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.message-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: none;
+  border-left: 3px solid var(--border-strong);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  transition: background 0.12s ease;
+  appearance: none;
+}
+
+.message-group-header:hover {
+  background: var(--row-hover) !important;
+}
+
+.message-group-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.message-group-chevron {
+  font-size: 0.7rem;
+  color: var(--text-subtle);
+  flex-shrink: 0;
+  display: inline-block;
+  transition: transform 0.15s ease;
+  line-height: 1;
+}
+
+.message-group-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subsystem-badge {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.can-id-badge {
+  flex-shrink: 0;
+  font-family: ui-monospace, "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.76rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--surface-2);
+}
+
+.message-group-count {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--text-subtle);
+  min-width: 1.4rem;
+  text-align: right;
+}
+
+.message-group-body {
+  padding: 0.45rem 0.6rem 0.55rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+/* Compact chip grid inside a group — no max-height (container scrolls instead) */
+.sensor-grid--compact {
+  max-height: none;
+  margin-top: 0;
+}

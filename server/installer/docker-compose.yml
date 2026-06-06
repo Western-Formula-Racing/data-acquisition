@@ -171,6 +171,14 @@ services:
     environment:
       POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
       SEASONS: "${SEASONS:-}"
+      # DBC grouping — same token as file-uploader; most recently committed .dbc auto-selected
+      GITHUB_DBC_TOKEN: "${GITHUB_DBC_TOKEN:-}"
+      GITHUB_DBC_REPO: "${GITHUB_DBC_REPO:-Western-Formula-Racing/DBC}"
+      GITHUB_DBC_BRANCH: "${GITHUB_DBC_BRANCH:-main}"
+      # Optional: pin a specific file (e.g. WFR26.dbc); leave unset to auto-pick newest
+      GITHUB_DBC_PATH: "${GITHUB_DBC_PATH:-}"
+      # Fallback: local DBC file (mounted below or already on disk)
+      DBC_FILE_PATH: "${DBC_FILE_PATH:-}"
     ports:
       - "8000:8000"
     volumes:

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchRuns, fetchSensors, fetchScannerStatus, triggerScan, updateNote, fetchSeasons } from "./api";
+import { fetchRuns, fetchSensors, fetchSensorsGrouped, fetchScannerStatus, triggerScan, updateNote, fetchSeasons } from "./api";
 import { Moon, Sun } from "lucide-react";
-import { RunRecord, RunsResponse, ScannerStatus, SensorsResponse, Season } from "./types";
+import { RunRecord, RunsResponse, ScannerStatus, SensorsGroupedResponse, SensorsResponse, Season } from "./types";
 import { RunTable } from "./components/RunTable";
 import { DataDownload } from "./components/data-download";
+import { SensorGroupedGrid } from "./components/SensorGroupedGrid";
 
 type ScanState = "idle" | "running" | "success" | "error";
 type Theme = "light" | "dark";
@@ -28,6 +29,7 @@ export default function App() {
   const [selectedSeason, setSelectedSeason] = useState<string>(""); // season name
   const [runs, setRuns] = useState<RunsResponse | null>(null);
   const [sensors, setSensors] = useState<SensorsResponse | null>(null);
+  const [sensorsGrouped, setSensorsGrouped] = useState<SensorsGroupedResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
@@ -61,12 +63,14 @@ export default function App() {
       // If we still don't have a season (e.g. no seasons configured), fetch with default (undefined)
       const seasonArg = currentSeason || undefined;
 
-      const [runsData, sensorsData] = await Promise.all([
+      const [runsData, sensorsData, groupedData] = await Promise.all([
         fetchRuns(seasonArg),
-        fetchSensors(seasonArg)
+        fetchSensors(seasonArg),
+        fetchSensorsGrouped(seasonArg).catch(() => null),
       ]);
       setRuns(runsData);
       setSensors(sensorsData);
+      setSensorsGrouped(groupedData);
       setError(null);
     } catch (err) {
       console.error(err);
@@ -359,10 +363,23 @@ export default function App() {
       </section>
 
       <section className="card" ref={sensorsSectionRef}>
-        <h2>Unique Sensors</h2>
-        <p className="subtitle">Last refresh: {lastSensorRefresh}</p>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem", flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0 }}>Unique Sensors</h2>
+          {sensorsGrouped?.dbc_source && sensorsGrouped.dbc_source !== "none" && (
+            <span className="tag" style={{ fontSize: "0.72rem" }}>
+              DBC: {sensorsGrouped.dbc_source}
+            </span>
+          )}
+        </div>
+        <p className="subtitle" style={{ marginTop: "0.35rem" }}>Last refresh: {lastSensorRefresh}</p>
         {loading && !sensors ? (
           <p className="subtitle">Loading sensors...</p>
+        ) : sensorsGrouped && sensorsGrouped.messages.length > 0 ? (
+          <SensorGroupedGrid
+            grouped={sensorsGrouped}
+            theme={theme}
+            onPick={handleSensorPick}
+          />
         ) : (
           <div className="sensor-grid">
             {sensorsPreview.length === 0 && <p className="subtitle">No sensors captured.</p>}
@@ -384,6 +401,7 @@ export default function App() {
         <DataDownload
           runs={runs?.runs ?? []}
           sensors={sensorsPreview}
+          sensorsGrouped={sensorsGrouped ?? undefined}
           season={selectedSeason}
           externalSelection={downloaderSelection ?? undefined}
           theme={theme}

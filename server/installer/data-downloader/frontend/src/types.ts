@@ -52,3 +52,18 @@ export interface Season {
   database: string;
   color?: string;
 }
+
+export interface MessageGroup {
+  name: string;
+  subsystem: string;
+  can_id: number;
+  can_id_hex: string;
+  signals: string[];
+}
+
+export interface SensorsGroupedResponse {
+  updated_at: string | null;
+  dbc_source: string;
+  messages: MessageGroup[];
+  ungrouped: string[];
+}
