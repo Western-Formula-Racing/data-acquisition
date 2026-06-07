@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import uuid
 import multiprocessing
@@ -17,6 +18,16 @@ import asyncio
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("Main")
+
+# Processes that carry the live telemetry feed. If one of these dies the stack
+# is genuinely broken, so we tear everything down and exit non-zero to let the
+# supervisor (Docker `restart:`/systemd `Restart=always`) restart cleanly.
+# Auxiliary processes (TimescaleBridge, TX bridge, status server, link
+# diagnostics, video, audio, LEDs, PoE) are best-effort: if e.g. the optional
+# Timescale logging DB is unreachable, that must NOT take the live feed down —
+# restarting the whole stack on its death would only crash-loop the feed we are
+# trying to keep alive. Those are logged loudly but tolerated.
+CRITICAL_PROCESSES = {"Telemetry", "CarServices", "WebSocket"}
 
 
 def _timescale_dsn_reachable() -> bool:
@@ -284,11 +295,41 @@ if __name__ == "__main__":
     try:
         while True:
             time.sleep(1)
-            # Monitor children
-            for p in processes:
-                if not p.is_alive():
-                    logger.error(f"Process {p.name} died!")
-                    # Optional: Restart logic
+            # Monitor children. A dead child means the pipeline is degraded. The
+            # parent stays alive in this loop, so neither Docker's
+            # `restart: unless-stopped` nor systemd's `Restart=always` ever sees
+            # the failure and the stack silently keeps running half-dead.
+            #
+            # For a critical process (the live-feed path — telemetry / WS bridge)
+            # fail fast: tear down the surviving children and exit non-zero so the
+            # supervisor restarts the whole stack cleanly. For an auxiliary
+            # process, log loudly and stop tracking it, but keep the live feed
+            # running — nuking the stack because, say, the optional Timescale DB
+            # is down would only crash-loop the very feed we are protecting.
+            dead = [p for p in processes if not p.is_alive()]
+            if dead:
+                dead_critical = [p for p in dead if p.name in CRITICAL_PROCESSES]
+                for p in dead:
+                    level = logger.error if p in dead_critical else logger.warning
+                    fate = (
+                        "Shutting down for supervisor restart."
+                        if p in dead_critical
+                        else "Auxiliary process — live feed kept running."
+                    )
+                    level(f"Process {p.name} died (exitcode={p.exitcode}). {fate}")
+
+                if dead_critical:
+                    for p in processes:
+                        if p.is_alive():
+                            p.terminate()
+                    for p in processes:
+                        p.join(timeout=5)
+                    sys.exit(1)
+
+                # Stop tracking dead auxiliary processes so we don't re-log them
+                # every second.
+                for p in dead:
+                    processes.remove(p)
     except KeyboardInterrupt:
         logger.info("Shutting down...")
         for p in processes:

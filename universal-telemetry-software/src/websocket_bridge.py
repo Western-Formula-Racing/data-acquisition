@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import redis.asyncio as redis
 import websockets
 import os
@@ -277,31 +278,57 @@ async def direct_queue_listener(queue: asyncio.Queue):
 
 
 async def redis_listener():
-    """Listens to Redis and broadcasts to all WS clients."""
-    try:
-        r = redis.from_url(REDIS_URL)
-        pubsub = r.pubsub()
-        await pubsub.subscribe(REDIS_CHANNEL, REDIS_STATS_CHANNEL, REDIS_DIAG_CHANNEL)
-        logger.info(f"Subscribed to Redis channels: {REDIS_CHANNEL}, {REDIS_STATS_CHANNEL}, {REDIS_DIAG_CHANNEL}")
+    """Listens to Redis and broadcasts to all WS clients.
 
-        async for message in pubsub.listen():
+    Wrapped in a reconnect loop. A dropped Redis pub/sub connection — an idle
+    timeout, a transient blip on the Docker bridge network, or a Redis restart —
+    must not silently kill the data feed. Without this loop the coroutine would
+    exit on the first ConnectionError while the WebSocket server kept running:
+    PECAN stays connected but never receives another frame, so the dashboard
+    goes dead with no error visible anywhere. `health_check_interval` lets
+    redis-py detect a half-open connection instead of blocking forever in
+    listen().
+    """
+    backoff_min, backoff_max = 0.5, 10.0
+    delay = backoff_min
+
+    while not shutdown_event.is_set():
+        r = None
+        try:
+            r = redis.from_url(REDIS_URL, health_check_interval=30)
+            pubsub = r.pubsub()
+            await pubsub.subscribe(REDIS_CHANNEL, REDIS_STATS_CHANNEL, REDIS_DIAG_CHANNEL)
+            logger.info(f"Subscribed to Redis channels: {REDIS_CHANNEL}, {REDIS_STATS_CHANNEL}, {REDIS_DIAG_CHANNEL}")
+            delay = backoff_min  # reset backoff once a subscribe succeeds
+
+            async for message in pubsub.listen():
+                if shutdown_event.is_set():
+                    break
+
+                if message['type'] == 'message':
+                    data = redis_utils.decode_message(message['data'])
+
+                    # Broadcast to all connected clients
+                    if connected_clients:
+                        # Create tasks for sending to each client to avoid blocking
+                        await asyncio.gather(
+                            *[client.send(data) for client in connected_clients],
+                            return_exceptions=True
+                        )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
             if shutdown_event.is_set():
                 break
+            logger.error(f"Redis listener error: {e} — reconnecting in {delay:.1f}s")
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, backoff_max)
+        finally:
+            if r is not None:
+                with contextlib.suppress(Exception):
+                    await r.aclose()
 
-            if message['type'] == 'message':
-                data = redis_utils.decode_message(message['data'])
-
-                # Broadcast to all connected clients
-                if connected_clients:
-                    # Create tasks for sending to each client to avoid blocking
-                    await asyncio.gather(
-                        *[client.send(data) for client in connected_clients],
-                        return_exceptions=True
-                    )
-    except Exception as e:
-        logger.error(f"Redis error: {e}")
-    finally:
-        logger.info("Redis listener stopping...")
+    logger.info("Redis listener stopping...")
 
 
 async def _handle_client_message(websocket, raw: str, redis_client):

@@ -269,12 +269,8 @@ services:
     build:
       context: ./sandbox
       dockerfile: Dockerfile.sandbox
-      # slicks lives outside the build context (sibling repo at
-      # /home/ubuntu/projects/slicks), so we pass it in as an additional
-      # build context. The Dockerfile uses `COPY --from=slicks ...` to
-      # pull files from it. Override SLICKS_HOST_PATH to relocate.
-      additional_contexts:
-        - slicks=${SLICKS_HOST_PATH:-/home/ubuntu/projects/slicks}
+      # slicks is installed from PyPI (pinned in sandbox/requirements-docker.txt),
+      # so no external build context is needed.
     container_name: sandbox
     restart: unless-stopped
     environment:
@@ -289,11 +285,6 @@ services:
       TIMESCALE_TABLE: "${TIMESCALE_TABLE:-${POSTGRES_TABLE:-wfr26}}"
       TIMESCALE_SEASON: "${TIMESCALE_SEASON:-${POSTGRES_TABLE:-wfr26}}"
       POSTGRES_TABLE: "${POSTGRES_TABLE:-wfr26}"
-    volumes:
-      # slicks source (TimescaleDB-migration branch). Editable-installed at
-      # image build time; the bind mount below lets live source edits show
-      # up on the next container recreate without an image rebuild.
-      - ${SLICKS_HOST_PATH:-/home/ubuntu/projects/slicks}:/slicks_src:rw
     depends_on:
       timescaledb:
         condition: service_healthy
