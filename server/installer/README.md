@@ -43,7 +43,10 @@ All secrets and tokens are defined in `.env`. The defaults provided in `.env.exa
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `DBC_FILE_PATH` | Path to the CAN DBC file used by startup-data-loader and file-uploader and other services | `example.dbc` |
+| `DBC_FILE_PATH` | Path to the CAN DBC file used by startup-data-loader, file-uploader, data-downloader, and other services | `example.dbc` |
+| `GITHUB_DBC_TOKEN` | PAT with `contents:read` on the team DBC repo, used by file-uploader and data-downloader to fetch DBCs from GitHub (optional) | empty |
+| `GITHUB_DBC_REPO` / `GITHUB_DBC_BRANCH` | Repo and branch to pull the team DBC from (optional) | `Western-Formula-Racing/DBC` / `main` |
+| `GITHUB_DBC_PATH` | Pins data-downloader to a specific `.dbc` file in the repo; if unset it auto-selects the most recently committed `.dbc` (optional) | empty |
 | `POSTGRES_DSN` | DSN used by services to connect to TimescaleDB | `postgresql://wfr:wfr_password@timescaledb:5432/wfr` |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` | Bootstraps the initial admin user | `wfr` / `wfr_password` |
 | `POSTGRES_PASSWORD` | Database password shared by services that use DSN auth | `wfr_password` |
@@ -82,7 +85,8 @@ All secrets and tokens are defined in `.env`. The defaults provided in `.env.exa
 ## Data and DBC files
 
 - `startup-data-loader/data/` ships with `2025-01-01-00-00-00.csv`, a csv file to exercise the import pipeline without exposing production telemetry.
-- Both the loader and the uploader share `example.dbc`, a minimal CAN database that defines two demo messages. Replace this file with your team’s CAN definition when working with real data.
+- Both the loader and the uploader share `example.dbc`, a minimal CAN database that defines two demo messages. Replace this file with your team's CAN definition when working with real data.
+- data-downloader can instead pull the team's DBC straight from GitHub: configure `GITHUB_DBC_TOKEN`/`GITHUB_DBC_REPO`/`GITHUB_DBC_BRANCH` and it auto-selects the most recently committed `.dbc` (or pin one with `GITHUB_DBC_PATH`), caching it locally and grouping sensors by CAN message in the UI. It falls back to `DBC_FILE_PATH` when no GitHub DBC is configured.
 
 ## Observability
 

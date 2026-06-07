@@ -10,9 +10,9 @@ Both JSON files are shared through the `./data` directory so every service (fron
 
 ## Getting started
 
-1. Duplicate the sample env file and fill in the TimescaleDB credentials:
+1. Copy the shared installer env template (it now covers data-downloader's TimescaleDB, DBC, and health-monitor settings) and fill in your credentials:
    ```bash
-   cp .env.example .env
+   cp ../.env.example .env
    ```
 2. Build + launch everything:
    ```bash
@@ -70,10 +70,13 @@ sequenceDiagram
 - `frontend` serves the compiled React bundle via nginx and now proxies `/api` requests (including `/api/scan` and `/api/scanner-status`) directly to the FastAPI container. When the UI is loaded from anything other than `localhost`, the client automatically falls back to relative `/api/...` calls so a single origin on a VPS still reaches the backend. Override `VITE_API_BASE_URL` if you want the UI to talk to a different host (for example when running `npm run dev` locally) and keep that host in `ALLOWED_ORIGINS`.
 - `api` runs `uvicorn backend.app:app`, exposing
   - `GET /api/runs` and `GET /api/sensors`
+  - `GET /api/sensors/grouped` to left-join known sensors against the team's DBC message/signal tree, grouped by CAN message with the transmitter node (e.g. `MOBO`, `INV`) as subsystem; falls back gracefully when no DBC is configured
+  - `POST /api/dbc/refresh` to bust the in-memory DBC cache and re-fetch from GitHub on demand
   - `POST /api/runs/{key}/note` to persist notes per run
   - `POST /api/scan` to fire an on-demand scan that refreshes both JSON files in the background
   - `POST /api/data/query` to request a timeseries slice for a given `signalName` between two timestamps; the response echoes the exact SQL (matching `sql.py`) so the frontend can display the query being executed.
 - `scanner` reuses the same backend image but runs `python -m backend.periodic_worker` so the scan + unique sensor collection happens at the interval defined by `SCAN_INTERVAL_SECONDS`.
+- `backend/dbc_utils.py` auto-discovers the most recently committed `.dbc` file in the team's GitHub DBC repo (caching it to `DATA_DIR/dbc_cache.dbc`); set `GITHUB_DBC_PATH` to pin a specific file instead, or `DBC_FILE_PATH` to use a local DBC. The frontend's `SensorGroupedGrid` renders the grouped sensors with collapsible per-message sections and subsystem colour coding when a DBC is available, falling back to the flat sensor grid otherwise.
 
 Set `POSTGRES_DSN` and `DEFAULT_SEASON_TABLE` to match your deployment so the SQL sent from `backend/server_scanner.py` and `backend/sql.py` queries the correct season table.
 
