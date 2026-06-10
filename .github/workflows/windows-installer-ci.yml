@@ -74,9 +74,16 @@ jobs:
 
       - name: Lint PowerShell scripts
         run: |
-          $results = Invoke-ScriptAnalyzer `
-            -Path universal-telemetry-software/deploy/install.ps1, universal-telemetry-software/deploy/windows-udp-relay.ps1 `
-            -Severity Warning,Error -ExcludeRule PSAvoidUsingWriteHost
+          $scripts = @(
+            "universal-telemetry-software/deploy/install.ps1",
+            "universal-telemetry-software/deploy/windows-udp-relay.ps1"
+          )
+          $results = $scripts | ForEach-Object {
+            Invoke-ScriptAnalyzer `
+              -Path $_ `
+              -Severity Warning,Error `
+              -ExcludeRule PSAvoidUsingWriteHost
+          }
           $results | Format-Table -AutoSize
           $errors = @($results | Where-Object { $_.Severity -eq 'Error' })
           if ($errors.Count -gt 0) {
