@@ -176,16 +176,43 @@ With `--hotspot`, the installer **asks for confirmation** before switching `wlan
 
 ---
 
-## Windows / WSL2 — Limited Support
+## Windows — Supported via UDP relay
 
-The base station stack is designed for macOS and native Linux. Windows support is limited:
+The car streams CAN telemetry as **unicast UDP to the base station IP on port 5005**. On Docker Desktop for Windows the stack runs inside the WSL2 VM behind a NAT'd `vEthernet` adapter, and **inbound LAN UDP from the car is not reliably forwarded into a published container port**. (TCP and localhost-originated traffic go through the Docker proxy fine — only external LAN UDP is broken, and that is the critical telemetry path.)
 
-- **UDP telemetry (port 5005)** does not work reliably on Windows/WSL2 Docker. The car sends UDP directly to the base station IP, and WSL2 does not automatically forward LAN UDP packets into containers. This is the critical path.
-- **WSL2 Ubuntu inside Windows** — If you must use Windows, run the entire stack inside a WSL2 Ubuntu Linux environment. Networking then behaves like native Linux.
+To make Windows work, run a tiny native relay on the host that owns the real LAN port `5005` and forwards datagrams into the container's published UDP port. The Windows base compose publishes the UDP receiver on host port `15005` (not `5005`) specifically so the relay can bind `5005`.
 
-**Recommended for Windows teammates:** Use a MacBook or Linux machine as the base station. Others connect to the Pecan dashboard at `http://<base-station-ip>:3000`.
+**One-click install (needs Docker Desktop + Git on Windows — no Python required):**
 
-For Windows WSL2 setup (if needed), see the [AGENTS.md](../AGENTS.md) Windows notes.
+Open PowerShell and run:
+
+```powershell
+irm https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.ps1 | iex
+```
+
+This clones the repo to `%USERPROFILE%\wfr-base-station`, starts the Windows base stack, and launches the UDP relay in its own window. Re-run the same command to update. The relay is pure PowerShell, so the only prerequisites are Docker Desktop and Git.
+
+**Manual setup (equivalent to what the installer does):**
+
+1. Start the stack (from `universal-telemetry-software/`):
+
+```bat
+docker compose -f deploy/docker-compose.windows-base.yml --env-file deploy/.env.windows up -d --build
+```
+
+2. Start the relay and leave its window open for the whole session:
+
+```bat
+powershell -ExecutionPolicy Bypass -File deploy\windows-udp-relay.ps1
+```
+
+   (or just double-click `deploy\run-windows-relay.bat`)
+
+The relay prints a periodic `pkt/s` line — if that climbs while the car is streaming, telemetry is flowing into the container. Open the Pecan dashboard at `http://localhost:3000`.
+
+No relay is needed for the TCP resend path (port 5006): the base dials *out* to the car for missing batches, and outbound TCP from the container works normally on Docker Desktop.
+
+**Alternative — WSL2 Ubuntu:** Running the entire stack inside a WSL2 Ubuntu Linux environment (with Linux host networking) also works, since networking then behaves like native Linux. The relay approach above is simpler and uses stock Docker Desktop.
 
 ## Teardown
 

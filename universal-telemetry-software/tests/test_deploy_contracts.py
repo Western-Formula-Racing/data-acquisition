@@ -39,3 +39,29 @@ def test_integration_stack_explicit_roles_contract():
 
     assert "- ROLE=car" in compose_test
     assert "- ROLE=base" in compose_test
+
+
+def test_windows_base_relay_contract():
+    """Windows base must publish UDP on 15005 and rely on the PowerShell relay (no Python)."""
+    compose = _read("deploy/docker-compose.windows-base.yml")
+    env = _read("deploy/.env.windows")
+    installer = _read("deploy/install.ps1")
+    relay = REPO_ROOT / "deploy" / "windows-udp-relay.ps1"
+
+    assert relay.exists(), "deploy/windows-udp-relay.ps1 must exist"
+
+    # Container publishes on 15005 so the host relay can own the real LAN port 5005.
+    assert "15005:5005/udp" in compose
+    assert "ROLE=base" in compose
+
+    # Relay forward target must match the compose-published host port.
+    assert "RELAY_LISTEN_PORT=5005" in env
+    assert "RELAY_TARGET_PORT=15005" in env
+
+    # Installer drives the windows-base compose and launches the PowerShell relay.
+    assert "docker-compose.windows-base.yml" in installer
+    assert "windows-udp-relay.ps1" in installer
+
+    # The relay is pure PowerShell — the installer must not require Python.
+    assert "python.org" not in installer
+    assert "Resolve-Python" not in installer

@@ -14,6 +14,12 @@ Comprehensive telemetry and data acquisition system for real-time monitoring of 
 > ```bash
 > curl -fsSL https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.sh | bash -s -- --hotspot
 > ```
+> **Windows (PowerShell — needs Docker Desktop + Git, no Python):**
+> ```powershell
+> irm https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.ps1 | iex
+> ```
+> The Windows installer also launches a small PowerShell UDP relay (Docker Desktop doesn't forward LAN UDP into containers) — keep its window open during sessions.
+>
 > [Full setup guide →](./universal-telemetry-software/deploy/MACBOOK_DEPLOY.md)
 
 ![pecan dashboard](pecan/docs-assets/PECAN-Dashboard.jpg)

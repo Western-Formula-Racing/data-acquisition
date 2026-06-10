@@ -1,0 +1,134 @@
+name: Windows Base Station Installer CI
+
+# Validates the Windows base-station one-click installer (install.ps1) and the
+# native PowerShell UDP relay that works around Docker Desktop not forwarding LAN
+# UDP into containers on Windows.
+#
+# Note on coverage: GitHub-hosted windows-latest runners cannot run the Linux
+# telemetry container stack, so there is no full end-to-end stack test here. The
+# relay is pure PowerShell + .NET, so we test it for real on a Windows runner (and
+# under pwsh on Linux for fast feedback). The Windows job is isolated in this
+# workflow so it can be skipped/disabled if Windows runner minutes are unavailable.
+
+on:
+  push:
+    branches: [ main, deploy ]
+    paths:
+      - 'universal-telemetry-software/deploy/install.ps1'
+      - 'universal-telemetry-software/deploy/docker-compose.windows-base.yml'
+      - 'universal-telemetry-software/deploy/.env.windows'
+      - 'universal-telemetry-software/deploy/windows-udp-relay.ps1'
+      - 'universal-telemetry-software/deploy/run-windows-relay.bat'
+      - 'universal-telemetry-software/tests/test_windows_udp_relay.ps1'
+      - 'universal-telemetry-software/tests/test_deploy_contracts.py'
+      - '.github/workflows/windows-installer-ci.yml'
+  pull_request:
+    branches: [ main, deploy ]
+    paths:
+      - 'universal-telemetry-software/deploy/install.ps1'
+      - 'universal-telemetry-software/deploy/docker-compose.windows-base.yml'
+      - 'universal-telemetry-software/deploy/.env.windows'
+      - 'universal-telemetry-software/deploy/windows-udp-relay.ps1'
+      - 'universal-telemetry-software/deploy/run-windows-relay.bat'
+      - 'universal-telemetry-software/tests/test_windows_udp_relay.ps1'
+      - 'universal-telemetry-software/tests/test_deploy_contracts.py'
+      - '.github/workflows/windows-installer-ci.yml'
+  workflow_dispatch:
+
+jobs:
+
+  # ── PowerShell lint + parse + relay test (real Windows runner) ───────────────
+  windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse PowerShell scripts (syntax)
+        run: |
+          $scripts = @(
+            "universal-telemetry-software/deploy/install.ps1",
+            "universal-telemetry-software/deploy/windows-udp-relay.ps1",
+            "universal-telemetry-software/tests/test_windows_udp_relay.ps1"
+          )
+          $failed = $false
+          foreach ($s in $scripts) {
+            $errs = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($s, [ref]$null, [ref]$errs) | Out-Null
+            if ($errs) {
+              $failed = $true
+              $errs | ForEach-Object { Write-Host "::error file=$s::$($_.Extent.StartLineNumber): $($_.Message)" }
+            } else {
+              Write-Host "OK $s parses clean"
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Install PSScriptAnalyzer
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+
+      - name: Lint PowerShell scripts
+        run: |
+          $results = Invoke-ScriptAnalyzer `
+            -Path universal-telemetry-software/deploy/install.ps1, universal-telemetry-software/deploy/windows-udp-relay.ps1 `
+            -Severity Warning,Error -ExcludeRule PSAvoidUsingWriteHost
+          $results | Format-Table -AutoSize
+          $errors = @($results | Where-Object { $_.Severity -eq 'Error' })
+          if ($errors.Count -gt 0) {
+            Write-Host "::error::PSScriptAnalyzer reported $($errors.Count) error(s)"
+            exit 1
+          }
+          Write-Host "No PSScriptAnalyzer errors"
+
+      - name: Run relay forwarding test (Windows)
+        run: pwsh -NoProfile -File universal-telemetry-software/tests/test_windows_udp_relay.ps1
+
+  # ── Relay test (pwsh on Linux) + contract + compose validation ───────────────
+  linux-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run relay forwarding test (Linux pwsh)
+        shell: pwsh
+        run: pwsh -NoProfile -File universal-telemetry-software/tests/test_windows_udp_relay.ps1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run Windows base contract test
+        working-directory: ./universal-telemetry-software
+        run: python -m pytest tests/test_deploy_contracts.py::test_windows_base_relay_contract -v
+
+      - name: Validate windows-base compose config
+        # Runs from repo root so DBC_HOST_PATH (./universal-telemetry-software/deploy/example.dbc) resolves.
+        run: |
+          docker compose \
+            --project-directory "${{ github.workspace }}" \
+            -f universal-telemetry-software/deploy/docker-compose.windows-base.yml \
+            --env-file universal-telemetry-software/deploy/.env.windows \
+            config --quiet
+          echo "windows-base compose config valid"
+
+  # ── Raw URL reachability (main only; the file must be merged first) ──────────
+  url-accessibility:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Check install.ps1 raw URL
+        run: |
+          HTTP_CODE=$(curl -fsSL -o /dev/null -w "%{http_code}" \
+            https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.ps1)
+          echo "install.ps1 HTTP $HTTP_CODE"
+          test "$HTTP_CODE" = "200" || exit 1

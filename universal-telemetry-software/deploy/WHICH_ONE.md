@@ -20,6 +20,7 @@ Use these first:
 |--------|------------|-------|
 | Car RPi | `CAR_DEPLOY.md` + `car-telemetry.service` | Native systemd, no Docker/Redis on the car |
 | MacBook / Linux / RPi 4B base | `docker-compose.macbook-base.yml` + `install.sh` | One-command curl install; optional `--profile timescale`, `--hotspot` on Linux |
+| Windows base | `docker-compose.windows-base.yml` + `install.ps1` | One-command PowerShell install (Docker Desktop + Git, no Python); also runs `windows-udp-relay.ps1` since Docker Desktop won't forward LAN UDP into containers |
 | RPi base (manual, deprecating) | `docker-compose.rpi-base.yml` | Lightweight ephemeral base, host networking; no one-click installer |
 
 ---
@@ -55,6 +56,29 @@ docker compose --profile tunnel -f deploy/docker-compose.macbook-base.yml --env-
 - Pecan dashboard: http://localhost:3000
 - Status page: http://localhost:8080
 - TimescaleDB with `--profile timescale`: `postgresql://wfr:wfr_password@localhost:5432/wfr`
+
+---
+
+## docker-compose.windows-base.yml — Windows base stack
+
+Same services as the MacBook base, but the UDP receiver is published on host port `15005`
+instead of `5005`. Docker Desktop for Windows does not reliably forward inbound LAN UDP
+into a published container port, so a native relay (`windows-udp-relay.ps1`, pure PowerShell —
+no Python needed) binds the real LAN port `5005` on the host and forwards datagrams into
+`127.0.0.1:15005`. Run **both** the compose stack and the relay.
+
+```powershell
+# One-click (recommended): clones the repo, starts the stack, launches the relay
+irm https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.ps1 | iex
+```
+
+```bat
+:: Manual equivalent (from universal-telemetry-software/)
+docker compose -f deploy/docker-compose.windows-base.yml --env-file deploy/.env.windows up -d --build
+powershell -ExecutionPolicy Bypass -File deploy\windows-udp-relay.ps1
+```
+
+**Access point:** Pecan dashboard at http://localhost:3000
 
 ---
 
