@@ -106,6 +106,29 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    // Ctrl+, (Win/Linux) or Cmd+, (Mac) opens the settings modal.
+    // Avoid firing while the user is typing in form fields.
+    const handleSettingsShortcut = (e: KeyboardEvent) => {
+      if (e.key !== ",") return;
+      const isAccel = e.metaKey || e.ctrlKey;
+      if (!isAccel || e.altKey || e.shiftKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      e.preventDefault();
+      setIsSettingsOpen((open) => !open);
+    };
+    window.addEventListener("keydown", handleSettingsShortcut);
+    return () => window.removeEventListener("keydown", handleSettingsShortcut);
+  }, []);
+
   return (
     <div className="h-screen flex flex-row overflow-y-auto">
       <div className={`h-screen transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'lg:w-2/9 md:w-2/5 sm:w-3/5 w-full' : 'w-[60px]'}`}>
