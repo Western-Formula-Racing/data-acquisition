@@ -57,6 +57,10 @@ export interface TelemetrySample {
 interface MessageBuffer {
   samples: TelemetrySample[];
   lastUpdated: number;
+  // Wall-clock time (Date.now()) when the newest sample was ingested. Tracked
+  // separately from sample.timestamp (the producer's clock) so that liveness is
+  // measured at receipt — immune to clock skew between the car/ECU and this browser.
+  lastReceivedAt: number;
 }
 
 export type TelemetrySource = "live" | "replay";
@@ -551,6 +555,9 @@ class DataStore {
     preserveTimestamp?: boolean;
     source?: TelemetrySource;
   }): void {
+    // Wall-clock receipt time, captured before any timestamp rewriting below.
+    const receivedAt = Date.now();
+
     // Fix for old timestamps from recorded data
     // If timestamp is more than 1 hour old, use current time
     let timestamp = message.timestamp || Date.now();
@@ -597,6 +604,7 @@ class DataStore {
       buffers.byMsgId.set(msgID, {
         samples: [],
         lastUpdated: timestamp,
+        lastReceivedAt: receivedAt,
       });
     }
 
@@ -605,6 +613,7 @@ class DataStore {
     // Add new sample
     messageBuffer.samples.push(sample);
     messageBuffer.lastUpdated = timestamp;
+    messageBuffer.lastReceivedAt = receivedAt;
 
     // Prune old samples (rolling window)
     this.pruneOldSamples(msgID, source);
@@ -643,6 +652,9 @@ class DataStore {
     }
 
     let newestTimestampBySource: Partial<Record<TelemetrySource, number>> = {};
+
+    // Wall-clock receipt time for this batch, captured before timestamp rewriting.
+    const receivedAt = Date.now();
 
     for (const message of messages) {
       // Fix for old timestamps from recorded data unless explicitly preserved.
@@ -684,12 +696,14 @@ class DataStore {
         buffers.byMsgId.set(sample.msgID, {
           samples: [],
           lastUpdated: timestamp,
+          lastReceivedAt: receivedAt,
         });
       }
 
       const messageBuffer = buffers.byMsgId.get(sample.msgID)!;
       messageBuffer.samples.push(sample);
       messageBuffer.lastUpdated = timestamp;
+      messageBuffer.lastReceivedAt = receivedAt;
       this.pruneOldSamples(sample.msgID, source);
 
       buffers.trace.push(sample);
@@ -928,9 +942,15 @@ class DataStore {
     const messageBuffer = this.getSourceBuffers(source).byMsgId.get(msgID);
     if (!messageBuffer || messageBuffer.samples.length === 0) return 0;
 
+    const newestTimestamp = messageBuffer.samples[messageBuffer.samples.length - 1].timestamp;
+    // Live "now" is anchored to the newest sample's producer timestamp plus the
+    // wall-clock time elapsed since it arrived — i.e. liveness is measured at
+    // receipt, not against the car/ECU clock. This keeps a streaming feed from
+    // reading STOPPED when the producer's clock is skewed from the browser, while
+    // still letting the window empty (→ 0 Hz) once frames genuinely stop arriving.
     const now = source === "replay"
-      ? messageBuffer.samples[messageBuffer.samples.length - 1].timestamp
-      : Date.now();
+      ? newestTimestamp
+      : newestTimestamp + (Date.now() - messageBuffer.lastReceivedAt);
     const cutoffTime = now - windowMs;
     const startIdx   = binarySearchFirstGte(messageBuffer.samples, cutoffTime);
     const count      = messageBuffer.samples.length - startIdx;

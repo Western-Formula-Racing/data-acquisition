@@ -71,6 +71,51 @@ describe('DataStore', () => {
     expect(dataStore.getFrequency(msgID, FREQUENCY_WINDOW_MS)).toBe(0.0);
   });
 
+  it('reports live frequency when producer timestamps lag the browser clock (clock skew)', () => {
+    // Regression: the car/ECU stamps frames with its own absolute epoch-ms clock.
+    // If that clock runs behind this browser by more than the freshness window,
+    // every frame is >2s "old" by wall clock even though data is streaming live.
+    const browserNow = Date.now();
+    const SKEW = 30_000; // car clock is 30s behind the browser
+    const msgID = '0xSKEW';
+
+    // 5 frames arriving in real time, each carrying a producer timestamp 30s in the past.
+    for (let i = 0; i < 5; i++) {
+      vi.setSystemTime(browserNow + i * 200);        // wall-clock receipt time
+      dataStore.ingestMessage({
+        msgID,
+        messageName: 'Skewed',
+        data: {},
+        rawData: '00',
+        timestamp: browserNow + i * 200 - SKEW,      // producer clock, lagging
+      });
+    }
+
+    // Frames are flowing → must read as live, not STOPPED (hz 0).
+    expect(dataStore.getFrequency(msgID, FREQUENCY_WINDOW_MS)).toBeGreaterThan(0);
+  });
+
+  it('still reports STOPPED (0 Hz) when a skewed feed genuinely stops', () => {
+    const browserNow = Date.now();
+    const SKEW = 30_000;
+    const msgID = '0xSKEWSTOP';
+
+    for (let i = 0; i < 5; i++) {
+      vi.setSystemTime(browserNow + i * 200);
+      dataStore.ingestMessage({
+        msgID,
+        messageName: 'Skewed',
+        data: {},
+        rawData: '00',
+        timestamp: browserNow + i * 200 - SKEW,
+      });
+    }
+
+    // No new frames for 3 wall-clock seconds — the feed has truly stopped.
+    vi.setSystemTime(browserNow + 800 + 3000);
+    expect(dataStore.getFrequency(msgID, FREQUENCY_WINDOW_MS)).toBe(0);
+  });
+
   it('should handle multiple message IDs independently', () => {
     const now = Date.now();
     vi.setSystemTime(now);
