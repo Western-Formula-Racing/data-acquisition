@@ -930,6 +930,7 @@ class TelemetryNode:
                 logger.info(f"Subscribed to Redis channel: {REDIS_UPLINK_CHANNEL}")
 
                 async def _relay(msg):
+                    nonlocal uplink_seq
                     if msg['type'] != 'message':
                         return
                     try:
