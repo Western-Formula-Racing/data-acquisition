@@ -19,9 +19,10 @@ HEARTBEAT_INTERVAL_S = 1.0
 async def run_heartbeat_writer(redis_client=None) -> None:
     """Write a heartbeat key to Redis every HEARTBEAT_INTERVAL_S.
 
-    Stops on cancellation; logs and exits on any other exception so the surrounding
-    supervisor (systemd / Docker) can restart the process. Skips silently if
-    no Redis client is available (car mode without Redis).
+    Stops on cancellation. Logs and continues on any other exception so transient
+    Redis blips don't take down the writer; if Redis is persistently down, the
+    surrounding supervisor (systemd / Docker) is expected to restart the process.
+    Skips silently if no Redis client is available (car mode without Redis).
     """
     if redis_client is None:
         return

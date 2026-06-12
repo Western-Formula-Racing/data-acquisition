@@ -4,13 +4,10 @@ Heartbeat writer tests — uses a fake async Redis client to avoid network deps.
 import asyncio
 import json
 import pytest
-import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 from src import heartbeat
 from src.config import REDIS_HEARTBEAT_KEY
-
-pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
@@ -47,7 +44,8 @@ async def test_returns_immediately_when_redis_is_none():
 async def test_continues_after_set_failure(fake_redis):
     fake_redis.set = AsyncMock(side_effect=RuntimeError("redis down"))
     task = asyncio.create_task(heartbeat.run_heartbeat_writer(fake_redis))
-    await asyncio.sleep(0.05)  # give it time to fail at least once
+    await asyncio.sleep(1.05)  # past the first 1.0s HEARTBEAT_INTERVAL_S so the loop has retried
+    assert fake_redis.set.call_count >= 2, "writer should retry after failure"
     assert not task.done(), "writer should recover and keep running"
     task.cancel()
     try:
