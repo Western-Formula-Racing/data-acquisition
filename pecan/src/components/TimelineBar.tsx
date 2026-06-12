@@ -5,6 +5,8 @@ import { coldStore } from "../lib/ColdStore";
 import type { ReplayFrame, ReplayPlotLayout } from "../types/replay";
 import { parseReplayFile, REPLAY_FRAME_HARD_CAP } from "../utils/replayParser";
 import { serializePecanV2 } from "../utils/pecanSerializer";
+import { getActiveDbcText, setActiveDbcText, usingCachedDBC } from "../utils/canProcessor";
+import { useMessageHistory } from "../lib/useDataStore";
 import ReplayImportClipModal from "./ReplayImportClipModal";
 
 interface TimelineBarProps {
@@ -12,6 +14,11 @@ interface TimelineBarProps {
 }
 
 const TIMELINE_COLLAPSED_KEY = "pecan:timeline:collapsed";
+
+const STATE_SIGNALS: Array<{ msgID: string; signalName: string; color: string; label: string }> = [
+  { msgID: "0x7D2", signalName: "State",      color: "#60a5fa", label: "VCU State" },
+  { msgID: "0x420", signalName: "PackStatus", color: "#f97316", label: "PackStatus" },
+];
 
 function formatClock(ts: number): string {
   const d = new Date(ts);
@@ -142,8 +149,56 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
     fileName: string;
     timelineMeta?: Parameters<typeof loadReplayFrames>[2];
     plotsMeta?: Parameters<typeof loadReplayFrames>[3];
+    decodeMeta?: Parameters<typeof loadReplayFrames>[4];
   } | null>(null);
   const replayFileInputRef = useRef<HTMLInputElement | null>(null);
+  const configFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleImportConfigOnly = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const parseResult = await parseReplayFile(file);
+      const meta = parseResult.sessionMeta;
+      const layouts = meta?.plots?.layouts ?? [];
+      const applied: string[] = [];
+
+      if (layouts.length > 0) {
+        const plotsForStorage = layouts
+          .map((layout) => ({
+            id: String(layout.id),
+            signals: (layout.series ?? []).map((s) => ({
+              msgID: s.msgId,
+              signalName: s.signalName,
+              messageName: `CAN_${s.msgId}`,
+              unit: "",
+            })),
+          }))
+          .filter((p) => p.signals.length > 0);
+        if (plotsForStorage.length > 0) {
+          localStorage.setItem("dash:plots", JSON.stringify(plotsForStorage));
+          window.dispatchEvent(new CustomEvent("pecan:plots-imported", { detail: plotsForStorage }));
+          applied.push(`${plotsForStorage.length} plot${plotsForStorage.length === 1 ? "" : "s"}`);
+        }
+      }
+
+      const embedded = meta?.decode?.dbcEmbedded;
+      if (embedded?.format === "dbc" && embedded.content) {
+        setActiveDbcText(embedded.content);
+        applied.push("DBC");
+      }
+
+      window.alert(
+        applied.length > 0
+          ? `Config imported: ${applied.join(", ")}`
+          : "No plot/DBC config found in file."
+      );
+    } catch (err) {
+      window.alert(`Config import failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    } finally {
+      event.target.value = "";
+    }
+  };
   const showColdStoreSupportHint = source === "live" && !dataStore.isColdStoreSupported();
 
   const hasData = collectionStartMs !== null && collectionEndMs !== null;
@@ -151,7 +206,9 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
   const sliderMin = collectionStartMs ?? 0;
   const sliderMax = collectionEndMs ?? 0;
   const sliderValue = hasData
-    ? Math.max(sliderMin, Math.min(sliderMax, selectedTimeMs))
+    ? (mode === "live" && source === "live"
+        ? sliderMax
+        : Math.max(sliderMin, Math.min(sliderMax, selectedTimeMs)))
     : 0;
 
   useEffect(() => {
@@ -177,6 +234,51 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
       return Math.max(sliderMin, Math.min(sliderMax, prev));
     });
   }, [hasData, sliderMin, sliderMax, clipModeEnabled]);
+
+  // VCU State + PackStatus transitions for timeline overlay
+  const vcuStateHistory  = useMessageHistory(STATE_SIGNALS[0].msgID);
+  const packStatusHistory = useMessageHistory(STATE_SIGNALS[1].msgID);
+
+  const stateTransitions = useMemo(() => {
+    if (!hasData || durationMs <= 0) return [];
+    const start = collectionStartMs ?? 0;
+    const histories = [vcuStateHistory, packStatusHistory];
+    const out: Array<{
+      key: string;
+      pct: number;
+      direction: "up" | "down";
+      value: number;
+      color: string;
+      label: string;
+      timeMs: number;
+      lane: number;
+    }> = [];
+    histories.forEach((history, laneIdx) => {
+      const meta = STATE_SIGNALS[laneIdx];
+      let prev: number | null = null;
+      for (const sample of history) {
+        const sig = sample.data[meta.signalName];
+        if (!sig) continue;
+        const v = sig.sensorReading;
+        if (prev !== null && v !== prev) {
+          if (sample.timestamp >= sliderMin && sample.timestamp <= sliderMax) {
+            out.push({
+              key: `${meta.msgID}-${sample.timestamp}-${v}`,
+              pct: Math.max(0, Math.min(100, ((sample.timestamp - start) / durationMs) * 100)),
+              direction: v > prev ? "up" : "down",
+              value: v,
+              color: meta.color,
+              label: meta.label,
+              timeMs: sample.timestamp,
+              lane: laneIdx,
+            });
+          }
+        }
+        prev = v;
+      }
+    });
+    return out;
+  }, [vcuStateHistory, packStatusHistory, hasData, durationMs, collectionStartMs, sliderMin, sliderMax]);
 
   const checkpointPercents = useMemo(() => {
     if (!hasData || durationMs <= 0) return [];
@@ -252,11 +354,7 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
   }, [source, mode, latestLiveDataMs, collectionEndMs]);
 
   const hasLiveTail = liveTailMs > 0;
-  const isAtCurrentLiveTime =
-    source === "live" &&
-    mode === "live" &&
-    latestLiveDataMs !== null &&
-    Math.abs(sliderValue - latestLiveDataMs) <= 50;
+  const isAtCurrentLiveTime = source === "live" && mode === "live";
 
   const handleExportStartChange = (value: number) => {
     if (!hasData || !clipModeEnabled || exportEndMs === null) return;
@@ -334,9 +432,15 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
         );
       }
 
+      const dbcText = getActiveDbcText();
+      const selectedFile = localStorage.getItem('dbc-selected-file') ?? undefined;
       const blob = new Blob([serializePecanV2({
         frames,
         epochBaseMs,
+        decode: usingCachedDBC() ? {
+          dbcName: selectedFile,
+          dbcEmbedded: { format: "dbc", encoding: "utf-8", content: dbcText },
+        } : undefined,
         timeline: {
           windowMs,
           lastCursorMs: Math.max(0, sliderValue - rangeStart),
@@ -383,13 +487,15 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
           fileName: file.name,
           timelineMeta: parseResult.sessionMeta?.timeline,
           plotsMeta: parseResult.sessionMeta?.plots,
+          decodeMeta: parseResult.sessionMeta?.decode,
         });
       } else {
         await loadReplayFrames(
           parseResult.frames,
           file.name,
           parseResult.sessionMeta?.timeline,
-          parseResult.sessionMeta?.plots
+          parseResult.sessionMeta?.plots,
+          parseResult.sessionMeta?.decode
         );
       }
 
@@ -480,7 +586,8 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
               framesToLoad,
               pendingClipImport.fileName,
               pendingClipImport.timelineMeta,
-              pendingClipImport.plotsMeta
+              pendingClipImport.plotsMeta,
+              pendingClipImport.decodeMeta
             );
             setPendingClipImport(null);
           }}
@@ -595,6 +702,21 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
           onChange={handleImportReplay}
           disabled={isImportingReplay}
         />
+        <button
+          type="button"
+          className="trace-btn trace-btn-subtle !text-[10px] !px-2 !py-1"
+          onClick={() => configFileInputRef.current?.click()}
+          title="Apply plot layout & DBC from a .pecan file without loading its frames"
+        >
+          Import Config
+        </button>
+        <input
+          ref={configFileInputRef}
+          type="file"
+          accept=".pecan,application/json"
+          className="hidden"
+          onChange={handleImportConfigOnly}
+        />
       </div>
 
       <div className="relative pt-3 pb-0.5">
@@ -664,6 +786,23 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
             {">"}
           </div>
         )}
+        {stateTransitions.map((t) => (
+          <div
+            key={t.key}
+            className="absolute -translate-x-1/2 pointer-events-none flex items-center gap-[1px] font-mono text-[8px] leading-none select-none"
+            style={{
+              left: `${t.pct}%`,
+              top: t.lane === 0 ? "2px" : "16px",
+              color: t.color,
+              userSelect: "none",
+              WebkitUserSelect: "none",
+            }}
+            title={`${t.label} → ${t.value} @ ${formatClock(t.timeMs)}`}
+          >
+            <span style={{ fontSize: "9px" }}>{t.direction === "up" ? "▲" : "▼"}</span>
+            <span>{t.value}</span>
+          </div>
+        ))}
       </div>
 
       {tickMarks.length > 0 && (

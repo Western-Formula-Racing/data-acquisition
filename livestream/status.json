@@ -1,0 +1,11 @@
+{
+  "isLive": false,
+  "youtube": {
+    "channelId": "",
+    "videoId": "M7lc1UVf-VE"
+  },
+  "twitch": {
+    "channel": "",
+    "parents": ["localhost", "live.westernformularacing.org"]
+  }
+}

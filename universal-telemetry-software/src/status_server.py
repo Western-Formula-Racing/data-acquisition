@@ -15,10 +15,95 @@ import os
 import json
 import subprocess
 import logging
+import shutil
+import tempfile
+import time
+from urllib.parse import urlparse
 
 logger = logging.getLogger("StatusServer")
 
 PORT = int(os.getenv("STATUS_PORT", 8080))
+TOKEN_FILE = "/app/relay_token"
+DBC_ACTIVE_PATH = os.getenv("DBC_FILE_PATH", "/app/active.dbc")
+DBC_UPLOAD_PATH = os.getenv("DBC_UPLOAD_PATH", DBC_ACTIVE_PATH)
+HEALTH_FILE = os.getenv("HEALTH_FILE", "/tmp/daq-health.json")
+HEALTH_STALE_SECONDS = float(os.getenv("HEALTH_STALE_SECONDS", "5"))
+
+
+def _unknown_health(detail: str) -> dict:
+    return {
+        "ts": time.time(),
+        "producer_ts": None,
+        "uptime_s": None,
+        "healthy": False,
+        "overall": "unknown",
+        "components": {
+            "udp_listener": {"status": "unknown", "detail": detail},
+            "redis": {"status": "unknown", "detail": detail},
+            "websocket_bridge": {"status": "unknown", "clients": None, "detail": detail},
+            "timescale": {"status": "unknown", "state": "unknown", "rows": 0, "errors": 0, "detail": detail},
+            "can_bus": {"status": "unknown", "detail": detail},
+        },
+        "car": {"seen_s_ago": None, "ip": os.getenv("REMOTE_IP", "unknown"), "alivable": False},
+        "version": {"own": None, "car": None, "mismatch": False},
+        "clock": {"synced": False, "source": "none"},
+        "stats": {},
+        "detail": detail,
+    }
+
+
+def _finalize_health(snapshot: dict) -> dict:
+    now = time.time()
+    result = dict(snapshot)
+    result["ts"] = now
+
+    producer_ts = result.get("producer_ts")
+    stale = True
+    if isinstance(producer_ts, (int, float)):
+        stale = now - producer_ts > HEALTH_STALE_SECONDS
+
+    if stale:
+        components = dict(result.get("components") or {})
+        udp = dict(components.get("udp_listener") or {})
+        udp["status"] = "error"
+        udp["detail"] = f"Health snapshot is stale or missing producer_ts (>{HEALTH_STALE_SECONDS:g}s)"
+        components["udp_listener"] = udp
+        result["components"] = components
+        result["stale"] = True
+    else:
+        result["stale"] = False
+
+    components = result.get("components") or {}
+    statuses = [component.get("status", "unknown") for component in components.values()]
+    healthy = bool(statuses) and all(status in ("ok", "warn") for status in statuses)
+    result["healthy"] = healthy
+    result["overall"] = "ok" if healthy else ("unknown" if any(status == "unknown" for status in statuses) else "error")
+    return result
+
+
+def _load_health_snapshot() -> dict:
+    try:
+        with open(HEALTH_FILE) as f:
+            snapshot = json.load(f)
+    except FileNotFoundError:
+        return _unknown_health(f"{HEALTH_FILE} does not exist yet")
+    except json.JSONDecodeError as e:
+        return _unknown_health(f"{HEALTH_FILE} contains invalid JSON: {e}")
+    except OSError as e:
+        return _unknown_health(f"Could not read {HEALTH_FILE}: {e}")
+
+    if not isinstance(snapshot, dict):
+        return _unknown_health(f"{HEALTH_FILE} did not contain a JSON object")
+    return _finalize_health(snapshot)
+
+
+def _read_relay_token() -> str:
+    try:
+        with open(TOKEN_FILE) as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        pass
+    return os.getenv("RELAY_TOKEN", "")
 DIRECTORY = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/status"
 # SET_TIME_ENABLED must be explicitly set to "true" to allow the /set-time endpoint.
 # This prevents unauthenticated callers from modifying the host clock.
@@ -40,6 +125,26 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         logger.info("%s - - [%s] %s" % (self.address_string(), self.log_date_time_string(), format % args))
 
+    def do_GET(self):
+        path = urlparse(self.path).path
+        if path == '/health':
+            self._json_response(200, _load_health_snapshot())
+            return
+        if path == '/relay-info':
+            token = _read_relay_token()
+            port = int(os.getenv("RELAY_LISTEN_PORT", "9089"))
+            self._json_response(200, {"token": token, "port": port, "enabled": True})
+            return
+        if path == '/dbc-info':
+            self._json_response(200, {
+                "dbc_file": os.path.basename(DBC_ACTIVE_PATH),
+                "dbc_path": DBC_ACTIVE_PATH,
+                "using_example": os.path.basename(DBC_ACTIVE_PATH) == "example.dbc",
+                "uploaded_exists": os.path.exists(DBC_UPLOAD_PATH),
+            })
+            return
+        super().do_GET()
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -48,47 +153,20 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
+        if self.path == '/relay-token':
+            self._handle_relay_token()
+            return
+        if self.path == '/dbc-upload':
+            self._handle_dbc_upload()
+            return
         if self.path == '/set-time':
             if not SET_TIME_ENABLED:
                 self._json_response(403, {"error": "set-time is disabled (set SET_TIME_ENABLED=true)"})
                 return
             self._handle_set_time()
-        elif self.path == '/sync-cloud':
-            self._handle_sync_cloud()
         else:
             self.send_response(404)
             self.end_headers()
-
-    def _handle_sync_cloud(self):
-        try:
-            length = int(self.headers.get('Content-Length', 0))
-            bucket = "WFR26"
-            if length > 0:
-                body = json.loads(self.rfile.read(length))
-                bucket = body.get('bucket', 'WFR26').strip() or "WFR26"
-                
-            logger.info(f"Manual cloud sync triggered via API (bucket={bucket})")
-            
-            env = os.environ.copy()
-            env["CLOUD_INFLUX_BUCKET"] = bucket
-            
-            # Run the cloud sync manually and capture output
-            # cwd must be the project root so python -m src.cloud_sync resolves correctly
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            result = subprocess.run(
-                ["python", "-m", "src.cloud_sync"],
-                capture_output=True, text=True, timeout=120, cwd=project_root, env=env
-            )
-            if result.returncode != 0:
-                logger.error(f"Cloud sync failed: {result.stderr}")
-                self._json_response(500, {"error": result.stderr.strip() or result.stdout.strip()})
-                return
-            
-            logger.info(f"Cloud sync completed successfully")
-            self._json_response(200, {"ok": True, "output": result.stdout.strip()})
-        except Exception as e:
-            logger.error(f"/sync-cloud error: {e}")
-            self._json_response(500, {"error": str(e)})
 
     def _handle_set_time(self):
         try:
@@ -116,6 +194,47 @@ class StatusHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         except Exception as e:
             logger.error(f"/set-time error: {e}")
+            self._json_response(500, {"error": str(e)})
+
+    def _handle_relay_token(self):
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body = json.loads(self.rfile.read(length))
+            token = body.get('token', '').strip()
+            with open(TOKEN_FILE, 'w') as f:
+                f.write(token)
+            logger.info("Relay token updated via UI")
+            self._json_response(200, {"ok": True, "token": token})
+        except Exception as e:
+            logger.error(f"/relay-token error: {e}")
+            self._json_response(500, {"error": str(e)})
+
+    def _handle_dbc_upload(self):
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            if length <= 0:
+                self._json_response(400, {"error": "Missing DBC file body"})
+                return
+
+            with tempfile.NamedTemporaryFile('wb', delete=False, dir=os.path.dirname(DBC_UPLOAD_PATH)) as tmp:
+                remaining = length
+                while remaining > 0:
+                    chunk = self.rfile.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    tmp.write(chunk)
+                    remaining -= len(chunk)
+                tmp_path = tmp.name
+
+            shutil.move(tmp_path, DBC_UPLOAD_PATH)
+            logger.info("DBC uploaded via status UI: %s", DBC_UPLOAD_PATH)
+            self._json_response(200, {
+                "ok": True,
+                "path": DBC_UPLOAD_PATH,
+                "message": "Saved. Restart telemetry container to load this DBC.",
+            })
+        except Exception as e:
+            logger.error(f"/dbc-upload error: {e}")
             self._json_response(500, {"error": str(e)})
 
     def _json_response(self, code: int, payload: dict):

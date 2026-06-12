@@ -19,14 +19,14 @@ fi
 echo -e "${YELLOW}Static IP setup for eth0 (Ubiquiti radio link)${NC}"
 echo ""
 echo "Which RPi is this?"
-echo "  1) Car  — 192.168.1.10"
-echo "  2) Base — 192.168.1.20"
+echo "  1) Car  — 10.71.1.10"
+echo "  2) Base — 10.71.1.20"
 echo ""
 read -rp "Enter 1 or 2: " choice
 
 case "$choice" in
-    1) IP="192.168.1.10"; ROLE="car";  REMOTE_IP="192.168.1.20" ;;
-    2) IP="192.168.1.20"; ROLE="base"; REMOTE_IP="192.168.1.10" ;;
+    1) IP="10.71.1.10"; ROLE="car";  REMOTE_IP="10.71.1.20" ;;
+    2) IP="10.71.1.20"; ROLE="base"; REMOTE_IP="10.71.1.10" ;;
     *) echo -e "${RED}Invalid choice. Enter 1 or 2.${NC}"; exit 1 ;;
 esac
 
@@ -77,9 +77,9 @@ echo -e "${GREEN}=========================================${NC}"
 echo -e "${GREEN}  Static IP set — next steps:${NC}"
 echo -e "${GREEN}=========================================${NC}"
 if [[ "$ROLE" == "car" ]]; then
-    echo -e "  Ping base RPi:  ping -c 4 192.168.1.20"
+    echo -e "  Ping base RPi:  ping -c 4 10.71.1.20"
 else
-    echo -e "  Ping car RPi:   ping -c 4 192.168.1.10"
+    echo -e "  Ping car RPi:   ping -c 4 10.71.1.10"
 fi
 echo -e "  IP and deploy/.env persist across reboots and git resets."
 echo -e "${GREEN}=========================================${NC}"

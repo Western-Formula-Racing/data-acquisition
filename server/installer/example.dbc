@@ -1,0 +1,102 @@
+VERSION ""
+
+NS_ :
+    NS_DESC_
+    CM_
+    BA_DEF_
+    BA_
+    VAL_
+    CAT_DEF_
+    CAT_
+    FILTER
+    BA_DEF_DEF_
+    EV_DATA_
+    ENVVAR_DATA_
+    SGTYPE_
+    SGTYPE_VAL_
+    BA_DEF_SGTYPE_
+    BA_SGTYPE_
+    SIG_TYPE_REF_
+    VAL_TABLE_
+    SIG_GROUP_
+    SIGTYPE_VALTYPE_
+    SIGTYPE_VALTYPE_DATA_
+    BO_TX_BU_
+    BA_DEF_REL_
+    BA_REL_
+    BA_DEF_DEF_REL_
+    BU_SG_REL_
+    BU_EV_REL_
+    BU_BO_REL_
+    SG_MUL_VAL_
+
+BS_:
+
+BU_: Vector__XXX
+
+BO_ 192 VCU_Status: 8 Vector__XXX
+ SG_ VCU_State : 0|4@1+ (1,0) [0|15] "" Vector__XXX
+ SG_ Safety_Loop_Status : 4|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Inverter_Enabled : 5|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 193 Pedal_Sensors: 8 Vector__XXX
+ SG_ APPS1 : 0|16@1+ (0.1,0) [0|100] "%" Vector__XXX
+ SG_ APPS2 : 16|16@1+ (0.1,0) [0|100] "%" Vector__XXX
+ SG_ BrakePressureFront : 32|16@1+ (0.1,0) [0|200] "bar" Vector__XXX
+ SG_ BrakePressureRear : 48|16@1+ (0.1,0) [0|200] "bar" Vector__XXX
+
+BO_ 194 Steering_Wheel: 8 Vector__XXX
+ SG_ SteeringAngle : 0|16@1- (0.1,0) [-180|180] "deg" Vector__XXX
+ SG_ Button_DRS : 16|1@1+ (1,0) [0|1] "" Vector__XXX
+ SG_ Button_Launch : 17|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 512 BMS_Status: 8 Vector__XXX
+ SG_ PackVoltage : 0|16@1+ (0.1,0) [0|600] "V" Vector__XXX
+ SG_ PackCurrent : 16|16@1- (0.1,0) [-300|300] "A" Vector__XXX
+ SG_ StateOfCharge : 32|8@1+ (0.5,0) [0|100] "%" Vector__XXX
+ SG_ Fault_Code : 40|8@1+ (1,0) [0|255] "" Vector__XXX
+
+BO_ 513 BMS_Cell_Stats: 8 Vector__XXX
+ SG_ HighCellVoltage : 0|16@1+ (0.001,0) [0|5] "V" Vector__XXX
+ SG_ LowCellVoltage : 16|16@1+ (0.001,0) [0|5] "V" Vector__XXX
+ SG_ AvgCellVoltage : 32|16@1+ (0.001,0) [0|5] "V" Vector__XXX
+ SG_ MaxCellTemp : 48|8@1+ (1,-40) [-40|150] "C" Vector__XXX
+
+BO_ 256 MC_Command: 8 Vector__XXX
+ SG_ TorqueRequest : 0|16@1- (0.1,0) [-300|300] "Nm" Vector__XXX
+ SG_ SpeedLimit : 16|16@1+ (1,0) [0|10000] "rpm" Vector__XXX
+
+BO_ 257 MC_Feedback: 8 Vector__XXX
+ SG_ MotorSpeed : 0|16@1- (1,0) [-10000|10000] "rpm" Vector__XXX
+ SG_ MotorTorque : 16|16@1- (0.1,0) [-300|300] "Nm" Vector__XXX
+ SG_ DC_Bus_Current : 32|16@1- (0.1,0) [-300|300] "A" Vector__XXX
+ SG_ IGBT_Temperature : 48|8@1+ (1,-40) [-40|150] "C" Vector__XXX
+
+BO_ 768 Wheel_Speeds: 8 Vector__XXX
+ SG_ FL_Speed : 0|16@1+ (1,0) [0|3000] "rpm" Vector__XXX
+ SG_ FR_Speed : 16|16@1+ (1,0) [0|3000] "rpm" Vector__XXX
+ SG_ RL_Speed : 32|16@1+ (1,0) [0|3000] "rpm" Vector__XXX
+ SG_ RR_Speed : 48|16@1+ (1,0) [0|3000] "rpm" Vector__XXX
+
+BO_ 1024 IMU_Data: 8 Vector__XXX
+ SG_ AccelX : 0|16@1- (0.001,0) [-4|4] "g" Vector__XXX
+ SG_ AccelY : 16|16@1- (0.001,0) [-4|4] "g" Vector__XXX
+ SG_ AccelZ : 32|16@1- (0.001,0) [-4|4] "g" Vector__XXX
+ SG_ YawRate : 48|16@1- (0.1,0) [-200|200] "deg/s" Vector__XXX
+
+BO_ 1280 Cooling_Status: 8 Vector__XXX
+ SG_ CoolantTempIn : 0|8@1+ (1,-40) [-40|150] "C" Vector__XXX
+ SG_ CoolantTempOut : 8|8@1+ (1,-40) [-40|150] "C" Vector__XXX
+ SG_ PumpSpeed : 16|8@1+ (1,0) [0|100] "%" Vector__XXX
+ SG_ FanSpeed : 24|8@1+ (1,0) [0|100] "%" Vector__XXX
+
+CM_ BO_ 192 "Vehicle Control Unit Status";
+CM_ BO_ 193 "Pedal Box Sensor Data";
+CM_ BO_ 194 "Steering Wheel Inputs";
+CM_ BO_ 512 "Battery Management System Main Status";
+CM_ BO_ 513 "Battery Management System Cell Statistics";
+CM_ BO_ 256 "Motor Controller Command (from VCU)";
+CM_ BO_ 257 "Motor Controller Feedback";
+CM_ BO_ 768 "Wheel Speed Sensors";
+CM_ BO_ 1024 "IMU 6-DOF Data";
+CM_ BO_ 1280 "Cooling System Status";

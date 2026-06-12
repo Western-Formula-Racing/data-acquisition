@@ -3,6 +3,7 @@ import { useTraceBuffer } from "../lib/useDataStore";
 import type { TelemetrySample } from "../lib/DataStore";
 import TourGuide, { type TourStep } from "./TourGuide";
 import { Play, Pause, Trash2, X, HelpCircle } from "lucide-react";
+import { useTimeline } from "../context/TimelineContext";
 
 type DirectionFilter = "all" | "rx" | "tx";
 
@@ -72,7 +73,8 @@ export default function TracePanel({
   onClose,
   initialOffset = { x: 0, y: 0 },
 }: TracePanelProps) {
-  const { frames, clearTrace } = useTraceBuffer(100);
+  const { source, mode: timelineMode, selectedTimeMs } = useTimeline();
+  const { frames, clearTrace } = useTraceBuffer(100, source);
   const [open, setOpen] = useState(true);
   const [position, setPosition] = useState({ top: 80, left: 80 });
   const [size, setSize] = useState({ width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
@@ -102,10 +104,14 @@ export default function TracePanel({
   const activeSource = paused ? snapshot : frames;
 
   const visible = useMemo(() => {
+    const timelinePaused = timelineMode === "paused";
+    const timeFiltered = timelinePaused
+      ? activeSource.filter((f) => f.timestamp <= selectedTimeMs)
+      : activeSource;
     let filtered =
       direction === "all"
-        ? activeSource
-        : activeSource.filter((f) => (f.direction ?? "rx") === direction);
+        ? timeFiltered
+        : timeFiltered.filter((f) => (f.direction ?? "rx") === direction);
     if (filter) {
       const term = filter.trim().toLowerCase();
       filtered = filtered.filter(
@@ -115,7 +121,7 @@ export default function TracePanel({
       );
     }
     return filtered.slice(-maxRows);
-  }, [activeSource, direction, maxRows, filter]);
+  }, [activeSource, direction, maxRows, filter, timelineMode, selectedTimeMs]);
 
   const handlePause = () => {
     if (!paused) {

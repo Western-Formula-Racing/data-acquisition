@@ -21,13 +21,19 @@ REDIS_CAN_CHANNEL   = "can_messages"
 REDIS_UPLINK_CHANNEL = "can_uplink"
 REDIS_STATS_CHANNEL = "system_stats"
 REDIS_DIAG_CHANNEL  = "link_diagnostics"
+REDIS_WS_CLIENTS_KEY = "websocket_bridge:clients"
 
 # ── Feature flags ─────────────────────────────────────────────────────────────
 ENABLE_UPLINK = os.getenv("ENABLE_UPLINK", "false").lower() == "true"
 
-# ── Local InfluxDB3 ───────────────────────────────────────────────────────────
-LOCAL_INFLUX_URL    = os.getenv("LOCAL_INFLUX_URL", "http://localhost:8181")
-LOCAL_INFLUX_TOKEN  = os.getenv("LOCAL_INFLUX_TOKEN", "")
-LOCAL_INFLUX_ORG    = os.getenv("LOCAL_INFLUX_ORG", "WFR")
-LOCAL_INFLUX_BUCKET = os.getenv("LOCAL_INFLUX_BUCKET", "WFR26")
-INFLUX_TABLE        = os.getenv("INFLUX_TABLE", "WFR26_base")
+# ── TimescaleDB ───────────────────────────────────────────────────────────────
+# Direct write to server TimescaleDB over the network (Option A — no local DB on RPi).
+# Format: postgresql://user:password@host:port/dbname
+POSTGRES_DSN       = os.getenv("POSTGRES_DSN", "postgresql://wfr:password@localhost:5432/wfr")
+# Season table name (e.g. wfr26_base). Derived from TIMESCALE_SEASON env var for convenience.
+TIMESCALE_TABLE    = os.getenv("TIMESCALE_TABLE", f"{os.getenv('TIMESCALE_SEASON', 'wfr26').lower()}")
+# Batching
+TIMESCALE_BATCH_SIZE     = int(os.getenv("TIMESCALE_BATCH_SIZE", "5000"))
+TIMESCALE_FLUSH_INTERVAL = int(os.getenv("TIMESCALE_FLUSH_INTERVAL_MS", "1000"))
+# Feature flag
+ENABLE_TIMESCALE = os.getenv("ENABLE_TIMESCALE_LOGGING", "false").lower() == "true"

@@ -57,9 +57,12 @@ describe("WebSocketService", () => {
     MockWebSocket.instances = [];
     vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
     localStorage.clear();
+    // Avoid multi-URL default failover (10.71… then demo) so tests stay fast unless overridden.
+    localStorage.setItem("pecan-ws-candidates", "wss://ws-demo.westernformularacing.org");
   });
 
   it("connects using custom URL from localStorage", async () => {
+    localStorage.clear();
     localStorage.setItem("custom-ws-url", "my-host:1234");
     const { WebSocketService } = await import("./WebSocketService");
 
@@ -68,6 +71,16 @@ describe("WebSocketService", () => {
 
     expect(MockWebSocket.instances).toHaveLength(1);
     expect(MockWebSocket.instances[0].url).toBe("ws://my-host:1234");
+  });
+
+  it("tries localhost WebSocket first on localhost pages", async () => {
+    localStorage.clear();
+    window.history.pushState({}, "", "http://localhost:3000/");
+    const { WebSocketService } = await import("./WebSocketService");
+
+    const svc = new WebSocketService();
+
+    expect((svc as any).resolveCandidateUrls()[0]).toBe("ws://localhost:9080");
   });
 
   it("emits decoded events from processor", async () => {

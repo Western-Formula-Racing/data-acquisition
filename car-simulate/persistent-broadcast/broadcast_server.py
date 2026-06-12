@@ -169,7 +169,7 @@ class StandardCanSimulator:
       - 512  BMS_Status
       - 768  Wheel_Speeds
 
-    Encoding follows the DBC scale/offset so PECAN and Influx decoding remain
+    Encoding follows the DBC scale/offset so PECAN and backend decoding remain
     consistent with the rest of the system.
     """
 

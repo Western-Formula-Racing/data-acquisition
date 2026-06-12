@@ -1,0 +1,19 @@
+{
+  "name": "pecan-grafana-bridge",
+  "version": "1.0.0",
+  "description": "Lightweight API bridge between Pecan and Grafana for dashboard creation",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "overrides": {
+    "lodash": "^4.18.0",
+    "qs": "^6.15.2",
+    "picomatch": "^2.3.2",
+    "fast-uri": "^3.1.2",
+    "serialize-javascript": "^7.0.5"
+  }
+}

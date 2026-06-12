@@ -1,0 +1,6 @@
+cantools
+psycopg2-binary
+Flask
+requests
+python-dotenv
+slicks>=0.2.0

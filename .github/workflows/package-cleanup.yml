@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        package: [universal-telemetry, car-jitsi-client, pecan]
+        package: [universal-telemetry, car-jitsi-client, pecan, file-uploader, lap-detector, slackbot]
 
     steps:
       - name: Delete old package versions

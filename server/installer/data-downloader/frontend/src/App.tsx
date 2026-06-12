@@ -1,0 +1,412 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fetchRuns, fetchSensors, fetchSensorsGrouped, fetchScannerStatus, triggerScan, updateNote, fetchSeasons } from "./api";
+import { Moon, Sun } from "lucide-react";
+import { RunRecord, RunsResponse, ScannerStatus, SensorsGroupedResponse, SensorsResponse, Season } from "./types";
+import { RunTable } from "./components/RunTable";
+import { DataDownload } from "./components/data-download";
+import { SensorGroupedGrid } from "./components/SensorGroupedGrid";
+
+type ScanState = "idle" | "running" | "success" | "error";
+type Theme = "light" | "dark";
+
+function getInitialTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+  const saved = window.localStorage.getItem("theme");
+  if (saved === "light" || saved === "dark") return saved;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+interface DownloaderSelection {
+  runKey?: string;
+  startUtc?: string;
+  endUtc?: string;
+  sensor?: string;
+  version: number;
+}
+
+export default function App() {
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [selectedSeason, setSelectedSeason] = useState<string>(""); // season name
+  const [runs, setRuns] = useState<RunsResponse | null>(null);
+  const [sensors, setSensors] = useState<SensorsResponse | null>(null);
+  const [sensorsGrouped, setSensorsGrouped] = useState<SensorsGroupedResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [scanState, setScanState] = useState<ScanState>("idle");
+  const [scanSeason, setScanSeason] = useState<string>("");
+  const [downloaderSelection, setDownloaderSelection] = useState<DownloaderSelection | null>(null);
+  const [scannerStatus, setScannerStatus] = useState<ScannerStatus | null>(null);
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const sensorsSectionRef = useRef<HTMLElement | null>(null);
+  const downloaderSectionRef = useRef<HTMLElement | null>(null);
+  const statusFinishedRef = useRef<string | null>(null);
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      let currentSeason = selectedSeason;
+
+      // Initial load: fetch seasons if we don't have them
+      if (seasons.length === 0) {
+        const seasonsList = await fetchSeasons();
+        setSeasons(seasonsList);
+        if (seasonsList.length > 0 && !currentSeason) {
+          currentSeason = seasonsList[0].name;
+          setSelectedSeason(currentSeason);
+          setScanSeason(currentSeason);
+        }
+      }
+
+      // If we still don't have a season (e.g. no seasons configured), fetch with default (undefined)
+      const seasonArg = currentSeason || undefined;
+
+      const [runsData, sensorsData, groupedData] = await Promise.all([
+        fetchRuns(seasonArg),
+        fetchSensors(seasonArg),
+        fetchSensorsGrouped(seasonArg).catch(() => null),
+      ]);
+      setRuns(runsData);
+      setSensors(sensorsData);
+      setSensorsGrouped(groupedData);
+      setError(null);
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to fetch data");
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedSeason, seasons.length]);
+
+  const loadStatus = useCallback(
+    async (syncOnFinishChange: boolean) => {
+      try {
+        const status = await fetchScannerStatus();
+        setScannerStatus(status);
+        const finished = status.finished_at ?? null;
+        const prevFinished = statusFinishedRef.current;
+        statusFinishedRef.current = finished;
+        if (
+          syncOnFinishChange &&
+          !status.scanning &&
+          finished &&
+          finished !== prevFinished
+        ) {
+          await loadData();
+        }
+      } catch (err) {
+        console.error("Failed to load scanner status", err);
+      }
+    },
+    [loadData]
+  );
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    window.localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    void loadData();
+    void loadStatus(false);
+  }, [loadData, loadStatus]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const id = window.setInterval(() => {
+      void loadStatus(true);
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [loadStatus]);
+
+  const handleScan = async () => {
+    setScanState("running");
+    setScannerStatus((prev) => ({
+      scanning: true,
+      started_at: new Date().toISOString(),
+      finished_at: prev?.finished_at ?? null,
+      source: "manual",
+      last_result: prev?.last_result ?? null,
+      error: null,
+      updated_at: new Date().toISOString()
+    }));
+    try {
+      await triggerScan(scanSeason || undefined);
+      setScanState("success");
+      if (typeof window !== "undefined") {
+        window.setTimeout(() => {
+          void loadStatus(false);
+        }, 1500);
+      } else {
+        void loadStatus(false);
+      }
+    } catch (err) {
+      console.error(err);
+      setScanState("error");
+      setError(err instanceof Error ? err.message : "Failed to start scan");
+      const message = err instanceof Error ? err.message : "Scan failed";
+      setScannerStatus((prev) =>
+        prev
+          ? { ...prev, scanning: false, last_result: "error", error: message }
+          : {
+            scanning: false,
+            started_at: null,
+            finished_at: null,
+            source: null,
+            last_result: "error",
+            error: message,
+            updated_at: new Date().toISOString()
+          }
+      );
+    } finally {
+      setTimeout(() => setScanState("idle"), 5000);
+    }
+  };
+
+  const handleRefreshClick = async () => {
+    await loadData();
+    await loadStatus(false);
+  };
+
+  const handleNoteChange = (key: string, value: string) => {
+    setNoteDrafts((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveNote = async (key: string) => {
+    const nextNote = noteDrafts[key] ?? runs?.runs.find((r) => r.key === key)?.note ?? "";
+    setSavingKey(key);
+    try {
+      const updated = await updateNote(key, nextNote, selectedSeason);
+      setRuns((prev) => {
+        if (!prev) return prev;
+        const updatedRuns = prev.runs.map((run) => (run.key === key ? updated : run));
+        return { ...prev, runs: updatedRuns, updated_at: updated.note_updated_at ?? prev.updated_at };
+      });
+      setNoteDrafts((prev) => {
+        const clone = { ...prev };
+        delete clone[key];
+        return clone;
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save note");
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const handleRunPick = (run: RunRecord) => {
+    setDownloaderSelection((prev) => ({
+      runKey: run.key,
+      startUtc: run.start_utc,
+      endUtc: run.end_utc,
+      sensor: prev?.sensor,
+      version: (prev?.version ?? 0) + 1
+    }));
+    sensorsSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleSensorPick = (sensor: string) => {
+    setDownloaderSelection((prev) => ({
+      runKey: prev?.runKey,
+      sensor,
+      version: (prev?.version ?? 0) + 1
+    }));
+    downloaderSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const sensorsPreview = useMemo(() => sensors?.sensors ?? [], [sensors]);
+  const scanningActive = scannerStatus?.scanning ?? false;
+  const scanButtonDisabled = scanningActive || scanState === "running";
+  const scanButtonLabel =
+    scanState === "running" ? "Scanning..." : scanningActive ? "Scan Running..." : "Trigger Scan";
+
+  const lastRunsRefresh = runs?.updated_at
+    ? new Date(runs.updated_at).toLocaleString()
+    : "never";
+  const lastSensorRefresh = sensors?.updated_at
+    ? new Date(sensors.updated_at).toLocaleString()
+    : "never";
+
+  const SEASON_COLORS: Record<string, string> = {
+    WFR25: "#ec4899",    // pink
+    WFR26: "#f59e0b",    // gold
+    WFR26TEST: "#ff6b00", // bright orange
+  };
+  const seasonColor = (name: string) => SEASON_COLORS[name] || "#0bf";
+
+  return (
+    <div className="app-shell">
+      <header style={{ marginBottom: "1.5rem", borderLeft: `6px solid ${seasonColor(selectedSeason)}`, paddingLeft: "1rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <h1 style={{ margin: 0, color: seasonColor(selectedSeason) }}>Data Downloader</h1>
+            <p className="subtitle">
+              Inspect historical scans, refresh availability, and capture run notes.
+            </p>
+          </div>
+
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+            {seasons.length > 0 && (
+              <div style={{ textAlign: "right" }}>
+                <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", margin: "0 0 0.25rem 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>Active Season</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0", border: "1px solid var(--border)", borderRadius: "6px", overflow: "hidden", maxWidth: "320px" }}>
+                  {seasons.map(s => {
+                    const active = s.name === selectedSeason;
+                    const sc = seasonColor(s.name);
+                    return (
+                      <button
+                        key={s.name}
+                        onClick={() => setSelectedSeason(s.name)}
+                        style={{
+                          padding: "0.35rem 0.75rem",
+                          border: "none",
+                          borderRight: "1px solid var(--border)",
+                          background: active ? sc : "transparent",
+                          color: active ? "#fff" : sc,
+                          fontWeight: active ? "bold" : "normal",
+                          fontSize: "0.85rem",
+                          cursor: "pointer",
+                          transition: "background 0.15s",
+                        }}
+                      >
+                        {s.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <button
+              className="theme-toggle"
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            >
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {scanningActive && (
+        <div className="scan-banner" role="alert">
+          Scanning database. Do not click again.
+        </div>
+      )}
+
+      <div className="actions">
+        {seasons.length > 1 && (
+          <select
+            value={scanSeason}
+            onChange={(e) => setScanSeason(e.target.value)}
+            disabled={scanButtonDisabled}
+            style={{ padding: "0.5rem", borderRadius: "4px", border: "1px solid var(--border-strong)", fontSize: "0.9rem", background: "var(--surface)", color: "var(--text)" }}
+          >
+            {seasons.map(s => (
+              <option key={s.name} value={s.name}>{s.name}</option>
+            ))}
+          </select>
+        )}
+        <button className="button" onClick={handleScan} disabled={scanButtonDisabled}>
+          {scanButtonLabel}
+        </button>
+        <button className="button secondary" onClick={() => void handleRefreshClick()} disabled={loading}>
+          {loading ? "Refreshing..." : "Refresh Data"}
+        </button>
+        <p style={{ fontSize: "0.75rem", color: "var(--text-subtle)", margin: "0" }}>
+          Use the top right season selector to switch the active season.
+        </p>
+        {scanState !== "idle" && (
+          <span
+            className="status-pill"
+            style={{
+              background:
+                scanState === "success" ? "#dcfce7" : scanState === "error" ? "#fee2e2" : "#fef9c3",
+              color:
+                scanState === "success" ? "#15803d" : scanState === "error" ? "#b91c1c" : "#a16207"
+            }}
+          >
+            {scanState === "running" && "Scan in progress..."}
+            {scanState === "success" && "Scan queued and data refreshed"}
+            {scanState === "error" && "Scan failed"}
+          </span>
+        )}
+      </div>
+
+      {error && (
+        <div className="card" style={{ border: "1px solid var(--error-card-border)", background: "var(--error-card-bg)", color: "var(--error-text)" }}>
+          <strong>Heads up:</strong> {error}
+        </div>
+      )}
+
+      <section className="card">
+        <h2>Past Runs</h2>
+        <p className="subtitle">Last refresh: {lastRunsRefresh}</p>
+        {loading && !runs ? (
+          <p className="subtitle">Loading runs...</p>
+        ) : runs ? (
+          <RunTable
+            runs={runs.runs}
+            drafts={noteDrafts}
+            onChange={handleNoteChange}
+            onSave={handleSaveNote}
+            savingKey={savingKey}
+            onPickRun={handleRunPick}
+          />
+        ) : (
+          <p className="subtitle">No data yet.</p>
+        )}
+      </section>
+
+      <section className="card" ref={sensorsSectionRef}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem", flexWrap: "wrap" }}>
+          <h2 style={{ margin: 0 }}>Unique Sensors</h2>
+          {sensorsGrouped?.dbc_source && sensorsGrouped.dbc_source !== "none" && (
+            <span className="tag" style={{ fontSize: "0.72rem" }}>
+              DBC: {sensorsGrouped.dbc_source}
+            </span>
+          )}
+        </div>
+        <p className="subtitle" style={{ marginTop: "0.35rem" }}>Last refresh: {lastSensorRefresh}</p>
+        {loading && !sensors ? (
+          <p className="subtitle">Loading sensors...</p>
+        ) : sensorsGrouped && sensorsGrouped.messages.length > 0 ? (
+          <SensorGroupedGrid
+            grouped={sensorsGrouped}
+            theme={theme}
+            onPick={handleSensorPick}
+          />
+        ) : (
+          <div className="sensor-grid">
+            {sensorsPreview.length === 0 && <p className="subtitle">No sensors captured.</p>}
+            {sensorsPreview.map((sensor) => (
+              <button
+                key={sensor}
+                type="button"
+                className="sensor-chip"
+                onClick={() => handleSensorPick(sensor)}
+              >
+                {sensor}
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="card" ref={downloaderSectionRef}>
+        <DataDownload
+          runs={runs?.runs ?? []}
+          sensors={sensorsPreview}
+          sensorsGrouped={sensorsGrouped ?? undefined}
+          season={selectedSeason}
+          externalSelection={downloaderSelection ?? undefined}
+          theme={theme}
+        />
+      </section>
+    </div>
+  );
+}

@@ -9,11 +9,14 @@ import {
   CheckCircle2,
   Activity,
   Globe,
+  RadioTower,
   RefreshCw,
   Wifi,
   WifiOff,
   FlaskConical,
   GitCommitHorizontal,
+  LockKeyhole,
+  Shield,
 } from 'lucide-react';
 import { loggingService } from './services/LoggingService';
 import { syncService } from './services/SyncService';
@@ -21,12 +24,98 @@ import type { ConnectionTestResult } from './services/SyncService';
 import { webSocketService } from './services/WebSocketService';
 import type { ConnectionStatus } from './services/WebSocketService';
 import { loggingHandler } from './services/LoggingHandler';
+import { liveRelayService } from './services/LiveRelayService';
+import type { RelayStatus } from './services/LiveRelayService';
 import {
   loadDBCFromCache,
   listDBCFiles,
   fetchAndApplyDBC,
 } from './utils/canProcessor';
 import type { DBCFileInfo, DBCApplyResult } from './utils/canProcessor';
+
+interface GuardedFlightButtonProps {
+  label: string;
+  sublabel: string;
+  active: boolean;
+  disabled?: boolean;
+  busy?: boolean;
+  icon: React.ReactNode;
+  onToggle: () => void;
+}
+
+const GuardedFlightButton: React.FC<GuardedFlightButtonProps> = ({
+  label,
+  sublabel,
+  active,
+  disabled = false,
+  busy = false,
+  icon,
+  onToggle,
+}) => {
+  const [guardOpen, setGuardOpen] = useState(false);
+  const locked = disabled || busy;
+
+  return (
+    <div className={`relative overflow-hidden rounded-2xl border p-4 min-h-[168px] transition-colors ${
+      active
+        ? 'border-orange-500/50 bg-orange-500/10'
+        : 'border-slate-700 bg-slate-900/70'
+    } ${locked ? 'opacity-60' : ''}`}>
+      <div className="relative z-10 flex h-full flex-col justify-between gap-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-black uppercase tracking-widest text-slate-500">{label}</div>
+            <div className={`mt-1 text-sm font-bold ${active ? 'text-orange-300' : 'text-slate-300'}`}>{sublabel}</div>
+          </div>
+          <div className={`rounded-xl border p-2 ${
+            active
+              ? 'border-orange-500/40 bg-orange-500/20 text-orange-300'
+              : 'border-slate-700 bg-slate-950 text-slate-500'
+          }`}>
+            {busy ? <Activity size={20} className="animate-spin" /> : icon}
+          </div>
+        </div>
+
+        <div className="flex items-end justify-between gap-3">
+          <div className={`group relative h-28 w-36 rounded-2xl border-2 transition-all duration-300 [perspective:420px] ${
+              guardOpen
+                ? 'border-orange-400/60 bg-orange-500/15'
+                : 'border-slate-600 bg-slate-800'
+            } ${locked ? 'cursor-not-allowed' : ''}`}>
+            <button
+              type="button"
+              disabled={locked || !guardOpen}
+              onClick={onToggle}
+              className={`absolute left-1/2 top-1/2 flex h-12 w-24 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-lg border-2 font-black text-sm uppercase tracking-widest transition-all active:scale-95 ${
+                active
+                  ? 'border-emerald-200 bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-900/50 ring-4 ring-emerald-400/20'
+                  : 'border-slate-500 bg-slate-950 text-slate-400 shadow-inner shadow-black/40'
+              } disabled:border-slate-700 disabled:bg-slate-900 disabled:text-slate-600 disabled:shadow-none disabled:ring-0`}
+              title={active ? `Turn off ${label}` : `Turn on ${label}`}
+            >
+              START
+            </button>
+            <button
+              type="button"
+              disabled={locked}
+              onClick={() => setGuardOpen((open) => !open)}
+              className={`absolute left-2 top-2 z-10 flex h-20 w-[7.5rem] origin-top items-center justify-center rounded-xl border transition-transform duration-300 [transform-style:preserve-3d] ${
+                guardOpen
+                  ? '[-webkit-transform:rotateX(72deg)_translateY(-16px)] [transform:rotateX(72deg)_translateY(-16px)] border-orange-300/60 bg-orange-500/25 text-orange-200 shadow-lg shadow-orange-900/30'
+                  : 'rotate-0 border-slate-500 bg-slate-700/95 text-slate-300'
+              } disabled:cursor-not-allowed`}
+              title={guardOpen ? 'Close guard' : 'Open guard'}
+            >
+              {guardOpen ? <Shield size={20} /> : <LockKeyhole size={20} />}
+            </button>
+            <span className="absolute left-3 top-2 z-20 h-1 w-[7rem] rounded-full bg-slate-950/60 shadow-[0_2px_0_rgba(148,163,184,0.28)]" />
+            <span className={`absolute bottom-3 right-3 h-3 w-3 rounded-full ${guardOpen ? 'bg-orange-300' : 'bg-slate-500'}`} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const FlightDataRecorder: React.FC = () => {
   const [isRecording, setIsRecording] = useState(loggingService.isRecording());
@@ -43,13 +132,17 @@ const FlightDataRecorder: React.FC = () => {
     url: '',
   });
   const [customWsUrl, setCustomWsUrl] = useState(localStorage.getItem('custom-ws-url') || '');
+  const [relayEnabled, setRelayEnabled] = useState(localStorage.getItem('live-relay-enabled') === 'true');
+  const [relayUrl, setRelayUrl] = useState(
+    localStorage.getItem('live-relay-url') || 'https://flight-recorder-relay.westernformularacing.workers.dev'
+  );
+  const [isCreatingRelaySession, setIsCreatingRelaySession] = useState(false);
+  const [relayStatus, setRelayStatus] = useState<RelayStatus>(liveRelayService.getStatus());
 
-  // InfluxDB settings
-  const [influxSettings, setInfluxSettings] = useState({
-    url: localStorage.getItem('influx-url') || 'https://influxdb3.westernformularacing.org',
-    token: localStorage.getItem('influx-token') || '',
-    org: localStorage.getItem('influx-org') || 'WFR',
-    bucket: localStorage.getItem('influx-bucket') || 'WFR26_FDR',
+  // Sync settings (TimescaleDB via REST API)
+  const [syncSettings, setSyncSettings] = useState({
+    apiEndpoint: localStorage.getItem('sync-api-endpoint') || 'https://data.westernformularacing.org',
+    season: localStorage.getItem('sync-season') || 'wfr26',
   });
 
   // DBC state
@@ -63,11 +156,14 @@ const FlightDataRecorder: React.FC = () => {
 
   useEffect(() => {
     // Legacy cleanup
-    localStorage.removeItem('influx-cfClientId');
-    localStorage.removeItem('influx-cfClientSecret');
+    localStorage.removeItem('cfClientId');
+    localStorage.removeItem('cfClientSecret');
 
     const handleStatusChange = (status: ConnectionStatus) => setWsStatus(status);
+    const handleRelayStatus = (status: RelayStatus) => setRelayStatus(status);
     webSocketService.on('status', handleStatusChange);
+    liveRelayService.onStatus(handleRelayStatus);
+    liveRelayService.initialize();
 
     const startup = async () => {
       // 1. Load cached DBC so processor has something while we fetch
@@ -101,6 +197,8 @@ const FlightDataRecorder: React.FC = () => {
 
     return () => {
       webSocketService.off('status', handleStatusChange);
+      liveRelayService.offStatus(handleRelayStatus);
+      liveRelayService.shutdown();
       webSocketService.disconnect();
     };
   }, []);
@@ -128,11 +226,8 @@ const FlightDataRecorder: React.FC = () => {
     if (isSyncing) return;
     try {
       setIsSyncing(true);
-      await syncService.syncToInflux(
-        influxSettings.url,
-        influxSettings.token,
-        influxSettings.org,
-        influxSettings.bucket,
+      await syncService.syncToServer(
+        { apiEndpoint: syncSettings.apiEndpoint, season: syncSettings.season },
         (processed, total) => setSyncProgress({ processed, total })
       );
       alert('Sync completed successfully!');
@@ -154,19 +249,15 @@ const FlightDataRecorder: React.FC = () => {
     }
   };
 
-  const updateSetting = (key: string, value: string) => {
-    setInfluxSettings(prev => ({ ...prev, [key]: value }));
-    localStorage.setItem(`influx-${key}`, value);
+  const updateSyncSetting = (key: string, value: string) => {
+    setSyncSettings(prev => ({ ...prev, [key]: value }));
+    localStorage.setItem(`sync-${key}`, value);
   };
 
   const handleTestConnection = async () => {
     setIsTesting(true);
     setConnTest(null);
-    const result = await syncService.testConnection(
-      influxSettings.url,
-      influxSettings.token,
-      influxSettings.bucket
-    );
+    const result = await syncService.testConnection(syncSettings.apiEndpoint);
     setConnTest(result);
     setIsTesting(false);
   };
@@ -178,6 +269,58 @@ const FlightDataRecorder: React.FC = () => {
       localStorage.removeItem('custom-ws-url');
     }
     webSocketService.initialize();
+  };
+
+  const saveRelayConfig = () => {
+    liveRelayService.setConfig(relayUrl, relayEnabled);
+    setRelayStatus(liveRelayService.getStatus());
+  };
+
+  const createRelaySession = async () => {
+    if (isCreatingRelaySession) return;
+    try {
+      setIsCreatingRelaySession(true);
+      const session = await liveRelayService.createSession(relayUrl);
+      setRelayUrl(session.ingestUrl);
+      setRelayEnabled(true);
+      liveRelayService.setConfig(session.ingestUrl, true);
+      setRelayStatus(liveRelayService.getStatus());
+    } catch (error) {
+      alert(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsCreatingRelaySession(false);
+    }
+  };
+
+  const toggleRelayForward = async () => {
+    if (isCreatingRelaySession) return;
+
+    if (relayEnabled) {
+      setRelayEnabled(false);
+      liveRelayService.setConfig(relayUrl, false);
+      setRelayStatus(liveRelayService.getStatus());
+      return;
+    }
+
+    try {
+      setIsCreatingRelaySession(true);
+      const trimmed = relayUrl.trim();
+      const needsSession = !trimmed.startsWith('ws://') && !trimmed.startsWith('wss://');
+      if (needsSession) {
+        const session = await liveRelayService.createSession(trimmed);
+        setRelayUrl(session.ingestUrl);
+        setRelayEnabled(true);
+        liveRelayService.setConfig(session.ingestUrl, true);
+      } else {
+        setRelayEnabled(true);
+        liveRelayService.setConfig(trimmed, true);
+      }
+      setRelayStatus(liveRelayService.getStatus());
+    } catch (error) {
+      alert(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsCreatingRelaySession(false);
+    }
   };
 
   const handleSelectDBC = async (filename: string) => {
@@ -365,6 +508,76 @@ const FlightDataRecorder: React.FC = () => {
               </p>
             </div>
 
+            <div className="pt-4 border-t border-slate-700/50 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <RadioTower className={relayStatus.connected ? 'text-orange-400' : 'text-slate-500'} size={18} />
+                  <span className="text-xs font-black text-slate-500 uppercase tracking-widest">Live Relay</span>
+                </div>
+                <span className={`rounded-lg border px-3 py-1.5 text-xs font-black uppercase tracking-widest ${
+                  relayStatus.connected
+                    ? 'border-orange-500/30 bg-orange-500/10 text-orange-400'
+                    : 'border-slate-700 bg-slate-900 text-slate-500'
+                }`}>
+                  {relayStatus.connected ? 'On' : 'Off'}
+                </span>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={relayUrl}
+                  onChange={(e) => setRelayUrl(e.target.value)}
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-orange-500 outline-none placeholder:text-slate-700"
+                  placeholder="https://flight-recorder-relay.westernformularacing.workers.dev"
+                />
+                <button
+                  onClick={createRelaySession}
+                  disabled={isCreatingRelaySession || !relayUrl}
+                  className="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 p-3 rounded-xl transition-colors"
+                  title="Create relay session"
+                >
+                  {isCreatingRelaySession ? <Activity size={20} className="animate-spin text-orange-400" /> : <RadioTower size={20} className="text-slate-400" />}
+                </button>
+                <button
+                  onClick={saveRelayConfig}
+                  className="bg-slate-700 hover:bg-slate-600 p-3 rounded-xl transition-colors"
+                  title="Apply relay settings"
+                >
+                  <RefreshCw size={20} className={relayStatus.connected ? 'text-orange-400' : 'text-slate-400'} />
+                </button>
+              </div>
+
+              <GuardedFlightButton
+                label="WS Relay"
+                sublabel={relayStatus.connected ? 'Broadcasting to viewer WSS' : 'Phone-to-cloud relay armed separately'}
+                active={relayStatus.connected}
+                busy={isCreatingRelaySession}
+                disabled={!relayUrl.trim()}
+                icon={<RadioTower size={20} />}
+                onToggle={toggleRelayForward}
+              />
+
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                Create a Worker session to get a viewer WSS link for PECAN. While connected, the phone forwards raw UTS frames and a 1 Hz FA AA FA AA heartbeat.
+              </p>
+              {relayStatus.viewerUrl && (
+                <div className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-widest font-black mb-1">Viewer WSS</div>
+                  <code className="block text-[10px] text-orange-400 break-all">{relayStatus.viewerUrl}</code>
+                </div>
+              )}
+              <div className={`text-[10px] font-mono rounded-lg px-3 py-2 border ${
+                relayStatus.connected
+                  ? 'bg-orange-500/10 border-orange-500/30 text-orange-400'
+                  : 'bg-slate-900 border-slate-700 text-slate-500'
+              }`}>
+                {relayStatus.connected
+                  ? `Forwarded ${relayStatus.forwarded.toLocaleString()} frames`
+                  : relayStatus.error || 'Relay disconnected'}
+              </div>
+            </div>
+
             <div className="pt-4 border-t border-slate-700/50">
               <div className="flex items-center justify-between mb-4">
                 <span className="text-xs font-black text-slate-500 uppercase tracking-widest">Maintenance</span>
@@ -383,58 +596,36 @@ const FlightDataRecorder: React.FC = () => {
         <div className="lg:col-span-2 bg-slate-800/50 border border-slate-700 p-6 rounded-2xl shadow-xl flex flex-col">
           <h2 className="text-xl font-black flex items-center gap-2 uppercase tracking-tighter mb-6">
             <CloudUpload className="text-orange-400" />
-            InfluxDB Sync
+            TimescaleDB Sync
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Endpoint URL</label>
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">API Endpoint</label>
                 <input
                   type="text"
-                  value={influxSettings.url}
-                  onChange={(e) => updateSetting('url', e.target.value)}
+                  value={syncSettings.apiEndpoint}
+                  onChange={(e) => updateSyncSetting('apiEndpoint', e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-orange-500 outline-none"
-                  placeholder="http://influx.wfr:8086"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Auth Token</label>
-                <input
-                  type="password"
-                  value={influxSettings.token}
-                  onChange={(e) => updateSetting('token', e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                  placeholder="https://data.westernformularacing.org"
                 />
               </div>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Organization</label>
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Season</label>
                 <input
                   type="text"
-                  value={influxSettings.org}
-                  onChange={(e) => updateSetting('org', e.target.value)}
+                  value={syncSettings.season}
+                  onChange={(e) => updateSyncSetting('season', e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                  placeholder="wfr26"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">Bucket</label>
-                <input
-                  type="text"
-                  value={influxSettings.bucket}
-                  onChange={(e) => updateSetting('bucket', e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 font-mono text-sm focus:ring-2 focus:ring-orange-500 outline-none"
-                />
-              </div>
-              <div className="space-y-2">
-                <p className="text-[10px] text-amber-400/80 leading-relaxed border border-amber-500/20 rounded-xl px-3 py-2 bg-amber-500/5">
-                  FDR data always goes to <span className="font-mono font-black">WFR26_FDR</span>, not <span className="font-mono">WFR26</span>. Keep the bucket above as-is unless intentionally separating a season.
-                </p>
-                <p className="text-[10px] text-slate-500 leading-relaxed border border-slate-700/60 rounded-xl px-3 py-2 bg-slate-900/60">
-                  Ensure your Auth Token is correct and the endpoint is accessible from this network.
-                </p>
-              </div>
+              <p className="text-[10px] text-slate-500 leading-relaxed border border-slate-700/60 rounded-xl px-3 py-2 bg-slate-900/60">
+                Data will be written to the <code className="text-orange-400">{syncSettings.season}_base</code> table.
+              </p>
             </div>
           </div>
 
@@ -452,7 +643,7 @@ const FlightDataRecorder: React.FC = () => {
             {isSyncing && (
               <div className="mb-4">
                 <div className="flex justify-between text-[10px] font-black text-orange-400 uppercase tracking-widest mb-2">
-                  <span>Uploading to Cloud...</span>
+                  <span>Uploading to Server...</span>
                   <span>{Math.round((syncProgress.processed / syncProgress.total) * 100) || 0}%</span>
                 </div>
                 <div className="w-full h-3 bg-slate-900 rounded-full overflow-hidden p-0.5 border border-slate-700">
@@ -464,7 +655,7 @@ const FlightDataRecorder: React.FC = () => {
               </div>
             )}
 
-            <div className="flex gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-[auto_1fr] gap-3">
               <button
                 disabled={isTesting || isSyncing}
                 onClick={handleTestConnection}
@@ -473,14 +664,15 @@ const FlightDataRecorder: React.FC = () => {
                 {isTesting ? <Activity className="animate-spin" size={18} /> : <FlaskConical size={18} />}
                 Test
               </button>
-              <button
-                disabled={isSyncing || unsyncedCount === 0}
-                onClick={handleSync}
-                className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black py-5 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl shadow-orange-900/20 uppercase tracking-widest text-lg"
-              >
-                {isSyncing ? <Activity className="animate-spin" size={24} /> : <CloudUpload size={24} />}
-                {isSyncing ? 'Synchronizing...' : 'Upload to InfluxDB'}
-              </button>
+              <GuardedFlightButton
+                label="DB Forward"
+                sublabel={isSyncing ? 'Uploading decoded frames' : `${unsyncedCount.toLocaleString()} frames ready for TimescaleDB`}
+                active={isSyncing}
+                busy={isSyncing}
+                disabled={unsyncedCount === 0}
+                icon={<CloudUpload size={20} />}
+                onToggle={handleSync}
+              />
             </div>
           </div>
         </div>

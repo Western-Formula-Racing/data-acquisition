@@ -1,10 +1,12 @@
 import asyncio
+import contextlib
 import redis.asyncio as redis
 import websockets
 import os
 import logging
 import json
 import time
+import ipaddress
 
 from src.config import (
     REDIS_URL,
@@ -12,6 +14,7 @@ from src.config import (
     REDIS_STATS_CHANNEL,
     REDIS_UPLINK_CHANNEL,
     REDIS_DIAG_CHANNEL,
+    REDIS_WS_CLIENTS_KEY,
     ENABLE_UPLINK,
 )
 from src import redis_utils, utils
@@ -39,6 +42,45 @@ _next_client_id = 0
 
 # Direct CAN bus handle (car mode only)
 _can_bus = None
+
+
+def _is_internal_client(websocket) -> bool:
+    """Return True for loopback clients such as the local WS relay upstream."""
+    try:
+        host = websocket.remote_address[0]
+        return ipaddress.ip_address(host).is_loopback
+    except Exception:
+        return False
+
+
+def _client_count_snapshot() -> dict[str, int]:
+    internal = sum(1 for client in connected_clients if _is_internal_client(client))
+    total = len(connected_clients)
+    return {
+        "total": total,
+        "internal": internal,
+        "external": max(0, total - internal),
+    }
+
+
+async def _publish_client_count() -> None:
+    """Publish the current WebSocket client count for the HTTP health snapshot."""
+    try:
+        r = redis.from_url(REDIS_URL)
+        await r.set(REDIS_WS_CLIENTS_KEY, json.dumps(_client_count_snapshot()), ex=10)
+        await r.aclose()
+    except Exception as e:
+        logger.debug("Could not publish WebSocket client count: %s", e)
+
+
+async def _client_count_publisher() -> None:
+    """Keep the health snapshot client count fresh even when no clients churn."""
+    while not shutdown_event.is_set():
+        await _publish_client_count()
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=2.0)
+        except asyncio.TimeoutError:
+            pass
 
 
 def _init_can_bus():
@@ -221,32 +263,72 @@ def _release_client_locks(websocket):
         logger.info(f"Page lock auto-released: {page} (client disconnected)")
 
 
-async def redis_listener():
-    """Listens to Redis and broadcasts to all WS clients."""
-    try:
-        r = redis.from_url(REDIS_URL)
-        pubsub = r.pubsub()
-        await pubsub.subscribe(REDIS_CHANNEL, REDIS_STATS_CHANNEL, REDIS_DIAG_CHANNEL)
-        logger.info(f"Subscribed to Redis channels: {REDIS_CHANNEL}, {REDIS_STATS_CHANNEL}, {REDIS_DIAG_CHANNEL}")
+async def direct_queue_listener(queue: asyncio.Queue):
+    """Broadcast messages from an in-process queue to all WS clients (car mode, no Redis)."""
+    while not shutdown_event.is_set():
+        try:
+            data = await asyncio.wait_for(queue.get(), timeout=1.0)
+        except asyncio.TimeoutError:
+            continue
+        if connected_clients:
+            await asyncio.gather(
+                *[client.send(data) for client in connected_clients],
+                return_exceptions=True,
+            )
 
-        async for message in pubsub.listen():
+
+async def redis_listener():
+    """Listens to Redis and broadcasts to all WS clients.
+
+    Wrapped in a reconnect loop. A dropped Redis pub/sub connection — an idle
+    timeout, a transient blip on the Docker bridge network, or a Redis restart —
+    must not silently kill the data feed. Without this loop the coroutine would
+    exit on the first ConnectionError while the WebSocket server kept running:
+    PECAN stays connected but never receives another frame, so the dashboard
+    goes dead with no error visible anywhere. `health_check_interval` lets
+    redis-py detect a half-open connection instead of blocking forever in
+    listen().
+    """
+    backoff_min, backoff_max = 0.5, 10.0
+    delay = backoff_min
+
+    while not shutdown_event.is_set():
+        r = None
+        try:
+            r = redis.from_url(REDIS_URL, health_check_interval=30)
+            pubsub = r.pubsub()
+            await pubsub.subscribe(REDIS_CHANNEL, REDIS_STATS_CHANNEL, REDIS_DIAG_CHANNEL)
+            logger.info(f"Subscribed to Redis channels: {REDIS_CHANNEL}, {REDIS_STATS_CHANNEL}, {REDIS_DIAG_CHANNEL}")
+            delay = backoff_min  # reset backoff once a subscribe succeeds
+
+            async for message in pubsub.listen():
+                if shutdown_event.is_set():
+                    break
+
+                if message['type'] == 'message':
+                    data = redis_utils.decode_message(message['data'])
+
+                    # Broadcast to all connected clients
+                    if connected_clients:
+                        # Create tasks for sending to each client to avoid blocking
+                        await asyncio.gather(
+                            *[client.send(data) for client in connected_clients],
+                            return_exceptions=True
+                        )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
             if shutdown_event.is_set():
                 break
+            logger.error(f"Redis listener error: {e} — reconnecting in {delay:.1f}s")
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, backoff_max)
+        finally:
+            if r is not None:
+                with contextlib.suppress(Exception):
+                    await r.aclose()
 
-            if message['type'] == 'message':
-                data = redis_utils.decode_message(message['data'])
-
-                # Broadcast to all connected clients
-                if connected_clients:
-                    # Create tasks for sending to each client to avoid blocking
-                    await asyncio.gather(
-                        *[client.send(data) for client in connected_clients],
-                        return_exceptions=True
-                    )
-    except Exception as e:
-        logger.error(f"Redis error: {e}")
-    finally:
-        logger.info("Redis listener stopping...")
+    logger.info("Redis listener stopping...")
 
 
 async def _handle_client_message(websocket, raw: str, redis_client):
@@ -429,6 +511,7 @@ async def ws_handler(websocket):
     _next_client_id += 1
     _client_ids[websocket] = client_id
     logger.info(f"Client connected: {client_info} ({client_id}). Total: {len(connected_clients)}")
+    await _publish_client_count()
 
     redis_client = None
     if ENABLE_UPLINK and ROLE != "car":
@@ -459,15 +542,22 @@ async def ws_handler(websocket):
         if redis_client:
             await redis_client.aclose()
         logger.info(f"Client disconnected: {client_info} ({client_id}). Total: {len(connected_clients)}")
+        await _publish_client_count()
         if had_locks:
             await _broadcast_page_lock_state()
 
-async def run_websocket_bridge(heartbeat_event=None):
-    """Main entry point for WebSocket bridge."""
+async def run_websocket_bridge(heartbeat_event=None, direct_queue: asyncio.Queue | None = None):
+    """Main entry point for WebSocket bridge.
+
+    When direct_queue is provided (car mode without Redis), messages are read
+    from the queue instead of Redis pub/sub.
+    """
     loop = asyncio.get_running_loop()
     utils.register_shutdown_signals(loop, shutdown_event, "WebSocket bridge")
 
     logger.info(f"Starting WebSocket Bridge on port {WS_PORT}... (role={ROLE})")
+    if direct_queue is not None:
+        logger.info("WebSocket bridge using direct in-process queue (no Redis)")
     if ENABLE_UPLINK:
         if ROLE == "car":
             logger.info("Uplink ENABLED — CAR MODE (direct CAN bus write)")
@@ -480,9 +570,14 @@ async def run_websocket_bridge(heartbeat_event=None):
     # Start WebSocket server
     async with websockets.serve(ws_handler, "0.0.0.0", WS_PORT):
         logger.info(f"WebSocket server running at ws://0.0.0.0:{WS_PORT}")
+        await _publish_client_count()
 
-        # Run Redis listener and heartbeat until shutdown
-        await asyncio.gather(redis_listener(), utils.heartbeat_coro(heartbeat_event, shutdown_event))
+        listener = direct_queue_listener(direct_queue) if direct_queue is not None else redis_listener()
+        await asyncio.gather(
+            listener,
+            _client_count_publisher(),
+            utils.heartbeat_coro(heartbeat_event, shutdown_event),
+        )
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

@@ -1,21 +1,24 @@
 import { useMemo, useState } from "react";
-import { Upload, AlertTriangle, FileJson } from "lucide-react";
+import { Upload, AlertTriangle, FileJson, Settings as SettingsIcon } from "lucide-react";
 import TimelineBar from "../components/TimelineBar";
 import ReplayImportClipModal from "../components/ReplayImportClipModal";
 import { parseReplayFile, REPLAY_FRAME_HARD_CAP } from "../utils/replayParser";
-import type { ReplayFrame, ReplayParseResult, ReplayPlotsMetadata, ReplayTimelineMetadata } from "../types/replay";
+import type { ReplayDecodeMetadata, ReplayFrame, ReplayParseResult, ReplayPlotsMetadata, ReplayTimelineMetadata } from "../types/replay";
 import { useTimeline } from "../context/TimelineContext";
+import { setActiveDbcText } from "../utils/canProcessor";
 
 function ReplayViewer() {
   const { loadReplayFrames, clearReplaySession, replaySession, source } = useTimeline();
   const [isParsing, setIsParsing] = useState(false);
   const [loadedFileName, setLoadedFileName] = useState<string>("");
   const [result, setResult] = useState<ReplayParseResult | null>(null);
+  const [configImportMsg, setConfigImportMsg] = useState<string | null>(null);
   const [pendingClipImport, setPendingClipImport] = useState<{
     frames: ReplayFrame[];
     fileName: string;
     timelineMeta?: ReplayTimelineMetadata;
     plotsMeta?: ReplayPlotsMetadata;
+    decodeMeta?: ReplayDecodeMetadata;
   } | null>(null);
 
   const handleFilePick = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,18 +38,71 @@ function ReplayViewer() {
             fileName: file.name,
             timelineMeta: parseResult.sessionMeta?.timeline,
             plotsMeta: parseResult.sessionMeta?.plots,
+            decodeMeta: parseResult.sessionMeta?.decode,
           });
         } else {
           await loadReplayFrames(
             parseResult.frames,
             file.name,
             parseResult.sessionMeta?.timeline,
-            parseResult.sessionMeta?.plots
+            parseResult.sessionMeta?.plots,
+            parseResult.sessionMeta?.decode
           );
         }
       }
     } finally {
       setIsParsing(false);
+      event.target.value = "";
+    }
+  };
+
+  const handleConfigOnlyPick = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setConfigImportMsg(null);
+    try {
+      const parseResult = await parseReplayFile(file);
+      const meta = parseResult.sessionMeta;
+      const layouts = meta?.plots?.layouts ?? [];
+      const applied: string[] = [];
+
+      if (layouts.length > 0) {
+        const plotsForStorage = layouts
+          .map((layout) => ({
+            id: String(layout.id),
+            signals: (layout.series ?? []).map((series) => ({
+              msgID: series.msgId,
+              signalName: series.signalName,
+              messageName: `CAN_${series.msgId}`,
+              unit: "",
+            })),
+          }))
+          .filter((p) => p.signals.length > 0);
+        if (plotsForStorage.length > 0) {
+          localStorage.setItem("dash:plots", JSON.stringify(plotsForStorage));
+          window.dispatchEvent(new CustomEvent("pecan:plots-imported", { detail: plotsForStorage }));
+          applied.push(`${plotsForStorage.length} plot${plotsForStorage.length === 1 ? "" : "s"}`);
+        }
+      }
+
+      const embedded = meta?.decode?.dbcEmbedded;
+      if (embedded?.format === "dbc" && embedded.content) {
+        setActiveDbcText(embedded.content);
+        applied.push("DBC");
+      }
+
+      if (typeof meta?.timeline?.windowMs === "number") {
+        applied.push(`window ${Math.round(meta.timeline.windowMs / 1000)}s`);
+      }
+
+      setConfigImportMsg(
+        applied.length > 0
+          ? `Config imported: ${applied.join(", ")}`
+          : "No plot/DBC config found in file"
+      );
+    } catch (err) {
+      setConfigImportMsg(`Config import failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    } finally {
       event.target.value = "";
     }
   };
@@ -72,7 +128,8 @@ function ReplayViewer() {
                 framesToLoad,
                 pendingClipImport.fileName,
                 pendingClipImport.timelineMeta,
-                pendingClipImport.plotsMeta
+                pendingClipImport.plotsMeta,
+                pendingClipImport.decodeMeta
               );
               setPendingClipImport(null);
             }}
@@ -85,18 +142,35 @@ function ReplayViewer() {
               Import .pecan, .json, or replay CSV files and validate them for deterministic timeline replay.
             </p>
           </div>
-          <label className="trace-btn trace-btn-primary cursor-pointer" htmlFor="replay-upload-input">
-            <Upload className="h-4 w-4" />
-            {isParsing ? "Parsing..." : "Import Replay File"}
-          </label>
-          <input
-            id="replay-upload-input"
-            type="file"
-            accept=".pecan,.json,.csv,.blf,text/csv,application/json"
-            className="hidden"
-            onChange={handleFilePick}
-            disabled={isParsing}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="trace-btn trace-btn-primary cursor-pointer" htmlFor="replay-upload-input">
+              <Upload className="h-4 w-4" />
+              {isParsing ? "Parsing..." : "Import Replay File"}
+            </label>
+            <input
+              id="replay-upload-input"
+              type="file"
+              accept=".pecan,.json,.csv,.blf,text/csv,application/json"
+              className="hidden"
+              onChange={handleFilePick}
+              disabled={isParsing}
+            />
+            <label
+              className="trace-btn trace-btn-subtle cursor-pointer"
+              htmlFor="replay-config-input"
+              title="Apply plot layout, DBC, and window from a .pecan file without loading its frames"
+            >
+              <SettingsIcon className="h-4 w-4" />
+              Import Config Only
+            </label>
+            <input
+              id="replay-config-input"
+              type="file"
+              accept=".pecan,application/json"
+              className="hidden"
+              onChange={handleConfigOnlyPick}
+            />
+          </div>
         </header>
 
         <TimelineBar />
@@ -106,6 +180,19 @@ function ReplayViewer() {
             <FileJson className="h-4 w-4" />
             <h2 className="app-section-title">Import Status</h2>
           </div>
+
+          {configImportMsg && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-emerald-400/35 bg-emerald-500/10 p-2 text-xs text-emerald-100">
+              <span className="font-mono uppercase tracking-wide">{configImportMsg}</span>
+              <button
+                type="button"
+                className="trace-btn trace-btn-subtle !text-[10px] !px-2 !py-1 ml-auto"
+                onClick={() => setConfigImportMsg(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
 
           {replaySession && source === "replay" && (
             <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-cyan-400/35 bg-cyan-500/10 p-2 text-xs text-cyan-100">

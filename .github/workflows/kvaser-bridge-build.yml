@@ -1,0 +1,168 @@
+name: Build Kvaser Bridge Binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional existing release tag to attach binaries to (for example: v1.2.3)'
+        required: false
+        type: string
+  push:
+    branches: [ main, dev ]
+  release:
+    types: [ published ]
+
+jobs:
+  build-binaries:
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: kvaser-bridge-windows
+            release_asset: kvaser-bridge-windows.exe
+          - os: macos-latest
+            artifact_name: kvaser-bridge-macos
+            release_asset: kvaser-bridge-macos.app.zip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install bridge dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r kvaser-bridge/requirements.txt
+
+      - name: Build standalone binary
+        shell: bash
+        run: |
+          cd kvaser-bridge
+          [[ -f build.spec ]] || { echo 'Missing kvaser-bridge/build.spec in repository checkout.'; exit 1; }
+          pyinstaller --clean --noconfirm build.spec
+
+      - name: Prepare Windows release asset
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Copy-Item -Path "kvaser-bridge/dist/kvaser-bridge.exe" -Destination "kvaser-bridge/dist/kvaser-bridge-windows.exe" -Force
+
+      - name: Package macOS app bundle
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cd kvaser-bridge/dist
+          [[ -d kvaser-bridge.app ]] || { echo 'Expected macOS app bundle not found.'; exit 1; }
+          ditto -c -k --sequesterRsrc --keepParent kvaser-bridge.app kvaser-bridge-macos.app.zip
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: kvaser-bridge/dist/${{ matrix.release_asset }}
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-rolling-release:
+    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'dev')
+    runs-on: ubuntu-latest
+    needs: build-binaries
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Select rolling release metadata
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            echo "tag=kvaser-bridge-main-latest" >> "$GITHUB_OUTPUT"
+            echo "name=Kvaser Bridge - Main Latest" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=kvaser-bridge-dev-latest" >> "$GITHUB_OUTPUT"
+            echo "name=Kvaser Bridge - Dev Latest" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Move rolling tag to current commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "${{ steps.meta.outputs.tag }}" "${GITHUB_SHA}"
+          git push origin "refs/tags/${{ steps.meta.outputs.tag }}" --force
+
+      - name: Create or update rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          notes="Automated binary build from ${GITHUB_REF_NAME} at ${GITHUB_SHA}."
+          if gh release view "${{ steps.meta.outputs.tag }}" >/dev/null 2>&1; then
+            gh release edit "${{ steps.meta.outputs.tag }}" \
+              --title "${{ steps.meta.outputs.name }}" \
+              --notes "$notes"
+          else
+            if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
+              gh release create "${{ steps.meta.outputs.tag }}" \
+                --target "${GITHUB_SHA}" \
+                --title "${{ steps.meta.outputs.name }}" \
+                --notes "$notes" \
+                --prerelease
+            else
+              gh release create "${{ steps.meta.outputs.tag }}" \
+                --target "${GITHUB_SHA}" \
+                --title "${{ steps.meta.outputs.name }}" \
+                --notes "$notes"
+            fi
+          fi
+
+      - name: Upload binaries to rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release upload "${{ steps.meta.outputs.tag }}" \
+            release-assets/kvaser-bridge-macos/kvaser-bridge-macos.app.zip \
+            release-assets/kvaser-bridge-windows/kvaser-bridge-windows.exe \
+            --clobber
+
+  attach-release-assets:
+    if: (github.event_name == 'release' && !startsWith(github.event.release.tag_name, 'kvaser-bridge-')) || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    runs-on: ubuntu-latest
+    needs: build-binaries
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Upload binaries to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
+          files: |
+            release-assets/kvaser-bridge-macos/kvaser-bridge-macos.app.zip
+            release-assets/kvaser-bridge-windows/kvaser-bridge-windows.exe

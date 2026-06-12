@@ -38,6 +38,12 @@ COPY status/ /app/status/
 COPY web-tester/ /app/web-tester/
 COPY main.py /app/.
 COPY example.dbc /app/example.dbc
+COPY lan_sender.sh /app/lan_sender.sh
+
+# Bake the git hash into the image so version.py can read it at runtime.
+# Pass --build-arg GIT_HASH=$(git rev-parse --short HEAD) when building.
+ARG GIT_HASH=unknown
+ENV GIT_HASH=$GIT_HASH
 
 # Use environment variables for configuration
 ENV ROLE=auto

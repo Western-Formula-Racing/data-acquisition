@@ -42,7 +42,7 @@ trap cleanup EXIT
 # ── Unit tests ───────────────────────────────────────────────────────────────
 echo -e "\n${YELLOW}Running unit tests (no containers)...${NC}"
 uv sync --frozen --extra dev
-uv run -- python -m pytest tests/test_leds.py tests/test_influx_bridge.py -v || {
+uv run -- python -m pytest tests/test_leds.py -v || {
     echo -e "${RED}✗ Unit tests failed${NC}"
     exit 1
 }
@@ -64,13 +64,12 @@ fi
 echo -e "\n${YELLOW}Validating compose configs...${NC}"
 docker compose -f deploy/docker-compose.yml config --quiet
 docker compose -f deploy/docker-compose.test.yml config --quiet
-docker compose -f deploy/docker-compose.prod.yml config --quiet
 docker compose -f deploy/docker-compose.can-test.yml config --quiet
 echo -e "${GREEN}✓ All compose configs valid${NC}"
 
 # ── Start test environment ───────────────────────────────────────────────────
 if [ "$NO_BUILD" = false ]; then
-    echo -e "\n${YELLOW}Starting test stack (including InfluxDB3)...${NC}"
+    echo -e "\n${YELLOW}Starting test stack (TimescaleDB)...${NC}"
     docker compose -f deploy/docker-compose.test.yml up -d --build || {
         echo -e "${RED}✗ Failed to start containers${NC}"
         exit 1
@@ -84,7 +83,7 @@ fi
 echo -e "\n${YELLOW}Verifying containers...${NC}"
 docker compose -f deploy/docker-compose.test.yml ps
 
-for container in daq-car daq-base daq-car-redis daq-base-redis daq-pecan-test daq-test-influxdb3; do
+for container in daq-car daq-base daq-car-redis daq-base-redis daq-pecan-test daq-test-timescaledb; do
     if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
         echo -e "${GREEN}✓ ${container} running${NC}"
     else
@@ -97,7 +96,7 @@ done
 # ── Initial logs ─────────────────────────────────────────────────────────────
 echo -e "\n${YELLOW}Recent container logs...${NC}"
 docker logs daq-base  --tail 20 2>&1 || true
-docker logs daq-test-influxdb3 --tail 10 2>&1 || true
+docker logs daq-test-timescaledb --tail 10 2>&1 || true
 
 # ── Integration tests ────────────────────────────────────────────────────────
 echo -e "\n${YELLOW}Running integration tests...${NC}"
@@ -112,7 +111,7 @@ uv run -- python -m pytest tests/test_integration.py -v -s --timeout=120 || {
     docker logs daq-car-redis      > test-logs/car-redis.log 2>&1 || true
     docker logs daq-base-redis     > test-logs/base-redis.log 2>&1 || true
     docker logs daq-pecan-test     > test-logs/pecan.log 2>&1 || true
-    docker logs daq-test-influxdb3 > test-logs/influxdb3.log 2>&1 || true
+    docker logs daq-test-timescaledb > test-logs/timescaledb.log 2>&1 || true
     echo -e "${YELLOW}Logs saved to test-logs/${NC}"
     exit $TEST_EXIT_CODE
 }
@@ -127,7 +126,7 @@ uv run -- python -m pytest tests/test_websocket_v2.py -v -s || {
     docker compose -f deploy/docker-compose.test.yml logs --no-color > test-logs/docker-compose.log 2>&1
     docker logs daq-car            > test-logs/car.log 2>&1 || true
     docker logs daq-base           > test-logs/base.log 2>&1 || true
-    docker logs daq-test-influxdb3 > test-logs/influxdb3.log 2>&1 || true
+    docker logs daq-test-timescaledb > test-logs/timescaledb.log 2>&1 || true
     echo -e "${YELLOW}Logs saved to test-logs/${NC}"
     exit $TEST_EXIT_CODE
 }

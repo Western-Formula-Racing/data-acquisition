@@ -1,0 +1,64 @@
+# Docker container requirements for sandbox execution environment
+# These are the dependencies needed inside the Docker container
+
+# WFR data pipeline, installed straight from PyPI. Unpinned so the sandbox
+# always picks up the newest release (the TimescaleDB backend; the retired
+# 0.2.x InfluxDB line will never be "newest" again).
+slicks
+
+# SQL access for TimescaleDB (slicks depends on these; listing explicitly
+# in case slicks changes its extras and to keep the layer order stable)
+sqlalchemy
+psycopg2-binary
+
+# Data & visualization (extras beyond what slicks brings in)
+pyarrow
+plotly
+python-dateutil
+kaleido
+
+# Load environment variables from .env files
+python-dotenv
+
+# Machine learning libraries
+scikit-learn
+numpy
+scipy
+
+
+# Core
+pandas
+numpy
+scipy
+python-dateutil
+python-dotenv
+
+# Visualization
+matplotlib
+plotly
+kaleido
+seaborn
+
+# Modeling
+scikit-learn
+statsmodels
+patsy
+
+# Data Formats
+pyarrow
+openpyxl
+requests
+
+# Spatial
+geopandas
+shapely
+pyproj
+
+# Performance
+duckdb
+polars
+
+# Utilities
+tqdm
+rich
+loguru

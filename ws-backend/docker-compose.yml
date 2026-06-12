@@ -15,6 +15,7 @@ services:
       - DOMAIN=ws-demo.westernformularacing.org # Also supports ws-wfr.0001200.xyz via Cloudflare Tunnel
       - ENABLE_CSV=false
       - ENABLE_ACCU=true
+    mem_limit: 256m
     volumes:
       - ../car-simulate/persistent-broadcast/ssl:/app/ssl:ro
       # Optional CSV replay: add below and set ENABLE_CSV=true

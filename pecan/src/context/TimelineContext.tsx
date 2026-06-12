@@ -9,8 +9,8 @@ import {
   type ReactNode,
 } from "react";
 import { dataStore } from "../lib/DataStore";
-import type { ReplayFrame, ReplayPlotsMetadata, ReplayTimelineMetadata } from "../types/replay";
-import { createCanProcessor } from "../utils/canProcessor";
+import type { ReplayDecodeMetadata, ReplayFrame, ReplayPlotsMetadata, ReplayTimelineMetadata } from "../types/replay";
+import { createCanProcessor, setActiveDbcText } from "../utils/canProcessor";
 
 export type TimelineMode = "live" | "paused";
 export type TimelineSource = "live" | "replay";
@@ -51,7 +51,8 @@ interface TimelineContextValue {
     frames: ReplayFrame[],
     fileName: string,
     timelineMeta?: ReplayTimelineMetadata,
-    plotsMeta?: ReplayPlotsMetadata
+    plotsMeta?: ReplayPlotsMetadata,
+    decodeMeta?: ReplayDecodeMetadata
   ) => Promise<void>;
   clearReplaySession: () => void;
   addCheckpoint: (label?: string) => void;
@@ -203,6 +204,13 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, [mode, source]);
 
+  // Keep the cursor tracking wall time in live mode regardless of data flow.
+  useEffect(() => {
+    if (source !== "live" || mode !== "live") return;
+    const id = setInterval(() => setSelectedTimeMs(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [source, mode]);
+
   useEffect(() => {
     if (skipNextCheckpointHydrationRef.current) {
       skipNextCheckpointHydrationRef.current = false;
@@ -283,7 +291,8 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
     frames: ReplayFrame[],
     fileName: string,
     timelineMeta?: ReplayTimelineMetadata,
-    plotsMeta?: ReplayPlotsMetadata
+    plotsMeta?: ReplayPlotsMetadata,
+    decodeMeta?: ReplayDecodeMetadata
   ) => {
     if (!Array.isArray(frames) || frames.length === 0) {
       return;
@@ -357,6 +366,11 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
       typeof timelineMeta?.lastCursorMs === "number"
         ? clampTime(normalizedStartEpochMs + timelineMeta.lastCursorMs, retainedStartTimeMs, endTimeMs)
         : endTimeMs;
+
+    const embeddedDbc = decodeMeta?.dbcEmbedded;
+    if (embeddedDbc?.format === "dbc" && embeddedDbc.content) {
+      setActiveDbcText(embeddedDbc.content);
+    }
 
     const processor = await createCanProcessor().catch((error) => {
       console.warn("[Timeline] Failed to initialize CAN decoder for replay import:", error);

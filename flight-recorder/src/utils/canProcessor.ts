@@ -63,8 +63,8 @@ let dbcFile = import.meta.env.DEV ? localDbc : exampleDbc;
 let usingCache = false;
 const dbcDebugSeen = new Set<number>();
 
-// Simple type definitions for our use, align with InfluxDB3 schema for consistency
-// InfluxDB3 Schema: id -> canId, name -> messageName, signalName, sensorReading, time
+// Simple type definitions for our use, aligned with TimescaleDB ingest schema
+// Schema mapping: id -> canId, name -> messageName, signalName, sensorReading, time
 interface DecodedMessage {
   canId: number;
   messageName: string;

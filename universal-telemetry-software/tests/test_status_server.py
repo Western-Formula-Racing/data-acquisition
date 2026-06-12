@@ -14,6 +14,7 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
 from http.client import HTTPConnection
 from unittest.mock import patch, MagicMock
 
@@ -83,203 +84,101 @@ class _MockHandler:
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
-class TestSyncCloudEndpoint:
-    """Tests for the /sync-cloud POST endpoint."""
 
-    def test_sync_cloud_uses_project_root_as_cwd(self, tmp_path):
-        """
-        Verifies that _handle_sync_cloud passes cwd=project_root to subprocess.run,
-        NOT the status/ directory that the server chdir()s into at startup.
+def test_load_health_snapshot_valid_file(tmp_path, monkeypatch):
+    """A fresh health file should be returned with computed top-level health."""
+    from src import status_server
 
-        This is the core regression test for the missing-cwd bug.
-        """
-        from src.status_server import StatusHTTPRequestHandler
+    health_file = tmp_path / "health.json"
+    health_file.write_text(json.dumps({
+        "producer_ts": time.time(),
+        "uptime_s": 12,
+        "components": {
+            "udp_listener": {"status": "ok", "detail": None},
+            "redis": {"status": "ok", "detail": None},
+            "websocket_bridge": {"status": "warn", "clients": None, "detail": "client count unavailable"},
+        },
+        "car": {"seen_s_ago": None, "ip": "10.71.1.10", "alivable": False},
+        "stats": {"received": 1},
+    }))
+    monkeypatch.setattr(status_server, "HEALTH_FILE", str(health_file))
+    monkeypatch.setattr(status_server, "HEALTH_STALE_SECONDS", 5)
 
-        captured_cwds = []
+    payload = status_server._load_health_snapshot()
 
-        def fake_run(cmd, **kwargs):
-            captured_cwds.append(kwargs.get("cwd"))
-            return MagicMock(returncode=0, stdout="", stderr="")
+    assert payload["healthy"] is True
+    assert payload["overall"] == "ok"
+    assert payload["stale"] is False
+    assert payload["stats"]["received"] == 1
 
-        handler = _MockHandler()
-        handler._headers["Content-Length"] = "0"
-        handler._body = b""
 
-        with patch.object(StatusHTTPRequestHandler, "__init__", lambda self, *a, **kw: None):
-            h = object.__new__(StatusHTTPRequestHandler)
-            h.log_message = MagicMock()
+def test_load_health_snapshot_missing_file_returns_unknown(tmp_path, monkeypatch):
+    """Missing health file should not crash the endpoint."""
+    from src import status_server
 
-            class _H:
-                def get(self, key, default=None):
-                    return handler._headers.get(key, default)
-            h.headers = _H()
-            h.rfile = handler.rfile
-            h.wfile = handler.wfile
-            h.send_response = handler.send_response
-            h.send_header = handler.send_header
-            h.end_headers = handler.end_headers
-            h._json_response = handler._json_response
-            h.log_message = handler.log_message
+    monkeypatch.setattr(status_server, "HEALTH_FILE", str(tmp_path / "missing-health.json"))
 
-            with patch("subprocess.run", fake_run):
-                h._handle_sync_cloud()
+    payload = status_server._load_health_snapshot()
 
-        assert len(captured_cwds) == 1, "subprocess.run should be called exactly once"
-        cwd = captured_cwds[0]
+    assert payload["healthy"] is False
+    assert payload["overall"] == "unknown"
+    assert payload["components"]["udp_listener"]["status"] == "unknown"
 
-        # The cwd must be a directory whose parent contains the src package,
-        # not the status/ subdirectory (which is where run_status_server chdirs to).
-        # We check: (1) it's a real directory, (2) src/ is a subdirectory of it.
-        import os
-        assert os.path.isdir(cwd), f"cwd '{cwd}' is not a directory"
-        assert os.path.isdir(os.path.join(cwd, "src")), (
-            f"cwd '{cwd}' does not contain src/ — "
-            "cwd may have been incorrectly set to the status/ directory"
-        )
 
-    def test_sync_cloud_success_returns_200(self, tmp_path):
-        """Cloud sync with returncode 0 should produce a 200 JSON response."""
-        from src.status_server import StatusHTTPRequestHandler
+def test_load_health_snapshot_malformed_file_returns_unknown(tmp_path, monkeypatch):
+    """Partial health JSON should return an unknown snapshot."""
+    from src import status_server
 
-        project_root = tmp_path / "project"
-        src_dir = project_root / "src"
-        src_dir.mkdir(parents=True)
-        (src_dir / "__init__.py").write_text("")
-        (src_dir / "cloud_sync.py").write_text("raise SystemExit(0)")
+    health_file = tmp_path / "health.json"
+    health_file.write_text('{"producer_ts":')
+    monkeypatch.setattr(status_server, "HEALTH_FILE", str(health_file))
 
-        handler = _MockHandler()
-        handler._headers["Content-Length"] = "0"
-        handler._body = b""
+    payload = status_server._load_health_snapshot()
 
-        with patch.object(StatusHTTPRequestHandler, "__init__", lambda self, *a, **kw: None):
-            h = object.__new__(StatusHTTPRequestHandler)
-            h.log_message = MagicMock()
-            h._headers_dict = handler._headers
-            h._body_bytes = handler._body
+    assert payload["healthy"] is False
+    assert payload["overall"] == "unknown"
+    assert "invalid JSON" in payload["detail"]
 
-            class _H:
-                def get(self, key, default=None):
-                    return handler._headers.get(key, default)
-            h.headers = _H()
-            h.rfile = handler.rfile
-            h.wfile = handler.wfile
-            h.send_response = handler.send_response
-            h.send_header = handler.send_header
-            h.end_headers = handler.end_headers
-            h._json_response = handler._json_response
-            h.log_message = handler.log_message
 
-            with patch("subprocess.run", lambda cmd, **kw: MagicMock(returncode=0, stdout="sync done", stderr="")):
-                h._handle_sync_cloud()
+def test_load_health_snapshot_stale_file_marks_udp_error(tmp_path, monkeypatch):
+    """A stale producer timestamp must not keep the system looking healthy."""
+    from src import status_server
 
-        assert handler._json_response_code == 200, (
-            f"Expected 200, got {handler._json_response_code}: {handler._json_response_body}"
-        )
-        assert handler._json_response_body.get("ok") is True
-        assert handler._json_response_body.get("output") == "sync done"
+    health_file = tmp_path / "health.json"
+    health_file.write_text(json.dumps({
+        "producer_ts": time.time() - 60,
+        "components": {
+            "udp_listener": {"status": "ok", "detail": None},
+            "redis": {"status": "ok", "detail": None},
+        },
+    }))
+    monkeypatch.setattr(status_server, "HEALTH_FILE", str(health_file))
+    monkeypatch.setattr(status_server, "HEALTH_STALE_SECONDS", 5)
 
-    def test_sync_cloud_failure_returns_500(self, tmp_path):
-        """Cloud sync with non-zero returncode should return HTTP 500 with error."""
-        from src.status_server import StatusHTTPRequestHandler
+    payload = status_server._load_health_snapshot()
 
-        project_root = tmp_path / "project"
-        src_dir = project_root / "src"
-        src_dir.mkdir(parents=True)
-        (src_dir / "__init__.py").write_text("")
-        (src_dir / "cloud_sync.py").write_text("raise SystemExit(0)")
+    assert payload["healthy"] is False
+    assert payload["stale"] is True
+    assert payload["components"]["udp_listener"]["status"] == "error"
 
-        handler = _MockHandler()
-        handler._headers["Content-Length"] = "0"
-        handler._body = b""
 
-        with patch.object(StatusHTTPRequestHandler, "__init__", lambda self, *a, **kw: None):
-            h = object.__new__(StatusHTTPRequestHandler)
-            h.log_message = MagicMock()
+def test_unknown_endpoint_returns_404():
+    """Any unknown path should return 404."""
+    from src.status_server import StatusHTTPRequestHandler
 
-            class _H:
-                def get(self, key, default=None):
-                    return handler._headers.get(key, default)
-            h.headers = _H()
-            h.rfile = handler.rfile
-            h.wfile = handler.wfile
-            h.send_response = handler.send_response
-            h.send_header = handler.send_header
-            h.end_headers = handler.end_headers
-            h._json_response = handler._json_response
-            h.log_message = handler.log_message
+    handler = _MockHandler()
+    handler.path = "/completely-unknown"
+    response_codes = []
 
-            with patch(
-                "subprocess.run",
-                lambda cmd, **kw: MagicMock(returncode=1, stdout="", stderr="influx timeout")
-            ):
-                h._handle_sync_cloud()
+    def capture_response(code):
+        response_codes.append(code)
 
-        assert handler._json_response_code == 500, (
-            f"Expected 500, got {handler._json_response_code}: {handler._json_response_body}"
-        )
-        assert "influx timeout" in handler._json_response_body.get("error", "")
+    with patch.object(StatusHTTPRequestHandler, "__init__", lambda self, *a, **kw: None):
+        h = object.__new__(StatusHTTPRequestHandler)
+        h.log_message = MagicMock()
+        h.path = "/completely-unknown"
+        h.send_response = capture_response
+        h.end_headers = MagicMock()
+        h.do_POST()
 
-    def test_sync_cloud_passes_bucket_in_env(self, tmp_path):
-        """POST body with bucket field should set CLOUD_INFLUX_BUCKET in subprocess env."""
-        from src.status_server import StatusHTTPRequestHandler
-
-        project_root = tmp_path / "project"
-        src_dir = project_root / "src"
-        src_dir.mkdir(parents=True)
-        (src_dir / "__init__.py").write_text("")
-        (src_dir / "cloud_sync.py").write_text("raise SystemExit(0)")
-
-        captured_env = {}
-
-        def fake_run(cmd, **kwargs):
-            captured_env.update(kwargs.get("env", {}))
-            return MagicMock(returncode=0, stdout="", stderr="")
-
-        handler = _MockHandler()
-        body = json.dumps({"bucket": "WFR27"}).encode()
-        handler._headers["Content-Length"] = str(len(body))
-        handler._body = body
-
-        with patch.object(StatusHTTPRequestHandler, "__init__", lambda self, *a, **kw: None):
-            h = object.__new__(StatusHTTPRequestHandler)
-            h.log_message = MagicMock()
-
-            class _H:
-                def get(self, key, default=None):
-                    return handler._headers.get(key, default)
-            h.headers = _H()
-            h.rfile = handler.rfile
-            h.wfile = handler.wfile
-            h.send_response = handler.send_response
-            h.send_header = handler.send_header
-            h.end_headers = handler.end_headers
-            h._json_response = handler._json_response
-            h.log_message = handler.log_message
-
-            with patch("subprocess.run", fake_run):
-                h._handle_sync_cloud()
-
-        assert captured_env.get("CLOUD_INFLUX_BUCKET") == "WFR27", (
-            f"Expected CLOUD_INFLUX_BUCKET=WFR27, got {captured_env}"
-        )
-
-    def test_unknown_endpoint_returns_404(self):
-        """Any unknown path should return 404."""
-        from src.status_server import StatusHTTPRequestHandler
-
-        handler = _MockHandler()
-        handler.path = "/completely-unknown"
-        response_codes = []
-
-        def capture_response(code):
-            response_codes.append(code)
-
-        with patch.object(StatusHTTPRequestHandler, "__init__", lambda self, *a, **kw: None):
-            h = object.__new__(StatusHTTPRequestHandler)
-            h.log_message = MagicMock()
-            h.path = "/completely-unknown"
-            h.send_response = capture_response
-            h.end_headers = MagicMock()
-            h.do_POST()
-
-        assert response_codes == [404], f"Expected 404, got {response_codes}"
+    assert response_codes == [404], f"Expected 404, got {response_codes}"

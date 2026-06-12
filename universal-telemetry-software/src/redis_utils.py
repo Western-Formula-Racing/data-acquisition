@@ -14,19 +14,35 @@ import redis.asyncio as aioredis
 logger = logging.getLogger(__name__)
 
 
-def get_sync_client(url: str):
-    """Return a connected synchronous Redis client, or None on failure."""
-    try:
-        client = redis.from_url(url)
-        client.ping()
-        logger.info("Connected to Redis")
-        return client
-    except Exception as e:
-        logger.warning(
-            f"Could not connect to Redis: {e}. "
-            "Data will not be published to Redis."
-        )
-        return None
+def get_sync_client(url: str, retries: int = 5, backoff: float = 1.0):
+    """Return a connected synchronous Redis client, retrying on failure.
+
+    Args:
+        url: Redis connection URL.
+        retries: Maximum connection attempts before giving up (default 10).
+        backoff: Seconds to wait between retries, multiplied by 1.5 each attempt.
+                 With default values: ~25s total (1+1.5+2.25+3.375+...).
+    """
+    client = redis.from_url(url)
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            client.ping()
+            logger.info(f"Connected to Redis (attempt {attempt})")
+            return client
+        except Exception as e:
+            if attempt >= retries:
+                logger.warning(
+                    f"Could not connect to Redis after {retries} attempts: {e}. "
+                    "Data will not be published to Redis."
+                )
+                return None
+            wait = backoff * (1.5 ** (attempt - 1))
+            logger.info(f"Redis connection attempt {attempt}/{retries} failed ({e}), "
+                         f"retrying in {wait:.1f}s...")
+            import time
+            time.sleep(wait)
 
 
 def get_async_client(url: str):

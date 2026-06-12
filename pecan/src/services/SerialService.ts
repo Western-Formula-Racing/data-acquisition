@@ -78,7 +78,7 @@ export class SerialService {
 
             // Save current theme and apply local CAN mode theme
             this.previousTheme = localStorage.getItem("pecan:theme");
-            document.body.classList.add("theme-local-can");
+            document.documentElement.classList.add("theme-local-can");
 
             console.log('Serial port opened');
 
@@ -166,9 +166,9 @@ export class SerialService {
             }
 
             // Revert local CAN mode theme and restore previous light/dark theme
-            document.body.classList.remove("theme-local-can");
+            document.documentElement.classList.remove("theme-local-can");
             if (this.previousTheme === "light") {
-                document.body.classList.add("theme-light");
+                document.documentElement.classList.add("theme-light");
             }
 
             // Resume WebSocket ingestion

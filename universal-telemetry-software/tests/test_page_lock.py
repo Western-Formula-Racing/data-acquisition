@@ -84,7 +84,9 @@ class TestPageLockAcquire:
             "name": "Bob",
         })
 
-        result = json.loads(ws2.send.call_args_list[0][0][0])
+        # ws2 receives the broadcast from ws1's successful acquire first,
+        # then the denial result — check the last message sent to ws2.
+        result = json.loads(ws2.send.call_args_list[-1][0][0])
         assert result["type"] == "page_lock_result"
         assert result["success"] is False
         assert result["holder"] == "client_0"
