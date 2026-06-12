@@ -63,8 +63,8 @@ class TelemetryNode:
         self.has_can = False
         self.can_event = can_event  # multiprocessing.Event signalled on each CAN RX
         self.telemetry_event = telemetry_event  # heartbeat for LED status
-        self.redis_client = redis_utils.get_sync_client(REDIS_URL)
         self.direct_queue: asyncio.Queue | None = None  # set by main.py for car mode (no Redis)
+        self.redis_client = None if self.role == "car" else redis_utils.get_sync_client(REDIS_URL)
         # ECU clock sync — offset between ECU RTC and local monotonic clock
         self._clock_offset: float | None = None   # epoch_sec - monotonic at last sync
         self._last_ecu_sync: float = 0.0          # monotonic time of last valid ECU 1999
