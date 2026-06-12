@@ -925,11 +925,11 @@ class TelemetryNode:
             finally:
                 uplink_sock.close()
 
-        # Car Time Injector — pushes base station clock to car Pi via /set-time every 30s.
+        # Car Time Injector — pushes base station clock to car Pi via /set-time every 3s.
         # Safety gate: if base clock is before 2026-04-01, injection is blocked and
         # _base_clock_bad is set so the status page can warn the operator.
         _BASE_CLOCK_TRUST_EPOCH = 1743465600.0  # 2026-04-01 00:00:00 UTC
-        _CAR_TIME_INJECT_INTERVAL = 30.0
+        _CAR_TIME_INJECT_INTERVAL = 3.0
         _CAR_STATUS_PORT = int(os.getenv("STATUS_PORT", "8080"))
 
         async def car_time_injector():
