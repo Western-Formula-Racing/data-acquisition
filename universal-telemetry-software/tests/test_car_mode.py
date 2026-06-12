@@ -29,6 +29,9 @@ import websockets
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import src.websocket_bridge as wb
+import struct
+import time as _time
+from src import data as _data_mod
 from .test_helpers import WebSocketHelper, RedisHelper
 
 logging.basicConfig(level=logging.INFO)
@@ -497,3 +500,85 @@ class TestCarModeErrorCodesUnchanged:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
+
+
+# ---------------------------------------------------------------------------
+# Car-mode boot path + ECU clock guard
+#
+# Regression coverage for two car-specific failure modes that previously
+# could only be caught on the real car:
+#   1. TelemetryNode.__init__ must accept redis_client=None and not attempt
+#      to connect to 127.0.0.1:6379 — the car LAN has no Redis and blocking
+#      on retries prevents the WebSocket on :9080 from ever binding.
+#   2. _handle_ecu_timestamp must distrust an ECU RTC that disagrees with a
+#      trustworthy system clock by more than _MAX_ECU_SYSTEM_DISAGREEMENT_S,
+#      to catch a stuck/wrong ECU DS3231 (the classic exactly-1h DST error).
+# ---------------------------------------------------------------------------
+
+class TestCarModeClockAndRedis:
+    THRESHOLD = _data_mod._MAX_ECU_SYSTEM_DISAGREEMENT_S
+
+    def _make_node(self):
+        """Build a TelemetryNode without going through __init__ (skips Redis connect)."""
+        n = object.__new__(_data_mod.TelemetryNode)
+        n._clock_offset = None
+        n._last_ecu_sync = 0.0
+        n._sync_source = "none"
+        return n
+
+    def _ecu_bytes(self, epoch_s: float) -> bytes:
+        return struct.pack("<q", int(epoch_s * 1000))
+
+    def test_init_does_not_connect_to_redis_when_redis_client_none(self, monkeypatch):
+        """TelemetryNode(redis_client=None) must not call get_sync_client.
+
+        On the car, Redis is unreachable; if __init__ tries to connect, it blocks
+        ~25s on retries and the WebSocket never binds on :9080.
+        """
+        called = {"n": 0}
+        def _spy(url):
+            called["n"] += 1
+            return None
+        monkeypatch.setattr(_data_mod.redis_utils, "get_sync_client", _spy)
+
+        # role=car should not even attempt a Redis connection
+        with monkeypatch.context() as m:
+            m.setenv("ROLE", "car")
+            _data_mod.TelemetryNode(redis_client=None)
+        assert called["n"] == 0, "TelemetryNode(car) called redis get_sync_client — car will hang on boot"
+
+        # role=base WITHOUT an explicit override still attempts a connection
+        # (this is the normal base path; we just confirm the car differs from base).
+        with monkeypatch.context() as m:
+            m.setenv("ROLE", "base")
+            _data_mod.TelemetryNode(redis_client=None)
+        assert called["n"] == 1, "TelemetryNode(base) should still try Redis"
+
+    def test_ecu_within_tolerance_is_trusted(self):
+        n = self._make_node()
+        now = _time.time()
+        n._handle_ecu_timestamp(self._ecu_bytes(now - 60))   # 60s slow, within 120s tol
+        assert n._sync_source == "ecu_rtc"
+        # Corrected time tracks the actual ECU time, not the system clock
+        assert abs(n._corrected_time() - (now - 60)) < 5
+
+    def test_ecu_off_by_one_hour_is_overridden(self):
+        n = self._make_node()
+        now = _time.time()
+        n._handle_ecu_timestamp(self._ecu_bytes(now - 3600))  # the classic DST/EST error
+        assert n._sync_source == "system_clock_override"
+        # Corrected time snaps to real system time
+        assert abs(n._corrected_time() - now) < 5
+
+    def test_ecu_just_outside_tolerance_is_overridden(self):
+        n = self._make_node()
+        now = _time.time()
+        n._handle_ecu_timestamp(self._ecu_bytes(now - (self.THRESHOLD + 10)))
+        assert n._sync_source == "system_clock_override"
+        assert abs(n._corrected_time() - now) < 5
+
+    def test_ecu_agreeing_with_system_clock_is_trusted(self):
+        n = self._make_node()
+        now = _time.time()
+        n._handle_ecu_timestamp(self._ecu_bytes(now))
+        assert n._sync_source == "ecu_rtc"

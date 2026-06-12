@@ -87,7 +87,10 @@ def start_car_services(can_event=None, telemetry_event=None, websocket_event=Non
         # sets a default loop; asyncio.gather() then returns a Future instead of a
         # coroutine, causing asyncio.run() to raise ValueError.
         direct_queue: asyncio.Queue = asyncio.Queue(maxsize=2000)
-        node = TelemetryNode(can_event=can_event, telemetry_event=telemetry_event)
+        # Pass redis_client=None so the car never blocks trying to connect to a
+        # Redis that isn't there — Redis only runs on the base. All Redis paths
+        # in TelemetryNode (safe_publish, _redis_ok, health reads) handle None.
+        node = TelemetryNode(can_event=can_event, telemetry_event=telemetry_event, redis_client=None)
         node.direct_queue = direct_queue
         await asyncio.gather(
             node.start(),

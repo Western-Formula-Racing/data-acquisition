@@ -52,8 +52,20 @@ ECU_TIMESTAMP_ID = 1999  # VCU_Timestamp — ECU broadcasts RTC epoch ms at 1 Hz
 # NOTE: 2026-03-22 is today's date at time of writing.
 _SYSTEM_CLOCK_TRUST_EPOCH = 1742601600.0  # 2026-03-22 00:00:00 UTC
 
+# When the system clock is itself trustworthy (past _SYSTEM_CLOCK_TRUST_EPOCH and kept
+# correct by the base station's /set-time injection or NTP), distrust an ECU RTC that
+# disagrees with it by more than this many seconds. The ECU's battery-backed DS3231 can
+# be set wrong — most often an exactly-3600s DST (EST vs EDT) error — and the car LAN has
+# no NTP to ever correct it, so without this guard every frame would be stamped an hour
+# off. 120s is far above normal RTC-vs-clock jitter but well below the 1h failure mode.
+_MAX_ECU_SYSTEM_DISAGREEMENT_S = 120.0
+
 class TelemetryNode:
-    def __init__(self, can_event=None, telemetry_event=None):
+    def __init__(self, can_event=None, telemetry_event=None, redis_client=None):
+        # redis_client: pass an existing connected sync client (base), or None
+        # to skip Redis entirely (car — no Redis on the car LAN, and blocking
+        # here on a missing 127.0.0.1:6379 would prevent the WebSocket from ever
+        # binding). When None, all publish/health reads degrade gracefully.
         self.buffer = deque()
         self.seq_num = 0
         self.received_messages = {} # seq_num -> message_batch
@@ -61,12 +73,16 @@ class TelemetryNode:
         self.has_can = False
         self.can_event = can_event  # multiprocessing.Event signalled on each CAN RX
         self.telemetry_event = telemetry_event  # heartbeat for LED status
-        self.redis_client = redis_utils.get_sync_client(REDIS_URL)
-        self.direct_queue: asyncio.Queue | None = None  # set by main.py for car mode (no Redis)
+        # On the car (no Redis available), pass redis_client=None explicitly to skip
+        # the connect attempt — see main.py:start_car_services. On the base, the
+        # explicit None is treated as "auto-connect" (the normal path).
+        if redis_client is None and self.role != "car":
+            redis_client = redis_utils.get_sync_client(REDIS_URL)
+        self.redis_client = redis_client  # None on the car, possibly None on a Redis-less base
         # ECU clock sync — offset between ECU RTC and local monotonic clock
         self._clock_offset: float | None = None   # epoch_sec - monotonic at last sync
         self._last_ecu_sync: float = 0.0          # monotonic time of last valid ECU 1999
-        self._sync_source: str = "none"           # "ecu_rtc" | "system_clock" | "override"
+        self._sync_source: str = "none"           # "ecu_rtc" | "system_clock" | "system_clock_override"
         self._base_to_car_offset: float | None = None # Offset between base station time and car's 1970 time
         self._last_raw_car_time: float | None = None  # Raw timestamp of last message
         self._car_internal_jump: float | None = None  # Cumulative jump from 1970 to 2026+ internal car time
@@ -90,23 +106,50 @@ class TelemetryNode:
                 pass  # drop under backpressure rather than block the CAN reader
 
     def _handle_ecu_timestamp(self, data: bytes) -> None:
-        """Extract epoch_ms from ECU VCU_Timestamp message and update clock offset."""
+        """Extract epoch_ms from the ECU VCU_Timestamp message and update the clock offset.
+
+        The ECU's battery-backed DS3231 RTC is normally authoritative. But it can be set
+        wrong (most often an exactly-1h DST / EST-vs-EDT error) and the car LAN has no NTP
+        to ever correct it, so a bad ECU clock would silently stamp every frame an hour off.
+        Guard against that: when the local system clock is itself trustworthy (kept correct
+        by the base station's /set-time injection or NTP) and the ECU disagrees with it by
+        more than _MAX_ECU_SYSTEM_DISAGREEMENT_S, distrust the ECU and use the system clock.
+        """
         if len(data) < 8:
             return
         epoch_ms = struct.unpack_from("<q", data)[0]  # int64 little-endian
         if epoch_ms <= 0:
             return
+        epoch_s = epoch_ms / 1000.0
         mono = time.monotonic()
-        self._clock_offset = epoch_ms / 1000.0 - mono
+        sys_time = time.time()
+
+        # Distrust an ECU clock that is far from a trustworthy system clock.
+        if (sys_time > _SYSTEM_CLOCK_TRUST_EPOCH
+                and abs(epoch_s - sys_time) > _MAX_ECU_SYSTEM_DISAGREEMENT_S):
+            if self._sync_source != "system_clock_override":
+                logger.warning(
+                    f"ECU time ({epoch_s:.0f}) disagrees with system clock ({sys_time:.0f}) "
+                    f"by {epoch_s - sys_time:+.0f}s — distrusting ECU, using system clock. "
+                    "Fix the ECU DS3231 RTC (likely a 1h DST/EST-vs-EDT error)."
+                )
+            self._clock_offset = sys_time - mono
+            self._last_ecu_sync = mono
+            self._sync_source = "system_clock_override"
+            return
+
+        self._clock_offset = epoch_s - mono
         self._last_ecu_sync = mono
         self._sync_source = "ecu_rtc"
-        logger.info(f"ECU time sync: epoch={epoch_ms/1000:.3f}  offset={self._clock_offset:+.3f}s")
+        logger.info(f"ECU time sync: epoch={epoch_s:.3f}  offset={self._clock_offset:+.3f}s")
 
     def _try_auto_sync(self) -> None:
         """Check fallback time sources when no ECU sync has arrived yet.
 
         Priority:
-          1. ECU RTC (handled by _handle_ecu_timestamp, always wins)
+          1. ECU RTC (handled by _handle_ecu_timestamp) — wins unless it disagrees with a
+             trustworthy system clock by more than _MAX_ECU_SYSTEM_DISAGREEMENT_S, in which
+             case _handle_ecu_timestamp falls back to the system clock.
           2. RPi system clock past _SYSTEM_CLOCK_TRUST_EPOCH — covers NTP-synced RPis
              and RPis whose clock was manually set via POST /set-time on the status page.
         """
