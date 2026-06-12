@@ -18,6 +18,7 @@ from src.config import (
     ENABLE_UPLINK,
 )
 from src import redis_utils, utils
+from src.data import TelemetryNode
 
 logger = logging.getLogger("WebSocketBridge")
 
@@ -301,20 +302,22 @@ async def redis_listener():
             logger.info(f"Subscribed to Redis channels: {REDIS_CHANNEL}, {REDIS_STATS_CHANNEL}, {REDIS_DIAG_CHANNEL}")
             delay = backoff_min  # reset backoff once a subscribe succeeds
 
-            async for message in pubsub.listen():
+            async def _handler(msg):
                 if shutdown_event.is_set():
-                    break
+                    return
+                if msg['type'] != 'message':
+                    return
+                data = redis_utils.decode_message(msg['data'])
 
-                if message['type'] == 'message':
-                    data = redis_utils.decode_message(message['data'])
+                # Broadcast to all connected clients
+                if connected_clients:
+                    # Create tasks for sending to each client to avoid blocking
+                    await asyncio.gather(
+                        *[client.send(data) for client in connected_clients],
+                        return_exceptions=True
+                    )
 
-                    # Broadcast to all connected clients
-                    if connected_clients:
-                        # Create tasks for sending to each client to avoid blocking
-                        await asyncio.gather(
-                            *[client.send(data) for client in connected_clients],
-                            return_exceptions=True
-                        )
+            await TelemetryNode._pump_pubsub_with_heartbeat(pubsub, r, _handler, log=logger)
         except asyncio.CancelledError:
             raise
         except Exception as e:
