@@ -89,6 +89,64 @@ class TelemetryNode:
             except asyncio.QueueFull:
                 pass  # drop under backpressure rather than block the CAN reader
 
+    @staticmethod
+    async def _pump_pubsub_with_heartbeat(pubsub, redis_client, on_message, *,
+                                          stale_s: float = 5.0,
+                                          log=None):
+        """Drain a Redis pubsub, restarting it if the heartbeat goes stale.
+
+        Replaces the naive `async for message in pubsub.listen():` pattern that
+        silently goes dark when the TCP connection or subscription state is lost
+        after a car power-cycle. Uses non-blocking get_message(timeout=1.0) so we
+        get a chance to check the heartbeat key on every iteration.
+
+        `on_message` is an `async` callable invoked with the decoded payload string
+        for each non-None, non-subscribe-confirmation message. Returns only on
+        cancellation; outer supervisor is expected to restart the task.
+        """
+        from .config import REDIS_HEARTBEAT_KEY
+        _log = log or logger
+        last_hb_mono = 0.0
+        while True:
+            try:
+                msg = await pubsub.get_message(timeout=1.0, ignore_subscribe_messages=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                _log.warning(f"pubsub.get_message error, reconnecting: {e}")
+                await asyncio.sleep(0.5)
+                return  # let the outer while-True re-subscribe
+
+            if msg is not None:
+                try:
+                    await on_message(msg)
+                except Exception as e:
+                    _log.error(f"subscriber handler error: {e}")
+                last_hb_mono = time.monotonic()  # data flowing — heartbeat check not needed
+                continue
+
+            # No message this second — check heartbeat
+            try:
+                raw = await redis_client.get(REDIS_HEARTBEAT_KEY) if redis_client else None
+            except Exception as e:
+                _log.debug(f"heartbeat read failed: {e}")
+                raw = None
+
+            if raw is None:
+                # First-time setup or Redis is down — don't reconnect, just wait.
+                if last_hb_mono == 0.0:
+                    continue
+                # Heartbeat missing while we've been running: producer is gone or
+                # the key expired. Tear down so the outer loop re-subscribes.
+                if time.monotonic() - last_hb_mono > stale_s:
+                    _log.warning("heartbeat stale, forcing pubsub reconnect")
+                    return
+            else:
+                last_hb_mono = time.monotonic()
+                if time.monotonic() - last_hb_mono > stale_s:
+                    _log.warning("heartbeat stale, forcing pubsub reconnect")
+                    return
+
     def _handle_ecu_timestamp(self, data: bytes) -> None:
         """Extract epoch_ms from ECU VCU_Timestamp message and update clock offset."""
         if len(data) < 8:
