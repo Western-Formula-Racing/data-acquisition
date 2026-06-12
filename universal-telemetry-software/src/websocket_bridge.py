@@ -15,10 +15,11 @@ from src.config import (
     REDIS_UPLINK_CHANNEL,
     REDIS_DIAG_CHANNEL,
     REDIS_WS_CLIENTS_KEY,
+    REDIS_HEARTBEAT_CHANNEL,
     ENABLE_UPLINK,
 )
 from src import redis_utils, utils
-from src.data import TelemetryNode
+from src.heartbeat import pump_pubsub_with_heartbeat
 
 logger = logging.getLogger("WebSocketBridge")
 
@@ -298,13 +299,12 @@ async def redis_listener():
         try:
             r = redis.from_url(REDIS_URL, health_check_interval=30)
             pubsub = r.pubsub()
-            await pubsub.subscribe(REDIS_CHANNEL, REDIS_STATS_CHANNEL, REDIS_DIAG_CHANNEL)
-            logger.info(f"Subscribed to Redis channels: {REDIS_CHANNEL}, {REDIS_STATS_CHANNEL}, {REDIS_DIAG_CHANNEL}")
+            await pubsub.subscribe(REDIS_CHANNEL, REDIS_STATS_CHANNEL, REDIS_DIAG_CHANNEL,
+                                   REDIS_HEARTBEAT_CHANNEL)
+            logger.info(f"Subscribed to Redis channels: {REDIS_CHANNEL}, {REDIS_STATS_CHANNEL}, {REDIS_DIAG_CHANNEL}, {REDIS_HEARTBEAT_CHANNEL}")
             delay = backoff_min  # reset backoff once a subscribe succeeds
 
             async def _handler(msg):
-                if shutdown_event.is_set():
-                    return
                 if msg['type'] != 'message':
                     return
                 data = redis_utils.decode_message(msg['data'])
@@ -317,7 +317,8 @@ async def redis_listener():
                         return_exceptions=True
                     )
 
-            await TelemetryNode._pump_pubsub_with_heartbeat(pubsub, r, _handler, log=logger)
+            await pump_pubsub_with_heartbeat(pubsub, _handler,
+                                             should_stop=shutdown_event.is_set, log=logger)
         except asyncio.CancelledError:
             raise
         except Exception as e:

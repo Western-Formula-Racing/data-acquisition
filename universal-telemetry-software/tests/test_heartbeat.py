@@ -1,25 +1,30 @@
 """
-Heartbeat writer tests — uses a fake async Redis client to avoid network deps.
+Heartbeat tests — uses a fake async Redis client / pubsub to avoid network deps.
+
+Design under test: the producer PUBLISHES a heartbeat on a pubsub channel that
+every subscriber also subscribes to. Liveness is then measured on the pubsub
+connection itself (time since *any* message arrived), so a half-dead pubsub
+connection is detected even while Redis stays reachable for regular commands.
 """
 import asyncio
 import json
-import time
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from src import heartbeat
-from src.config import REDIS_HEARTBEAT_KEY
+from src.config import REDIS_HEARTBEAT_CHANNEL
 
 
 @pytest.fixture
 def fake_redis():
-    """Fake async Redis client whose .set() records calls and timestamps."""
+    """Fake async Redis client whose .publish() records calls."""
     client = MagicMock()
-    client.set = AsyncMock()
+    client.publish = AsyncMock()
     return client
 
 
-async def test_writes_heartbeat_with_uptime(fake_redis):
+async def test_writer_publishes_heartbeat_on_channel(fake_redis, monkeypatch):
+    monkeypatch.setattr(heartbeat, "HEARTBEAT_INTERVAL_S", 0.01)
     task = asyncio.create_task(heartbeat.run_heartbeat_writer(fake_redis))
     await asyncio.sleep(0.05)
     task.cancel()
@@ -27,26 +32,25 @@ async def test_writes_heartbeat_with_uptime(fake_redis):
         await task
     except asyncio.CancelledError:
         pass
-    assert fake_redis.set.call_count >= 1
-    last_call = fake_redis.set.call_args_list[-1]
-    assert last_call.args[0] == REDIS_HEARTBEAT_KEY
+    assert fake_redis.publish.call_count >= 1
+    last_call = fake_redis.publish.call_args_list[-1]
+    assert last_call.args[0] == REDIS_HEARTBEAT_CHANNEL
     payload = json.loads(last_call.args[1])
     assert "uptime_s" in payload and "wall_ts" in payload
     assert payload["uptime_s"] >= 0
-    # ex=30 sets the expiry so a dead process's heartbeat is naturally GC'd
-    assert last_call.kwargs.get("ex") == 30
 
 
-async def test_returns_immediately_when_redis_is_none():
+async def test_writer_returns_immediately_when_redis_is_none():
     # Should not block or raise; should be a no-op.
     await asyncio.wait_for(heartbeat.run_heartbeat_writer(None), timeout=0.2)
 
 
-async def test_continues_after_set_failure(fake_redis):
-    fake_redis.set = AsyncMock(side_effect=RuntimeError("redis down"))
+async def test_writer_continues_after_publish_failure(fake_redis, monkeypatch):
+    monkeypatch.setattr(heartbeat, "HEARTBEAT_INTERVAL_S", 0.01)
+    fake_redis.publish = AsyncMock(side_effect=RuntimeError("redis down"))
     task = asyncio.create_task(heartbeat.run_heartbeat_writer(fake_redis))
-    await asyncio.sleep(1.05)  # past the first 1.0s HEARTBEAT_INTERVAL_S so the loop has retried
-    assert fake_redis.set.call_count >= 2, "writer should retry after failure"
+    await asyncio.sleep(0.1)
+    assert fake_redis.publish.call_count >= 2, "writer should retry after failure"
     assert not task.done(), "writer should recover and keep running"
     task.cancel()
     try:
@@ -55,60 +59,83 @@ async def test_continues_after_set_failure(fake_redis):
         pass
 
 
-async def test_pump_reconnects_when_heartbeat_goes_stale(caplog):
-    """When the heartbeat key disappears, the pump must return so the outer
-    while-True loop can re-subscribe. This is the actual failure mode we hit
-    when the car power-cycles and the base's pubsub sits connected-but-broken.
-
-    The helper's "stale" check is purely time-since-last-seen: it does not
-    inspect wall_ts / payload age. So the failing scenario is: the heartbeat
-    key *existed* (last_hb_mono > 0.0), then disappears, and we wait longer
-    than stale_s. The helper returns and the outer loop re-subscribes.
+async def test_pump_reconnects_when_pubsub_goes_silent(caplog):
+    """The actual power-cycle failure mode: the pubsub connection is dead
+    (no messages arrive — not even heartbeats) while Redis itself stays
+    reachable for regular commands. The pump must return within ~stale_s so
+    the outer while-True loop can re-subscribe. No out-of-band GET is
+    involved: silence on the subscribed connection IS the signal.
     """
-    from src.data import TelemetryNode
-
-    # Fake pubsub: get_message always returns None (no data flowing).
     pubsub = MagicMock()
     pubsub.get_message = AsyncMock(return_value=None)
 
-    # Fake redis client: heartbeat exists on the first read (so last_hb_mono
-    # gets set), then disappears forever. That triggers the reconnect path.
-    fresh_payload = json.dumps({"uptime_s": 1, "wall_ts": time.time()})
-    call_count = [0]
-
-    async def get_side_effect(*args, **kwargs):
-        call_count[0] += 1
-        return fresh_payload if call_count[0] == 1 else None
-
-    redis_client = MagicMock()
-    redis_client.get = AsyncMock(side_effect=get_side_effect)
-
-    # Handler should never be called: no messages ever arrived, only the
-    # heartbeat-driven reconnect should have happened.
     received = []
 
     async def handler(msg):
         received.append(msg)
 
-    # Tiny stale_s so the test finishes in <2s.
-    task = asyncio.create_task(
-        TelemetryNode._pump_pubsub_with_heartbeat(
-            pubsub, redis_client, handler, stale_s=0.5,
-        )
-    )
-    # First iteration: get_message (~1s timeout) returns None, then redis.get
-    # returns fresh_payload -> last_hb_mono becomes nonzero. Second iteration:
-    # get_message returns None, redis.get returns None, last_hb_mono > 0 and
-    # > 0.5s old -> pump returns. Sleep 2.5s to be safe past the 1.0s get_message
-    # timeout on iteration 1 plus 0.5s stale on iteration 2, with headroom for
-    # slow CI runners.
     with caplog.at_level("WARNING"):
-        await asyncio.sleep(2.5)
-        assert task.done(), "pump should have returned after stale heartbeat"
-        assert received == [], "no messages arrived — only reconnect was triggered"
-        # Sanity: we exercised the missing-heartbeat path at least once.
-        assert call_count[0] >= 2, "redis.get should have been polled past the first hit"
-        assert "heartbeat stale" in caplog.text, (
-            "expected the reconnect branch to log a warning, "
-            "but the pump may have ended for a different reason"
+        await asyncio.wait_for(
+            heartbeat.pump_pubsub_with_heartbeat(pubsub, handler, stale_s=0.3),
+            timeout=2.0,
         )
+    assert received == [], "no messages arrived — only reconnect was triggered"
+    assert "heartbeat stale" in caplog.text
+
+
+async def test_pump_filters_heartbeat_and_forwards_data():
+    """Heartbeat messages keep the connection 'fresh' but are not forwarded
+    to the handler; real data messages are forwarded.
+    """
+    hb_msg = {"type": "message", "channel": REDIS_HEARTBEAT_CHANNEL.encode(),
+              "data": b'{"uptime_s": 1}'}
+    data_msg = {"type": "message", "channel": b"can_uplink", "data": b'{"canId": 1}'}
+    msgs = [hb_msg, data_msg]
+
+    async def get_message(**kwargs):
+        return msgs.pop(0) if msgs else None
+
+    pubsub = MagicMock()
+    pubsub.get_message = AsyncMock(side_effect=get_message)
+
+    received = []
+
+    async def handler(msg):
+        received.append(msg)
+
+    await asyncio.wait_for(
+        heartbeat.pump_pubsub_with_heartbeat(pubsub, handler, stale_s=0.2),
+        timeout=2.0,
+    )
+    assert received == [data_msg], "heartbeat filtered, data forwarded"
+
+
+async def test_pump_returns_when_should_stop_set():
+    """On shutdown the pump must return promptly instead of draining forever,
+    so SIGTERM stops the bridge cleanly (no Docker SIGKILL after timeout).
+    """
+    pubsub = MagicMock()
+    pubsub.get_message = AsyncMock(
+        return_value={"type": "message", "channel": b"can_uplink", "data": b"x"}
+    )
+    handler = AsyncMock()
+    await asyncio.wait_for(
+        heartbeat.pump_pubsub_with_heartbeat(
+            pubsub, handler, stale_s=5.0, should_stop=lambda: True,
+        ),
+        timeout=0.5,
+    )
+    handler.assert_not_called()
+
+
+async def test_pump_returns_on_get_message_error(caplog):
+    pubsub = MagicMock()
+    pubsub.get_message = AsyncMock(side_effect=ConnectionError("broken pipe"))
+    handler = AsyncMock()
+    with caplog.at_level("WARNING"):
+        await asyncio.wait_for(
+            heartbeat.pump_pubsub_with_heartbeat(pubsub, handler, stale_s=5.0),
+            timeout=2.0,
+        )
+    handler.assert_not_called()
+    assert "reconnecting" in caplog.text
