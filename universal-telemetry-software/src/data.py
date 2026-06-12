@@ -17,6 +17,7 @@ from src.config import (
     REDIS_WS_CLIENTS_KEY,
 )
 from src import redis_utils, utils
+from src.heartbeat import run_heartbeat_writer
 from src.version import get_git_hash
 
 BATCH_SIZE = 20
@@ -608,6 +609,8 @@ class TelemetryNode:
             throughput_listener_task(),
             utils.heartbeat_coro(self.telemetry_event),
             inject_heartbeat(),
+            # Car has no Redis — writer is a clean no-op when redis_client is None.
+            run_heartbeat_writer(None),
         ]
         if ENABLE_UPLINK:
             tasks.append(uplink_receiver())
@@ -1047,7 +1050,11 @@ class TelemetryNode:
                     logger.debug(f"Version check error: {e}")
                 await asyncio.sleep(30.0)
 
-        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_csv_logger(), car_time_injector(), version_checker(), utils.heartbeat_coro(self.telemetry_event)]
+        # Base mode has a real Redis server; create an async client for the
+        # heartbeat writer. The writer writes telemetry:heartbeat every 1s so
+        # pubsub subscribers can detect a half-dead producer and reconnect.
+        _async_redis = aioredis.from_url(REDIS_URL)
+        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_csv_logger(), car_time_injector(), version_checker(), utils.heartbeat_coro(self.telemetry_event), run_heartbeat_writer(_async_redis)]
         if ENABLE_UPLINK:
             tasks.append(uplink_relay())
         await asyncio.gather(*tasks)
