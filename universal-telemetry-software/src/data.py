@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import socket
 import struct
 import time
@@ -14,9 +15,10 @@ import tempfile
 from src.config import (
     REMOTE_IP, UDP_PORT, TCP_PORT,
     REDIS_URL, REDIS_CAN_CHANNEL, REDIS_UPLINK_CHANNEL, ENABLE_UPLINK,
-    REDIS_WS_CLIENTS_KEY,
+    REDIS_WS_CLIENTS_KEY, REDIS_HEARTBEAT_CHANNEL,
 )
 from src import redis_utils, utils
+from src.heartbeat import pump_pubsub_with_heartbeat, run_heartbeat_writer
 from src.version import get_git_hash
 
 BATCH_SIZE = 20
@@ -863,51 +865,63 @@ class TelemetryNode:
             uplink_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             uplink_seq = 0
 
-            try:
-                r = aioredis.from_url(REDIS_URL)
-                pubsub = r.pubsub()
-                await pubsub.subscribe(REDIS_UPLINK_CHANNEL)
-                logger.info(f"Subscribed to Redis channel: {REDIS_UPLINK_CHANNEL}")
+            async def _relay(msg):
+                nonlocal uplink_seq
+                if msg['type'] != 'message':
+                    return
+                try:
+                    data = redis_utils.decode_message(msg['data'])
+                    uplink_msg = json.loads(data)
 
-                async for message in pubsub.listen():
-                    if message['type'] != 'message':
-                        continue
+                    can_id = uplink_msg.get("canId")
+                    can_data = uplink_msg.get("data", [])
+                    ref = uplink_msg.get("ref", "unknown")
+
+                    if can_id is None or not isinstance(can_id, int) or can_id < 0:
+                        logger.warning(f"Uplink relay: invalid canId in ref={ref}")
+                        return
+                    if not isinstance(can_data, list) or len(can_data) < 1 or len(can_data) > 8:
+                        logger.warning(f"Uplink relay: invalid data in ref={ref}")
+                        return
+
+                    # Pack as uplink UDP packet: 0xCAFE + seq + count(1) + CAN message
+                    uplink_seq += 1
+                    data_bytes = bytes(can_data) + b'\x00' * (8 - len(can_data))
+                    can_msg = CANMessage(time.time(), can_id, data_bytes)
+
+                    payload = UPLINK_MAGIC
+                    payload += struct.pack("!QH", uplink_seq, 1)
+                    payload += can_msg.pack()
 
                     try:
-                        data = redis_utils.decode_message(message['data'])
-                        uplink_msg = json.loads(data)
+                        uplink_sock.sendto(payload, (REMOTE_IP, UDP_PORT))
+                        logger.info(f"Uplink relayed to car: canId={can_id} ref={ref} seq={uplink_seq}")
+                    except (PermissionError, OSError) as e:
+                        logger.error(f"Uplink UDP send failed: {e}")
 
-                        can_id = uplink_msg.get("canId")
-                        can_data = uplink_msg.get("data", [])
-                        ref = uplink_msg.get("ref", "unknown")
+                except Exception as e:
+                    logger.error(f"Uplink relay error: {e}")
 
-                        if can_id is None or not isinstance(can_id, int) or can_id < 0:
-                            logger.warning(f"Uplink relay: invalid canId in ref={ref}")
-                            continue
-                        if not isinstance(can_data, list) or len(can_data) < 1 or len(can_data) > 8:
-                            logger.warning(f"Uplink relay: invalid data in ref={ref}")
-                            continue
-
-                        # Pack as uplink UDP packet: 0xCAFE + seq + count(1) + CAN message
-                        uplink_seq += 1
-                        data_bytes = bytes(can_data) + b'\x00' * (8 - len(can_data))
-                        can_msg = CANMessage(time.time(), can_id, data_bytes)
-
-                        payload = UPLINK_MAGIC
-                        payload += struct.pack("!QH", uplink_seq, 1)
-                        payload += can_msg.pack()
-
-                        try:
-                            uplink_sock.sendto(payload, (REMOTE_IP, UDP_PORT))
-                            logger.info(f"Uplink relayed to car: canId={can_id} ref={ref} seq={uplink_seq}")
-                        except (PermissionError, OSError) as e:
-                            logger.error(f"Uplink UDP send failed: {e}")
-
+            # Reconnect loop: the pump returns whenever the pubsub connection
+            # goes silent past HEARTBEAT_STALE_S, and we re-subscribe here.
+            try:
+                while True:
+                    r = None
+                    try:
+                        r = aioredis.from_url(REDIS_URL)
+                        pubsub = r.pubsub()
+                        await pubsub.subscribe(REDIS_UPLINK_CHANNEL, REDIS_HEARTBEAT_CHANNEL)
+                        logger.info(f"Subscribed to Redis channels: {REDIS_UPLINK_CHANNEL}, {REDIS_HEARTBEAT_CHANNEL}")
+                        await pump_pubsub_with_heartbeat(pubsub, _relay, log=logger)
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as e:
-                        logger.error(f"Uplink relay error: {e}")
-
-            except Exception as e:
-                logger.error(f"Uplink relay Redis error: {e}")
+                        logger.error(f"Uplink relay Redis error: {e}")
+                        await asyncio.sleep(1.0)
+                    finally:
+                        if r is not None:
+                            with contextlib.suppress(Exception):
+                                await r.aclose()
             finally:
                 uplink_sock.close()
 
@@ -983,7 +997,11 @@ class TelemetryNode:
                     logger.debug(f"Version check error: {e}")
                 await asyncio.sleep(30.0)
 
-        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_csv_logger(), car_time_injector(), version_checker(), utils.heartbeat_coro(self.telemetry_event)]
+        # Base mode has a real Redis server; create an async client for the
+        # heartbeat writer. The writer publishes on the heartbeat channel every
+        # 1s so pubsub subscribers can detect a dead subscription and reconnect.
+        _async_redis = aioredis.from_url(REDIS_URL)
+        tasks = [udp_receiver(), missing_reporter(), stats_publisher(), raw_csv_logger(), car_time_injector(), version_checker(), utils.heartbeat_coro(self.telemetry_event), run_heartbeat_writer(_async_redis)]
         if ENABLE_UPLINK:
             tasks.append(uplink_relay())
         await asyncio.gather(*tasks)

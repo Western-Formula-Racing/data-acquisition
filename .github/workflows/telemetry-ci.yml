@@ -166,6 +166,7 @@ jobs:
           tests/test_page_lock.py \
           tests/test_stats_publisher.py \
           tests/test_status_server.py \
+          tests/test_heartbeat.py \
           -v
 
   # ── Integration tests: full docker-compose stack ─────────────────────────

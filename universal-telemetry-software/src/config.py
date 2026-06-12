@@ -22,6 +22,8 @@ REDIS_UPLINK_CHANNEL = "can_uplink"
 REDIS_STATS_CHANNEL = "system_stats"
 REDIS_DIAG_CHANNEL  = "link_diagnostics"
 REDIS_WS_CLIENTS_KEY = "websocket_bridge:clients"
+REDIS_HEARTBEAT_CHANNEL = "telemetry_heartbeat"
+HEARTBEAT_STALE_S   = 5.0   # subscribers reconnect if no pubsub message arrives for this long
 
 # ── Feature flags ─────────────────────────────────────────────────────────────
 ENABLE_UPLINK = os.getenv("ENABLE_UPLINK", "false").lower() == "true"
