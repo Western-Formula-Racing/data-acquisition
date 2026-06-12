@@ -3,6 +3,7 @@ Heartbeat writer tests — uses a fake async Redis client to avoid network deps.
 """
 import asyncio
 import json
+import time
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -52,3 +53,56 @@ async def test_continues_after_set_failure(fake_redis):
         await task
     except asyncio.CancelledError:
         pass
+
+
+async def test_pump_reconnects_when_heartbeat_goes_stale(monkeypatch):
+    """When the heartbeat key disappears, the pump must return so the outer
+    while-True loop can re-subscribe. This is the actual failure mode we hit
+    when the car power-cycles and the base's pubsub sits connected-but-broken.
+
+    The helper's "stale" check is purely time-since-last-seen: it does not
+    inspect wall_ts / payload age. So the failing scenario is: the heartbeat
+    key *existed* (last_hb_mono > 0.0), then disappears, and we wait longer
+    than stale_s. The helper returns and the outer loop re-subscribes.
+    """
+    from src.data import TelemetryNode
+
+    # Fake pubsub: get_message always returns None (no data flowing).
+    pubsub = MagicMock()
+    pubsub.get_message = AsyncMock(return_value=None)
+
+    # Fake redis client: heartbeat exists on the first read (so last_hb_mono
+    # gets set), then disappears forever. That triggers the reconnect path.
+    fresh_payload = json.dumps({"uptime_s": 1, "wall_ts": time.time()})
+    call_count = [0]
+
+    async def get_side_effect(*args, **kwargs):
+        call_count[0] += 1
+        return fresh_payload if call_count[0] == 1 else None
+
+    redis_client = MagicMock()
+    redis_client.get = AsyncMock(side_effect=get_side_effect)
+
+    # Handler should never be called: no messages ever arrived, only the
+    # heartbeat-driven reconnect should have happened.
+    received = []
+
+    async def handler(msg):
+        received.append(msg)
+
+    # Tiny stale_s so the test finishes in <2s.
+    task = asyncio.create_task(
+        TelemetryNode._pump_pubsub_with_heartbeat(
+            pubsub, redis_client, handler, stale_s=0.5,
+        )
+    )
+    # First iteration: get_message (~1s timeout) returns None, then redis.get
+    # returns fresh_payload -> last_hb_mono becomes nonzero. Second iteration:
+    # get_message returns None, redis.get returns None, last_hb_mono > 0 and
+    # > 0.5s old -> pump returns. Sleep 1.8s to be safe past the 1.0s get_message
+    # timeout on iteration 1 plus 0.5s stale on iteration 2.
+    await asyncio.sleep(1.8)
+    assert task.done(), "pump should have returned after stale heartbeat"
+    assert received == [], "no messages arrived — only reconnect was triggered"
+    # Sanity: we exercised the missing-heartbeat path at least once.
+    assert call_count[0] >= 2, "redis.get should have been polled past the first hit"
