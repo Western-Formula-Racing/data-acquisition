@@ -55,7 +55,7 @@ async def test_continues_after_set_failure(fake_redis):
         pass
 
 
-async def test_pump_reconnects_when_heartbeat_goes_stale(monkeypatch):
+async def test_pump_reconnects_when_heartbeat_goes_stale(caplog):
     """When the heartbeat key disappears, the pump must return so the outer
     while-True loop can re-subscribe. This is the actual failure mode we hit
     when the car power-cycles and the base's pubsub sits connected-but-broken.
@@ -99,10 +99,16 @@ async def test_pump_reconnects_when_heartbeat_goes_stale(monkeypatch):
     # First iteration: get_message (~1s timeout) returns None, then redis.get
     # returns fresh_payload -> last_hb_mono becomes nonzero. Second iteration:
     # get_message returns None, redis.get returns None, last_hb_mono > 0 and
-    # > 0.5s old -> pump returns. Sleep 1.8s to be safe past the 1.0s get_message
-    # timeout on iteration 1 plus 0.5s stale on iteration 2.
-    await asyncio.sleep(1.8)
-    assert task.done(), "pump should have returned after stale heartbeat"
-    assert received == [], "no messages arrived — only reconnect was triggered"
-    # Sanity: we exercised the missing-heartbeat path at least once.
-    assert call_count[0] >= 2, "redis.get should have been polled past the first hit"
+    # > 0.5s old -> pump returns. Sleep 2.5s to be safe past the 1.0s get_message
+    # timeout on iteration 1 plus 0.5s stale on iteration 2, with headroom for
+    # slow CI runners.
+    with caplog.at_level("WARNING"):
+        await asyncio.sleep(2.5)
+        assert task.done(), "pump should have returned after stale heartbeat"
+        assert received == [], "no messages arrived — only reconnect was triggered"
+        # Sanity: we exercised the missing-heartbeat path at least once.
+        assert call_count[0] >= 2, "redis.get should have been polled past the first hit"
+        assert "heartbeat stale" in caplog.text, (
+            "expected the reconnect branch to log a warning, "
+            "but the pump may have ended for a different reason"
+        )
