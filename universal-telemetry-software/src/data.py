@@ -79,6 +79,7 @@ class TelemetryNode:
         if redis_client is None and self.role != "car":
             redis_client = redis_utils.get_sync_client(REDIS_URL)
         self.redis_client = redis_client  # None on the car, possibly None on a Redis-less base
+        self.direct_queue: asyncio.Queue | None = None  # set by main.py for car mode (no Redis)
         # ECU clock sync — offset between ECU RTC and local monotonic clock
         self._clock_offset: float | None = None   # epoch_sec - monotonic at last sync
         self._last_ecu_sync: float = 0.0          # monotonic time of last valid ECU 1999
