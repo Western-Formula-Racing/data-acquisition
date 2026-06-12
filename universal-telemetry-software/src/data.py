@@ -100,9 +100,11 @@ class TelemetryNode:
         after a car power-cycle. Uses non-blocking get_message(timeout=1.0) so we
         get a chance to check the heartbeat key on every iteration.
 
-        `on_message` is an `async` callable invoked with the decoded payload string
-        for each non-None, non-subscribe-confirmation message. Returns only on
-        cancellation; outer supervisor is expected to restart the task.
+        `on_message` is an `async` callable invoked with the raw pubsub message
+        dict (whatever `get_message()` returns, typically
+        `{"type": "message", "channel": ..., "data": ...}`) for each non-None,
+        non-subscribe-confirmation message. Returns only on cancellation; outer
+        supervisor is expected to restart the task.
         """
         from .config import REDIS_HEARTBEAT_KEY
         _log = log or logger
@@ -927,12 +929,11 @@ class TelemetryNode:
                 await pubsub.subscribe(REDIS_UPLINK_CHANNEL)
                 logger.info(f"Subscribed to Redis channel: {REDIS_UPLINK_CHANNEL}")
 
-                async for message in pubsub.listen():
-                    if message['type'] != 'message':
-                        continue
-
+                async def _relay(msg):
+                    if msg['type'] != 'message':
+                        return
                     try:
-                        data = redis_utils.decode_message(message['data'])
+                        data = redis_utils.decode_message(msg['data'])
                         uplink_msg = json.loads(data)
 
                         can_id = uplink_msg.get("canId")
@@ -941,10 +942,10 @@ class TelemetryNode:
 
                         if can_id is None or not isinstance(can_id, int) or can_id < 0:
                             logger.warning(f"Uplink relay: invalid canId in ref={ref}")
-                            continue
+                            return
                         if not isinstance(can_data, list) or len(can_data) < 1 or len(can_data) > 8:
                             logger.warning(f"Uplink relay: invalid data in ref={ref}")
-                            continue
+                            return
 
                         # Pack as uplink UDP packet: 0xCAFE + seq + count(1) + CAN message
                         uplink_seq += 1
@@ -963,6 +964,10 @@ class TelemetryNode:
 
                     except Exception as e:
                         logger.error(f"Uplink relay error: {e}")
+
+                await TelemetryNode._pump_pubsub_with_heartbeat(
+                    pubsub, r, _relay, log=logger,
+                )
 
             except Exception as e:
                 logger.error(f"Uplink relay Redis error: {e}")
