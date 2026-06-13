@@ -11,6 +11,7 @@ Message format (same as the production broadcast server):
 from __future__ import annotations
 import asyncio
 import dataclasses
+import http
 import json
 import logging
 import pathlib
@@ -44,6 +45,85 @@ def _make_ssl_context() -> ssl.SSLContext:
     return ctx
 
 log = logging.getLogger(__name__)
+
+
+def _trust_page_html(wss_url: str) -> str:
+    """HTML served on a plain HTTPS GET to the bridge.
+
+    A browser hitting https://<bridge> (not a WebSocket upgrade) lands here
+    after the user clicks through the self-signed cert warning. The page
+    confirms the certificate is now trusted and live-tests the wss:// link
+    back to the bridge so the user gets real "it works" feedback instead of
+    a blank/error page.
+    """
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kvaser Bridge — Certificate Trusted</title>
+<style>
+  :root {{ color-scheme: dark; }}
+  body {{ margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+         background:#0f1115; color:#e7eaf0; display:flex; min-height:100vh;
+         align-items:center; justify-content:center; padding:24px; box-sizing:border-box; }}
+  .card {{ background:#171a21; border:1px solid #262b36; border-radius:16px; padding:32px;
+          max-width:460px; width:100%; box-shadow:0 10px 40px rgba(0,0,0,.4); }}
+  .check {{ width:56px; height:56px; border-radius:50%; background:#13301f;
+           border:1px solid #1f7a45; display:flex; align-items:center; justify-content:center;
+           margin-bottom:18px; font-size:30px; color:#34d27b; }}
+  h1 {{ font-size:20px; margin:0 0 8px; }}
+  p {{ margin:0 0 14px; color:#aab2c0; line-height:1.5; font-size:14px; }}
+  code {{ background:#0f1115; border:1px solid #262b36; border-radius:6px; padding:2px 6px;
+         font-size:13px; color:#cdd3de; word-break:break-all; }}
+  .status {{ margin-top:18px; padding:12px 14px; border-radius:10px; font-size:14px;
+            display:flex; align-items:center; gap:10px; border:1px solid #262b36; background:#0f1115; }}
+  .dot {{ width:10px; height:10px; border-radius:50%; background:#8a93a3; flex:none; }}
+  .dot.ok {{ background:#34d27b; box-shadow:0 0 0 4px rgba(52,210,123,.15); }}
+  .dot.bad {{ background:#f0683a; box-shadow:0 0 0 4px rgba(240,104,58,.15); }}
+  .hint {{ font-size:12px; color:#7f8896; margin-top:16px; }}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="check">✓</div>
+    <h1>Certificate trusted</h1>
+    <p>This browser now trusts the Kvaser Bridge. You can close this tab and
+       return to your PECAN dashboard — the connection will work.</p>
+    <p>Bridge URL (already filled in for you on the dashboard):<br><code>{wss_url}</code></p>
+    <div class="status"><span class="dot" id="dot"></span><span id="msg">Testing live connection…</span></div>
+    <p class="hint">You only need to do this once per browser. If the test below fails,
+       make sure the bridge is running and that you opened this page in the same
+       browser you use for the dashboard.</p>
+  </div>
+<script>
+  var url = {json.dumps(wss_url)};
+  var dot = document.getElementById('dot');
+  var msg = document.getElementById('msg');
+  try {{
+    var ws = new WebSocket(url);
+    var done = false;
+    var t = setTimeout(function() {{
+      if (done) return; done = true;
+      dot.className = 'dot bad'; msg.textContent = 'No response yet — is the bridge running?';
+      try {{ ws.close(); }} catch (e) {{}}
+    }}, 4000);
+    ws.onopen = function() {{
+      if (done) return; done = true; clearTimeout(t);
+      dot.className = 'dot ok'; msg.textContent = 'Live connection to the bridge confirmed.';
+      ws.close();
+    }};
+    ws.onerror = function() {{
+      if (done) return; done = true; clearTimeout(t);
+      dot.className = 'dot bad'; msg.textContent = 'Could not reach the bridge over wss://.';
+    }};
+  }} catch (e) {{
+    dot.className = 'dot bad'; msg.textContent = 'Browser blocked the test connection.';
+  }}
+</script>
+</body>
+</html>"""
+
 
 _UDEV_RULE = 'SUBSYSTEM=="net", KERNEL=="can*", GROUP="netdev", MODE="0660"'
 _UDEV_PATH = pathlib.Path('/etc/udev/rules.d/80-can.rules')
@@ -196,6 +276,7 @@ class Bridge:
                 '0.0.0.0',
                 self._ws_port,
                 ssl=ssl_ctx,
+                process_request=self._http_process_request,
             )
             scheme = 'wss' if self._tls else 'ws'
             log.info('WebSocket server listening on %s://0.0.0.0:%d', scheme, self._ws_port)
@@ -265,6 +346,30 @@ class Bridge:
     # ------------------------------------------------------------------
     # WebSocket server handler
     # ------------------------------------------------------------------
+
+    async def _http_process_request(self, path, request_headers):
+        """Intercept plain HTTP(S) GETs (not WebSocket upgrades) and serve a
+        human-friendly cert-trust confirmation page.
+
+        Returning None lets a genuine WebSocket handshake proceed. A browser
+        opening https://<bridge> to accept the self-signed cert sends a normal
+        GET (no `Upgrade: websocket`), so we answer with a 200 success page
+        instead of the opaque 426/400 the WS server would otherwise return.
+        """
+        upgrade = request_headers.get('Upgrade', '')
+        if upgrade.lower() == 'websocket':
+            return None  # real client — continue the WebSocket handshake
+
+        host = request_headers.get('Host') or f'localhost:{self._ws_port}'
+        scheme = 'wss' if self._tls else 'ws'
+        wss_url = f'{scheme}://{host}'
+        body = _trust_page_html(wss_url).encode('utf-8')
+        headers = [
+            ('Content-Type', 'text/html; charset=utf-8'),
+            ('Content-Length', str(len(body))),
+            ('Cache-Control', 'no-store'),
+        ]
+        return http.HTTPStatus.OK, headers, body
 
     async def _ws_handler(self, websocket) -> None:
         """Handle a new dashboard client connection."""
