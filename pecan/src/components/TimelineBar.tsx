@@ -154,6 +154,17 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
   const replayFileInputRef = useRef<HTMLInputElement | null>(null);
   const configFileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // In-app replacement for native alert() on import — shown as a dismissible
+  // notice strip below. Success/info auto-dismisses; errors stay until dismissed.
+  const [importNotice, setImportNotice] = useState<
+    { kind: "info" | "error"; message: string } | null
+  >(null);
+  useEffect(() => {
+    if (importNotice?.kind !== "info") return;
+    const timer = setTimeout(() => setImportNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [importNotice]);
+
   const handleImportConfigOnly = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -188,13 +199,13 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
         applied.push("DBC");
       }
 
-      window.alert(
+      setImportNotice(
         applied.length > 0
-          ? `Config imported: ${applied.join(", ")}`
-          : "No plot/DBC config found in file."
+          ? { kind: "info", message: `Config imported: ${applied.join(", ")}` }
+          : { kind: "info", message: "No plot/DBC config found in file." }
       );
     } catch (err) {
-      window.alert(`Config import failed: ${err instanceof Error ? err.message : "unknown error"}`);
+      setImportNotice({ kind: "error", message: `Config import failed: ${err instanceof Error ? err.message : "unknown error"}` });
     } finally {
       event.target.value = "";
     }
@@ -479,7 +490,7 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
       const parseResult = await parseReplayFile(file);
       if (parseResult.errors.length > 0 || parseResult.frames.length === 0) {
         const firstError = parseResult.errors[0]?.message ?? "No valid frames found in file.";
-        window.alert(`Replay import failed: ${firstError}`);
+        setImportNotice({ kind: "error", message: `Replay import failed: ${firstError}` });
         return;
       }
 
@@ -502,11 +513,11 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
       }
 
       if (parseResult.warnings.length > 0) {
-        window.alert(`Replay imported with ${parseResult.warnings.length} warning(s).`);
+        setImportNotice({ kind: "info", message: `Replay imported with ${parseResult.warnings.length} warning(s).` });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown import error";
-      window.alert(`Replay import failed: ${message}`);
+      setImportNotice({ kind: "error", message: `Replay import failed: ${message}` });
     } finally {
       setIsImportingReplay(false);
       event.target.value = "";
@@ -594,6 +605,25 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
             setPendingClipImport(null);
           }}
         />
+      )}
+      {importNotice && (
+        <div
+          className={`flex items-center gap-2 mb-1.5 rounded px-2.5 py-1 text-[11px] border ${
+            importNotice.kind === "error"
+              ? "bg-red-500/15 border-red-400/40 text-red-300"
+              : "bg-sky-500/15 border-sky-400/40 text-sky-200"
+          }`}
+        >
+          <span className="flex-1">{importNotice.kind === "error" ? "⚠ " : ""}{importNotice.message}</span>
+          <button
+            type="button"
+            className="font-bold leading-none opacity-70 hover:opacity-100"
+            onClick={() => setImportNotice(null)}
+            title="Dismiss"
+          >
+            ×
+          </button>
+        </div>
       )}
       {coldWarning && (
         <div className="flex items-center gap-2 mb-1.5 rounded bg-amber-500/15 border border-amber-400/40 px-2.5 py-1 text-[11px] text-amber-300">
