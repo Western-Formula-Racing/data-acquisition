@@ -188,11 +188,18 @@ function PlotManager({
             prevState = v;
           }
         }
-        // Stagger labels vertically when their x-positions cluster too close to read.
+        // Stagger labels into vertical lanes so their fixed-pixel-width boxes never
+        // overlap horizontally. A label only reuses a lane once the previous label in
+        // that lane has ended (its right edge, in seconds, clears this label's x).
         const windowSec = timeWindowMs / 1000;
-        const minGapSec = windowSec * 0.06;
+        // Approximate the plot area width to convert a label's pixel width into seconds.
+        // leftMargin isn't computed yet here, so estimate the axis/padding gutter.
+        const plotAreaPx = Math.max(1, (plotRef.current?.clientWidth ?? 600) - 100);
+        const pxPerSec = plotAreaPx / windowSec;
+        const CHAR_PX = 5.6; // ~9px-font glyph advance
+        const PAD_PX = 12;   // border + breathing room between adjacent boxes
         const LANES = 4;
-        const laneLastX: number[] = new Array(LANES).fill(-Infinity);
+        const laneRightEdge: number[] = new Array(LANES).fill(-Infinity);
         for (const t of transitions) {
           stateLines.push({
             type: "line",
@@ -204,12 +211,19 @@ function PlotManager({
             y1: 1,
             line: { color: "rgba(96, 165, 250, 0.55)", width: 1, dash: "dash" },
           });
+          const widthSec = (t.label.length * CHAR_PX + PAD_PX) / pxPerSec;
+          // First lane whose previous label has cleared; else the one that frees soonest.
           let lane = 0;
+          let foundFree = false;
           for (let i = 0; i < LANES; i++) {
-            if (t.x - laneLastX[i] >= minGapSec) { lane = i; break; }
-            if (i === LANES - 1) lane = LANES - 1;
+            if (t.x >= laneRightEdge[i]) { lane = i; foundFree = true; break; }
           }
-          laneLastX[lane] = t.x;
+          if (!foundFree) {
+            for (let i = 1; i < LANES; i++) {
+              if (laneRightEdge[i] < laneRightEdge[lane]) lane = i;
+            }
+          }
+          laneRightEdge[lane] = t.x + widthSec;
           stateAnnotations.push({
             x: t.x,
             y: lane * 0.11,
