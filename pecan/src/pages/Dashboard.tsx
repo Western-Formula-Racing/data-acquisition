@@ -110,7 +110,6 @@ function Dashboard() {
     } catch { /* ignore */ }
     return [];
   });
-  const [nextPlotId, setNextPlotId] = useState(1);
   const livePlotsSnapshotRef = useRef<Plot[] | null>(null);
   // Stores the loadedAtMs of the replay session whose layout has been applied,
   // or false when no replay layout is active. Using the timestamp rather than a
@@ -181,7 +180,6 @@ function Dashboard() {
       const detail = (e as CustomEvent<Plot[]>).detail;
       if (Array.isArray(detail) && detail.length > 0) {
         setPlots(detail);
-        setNextPlotId(nextPlotCounter(detail));
       }
     };
     window.addEventListener("pecan:plots-imported", handler);
@@ -247,7 +245,6 @@ function Dashboard() {
 
         if (importedPlots.length > 0) {
           setPlots(importedPlots);
-          setNextPlotId(nextPlotCounter(importedPlots));
         }
       }
 
@@ -264,7 +261,6 @@ function Dashboard() {
     const snapshot = livePlotsSnapshotRef.current;
     if (snapshot) {
       setPlots(snapshot);
-      setNextPlotId(nextPlotCounter(snapshot));
     }
 
     livePlotsSnapshotRef.current = null;
@@ -506,7 +502,7 @@ function Dashboard() {
     messageName: string;
     unit: string;
   }) => {
-    const newPlotId = String(nextPlotId);
+    const newPlotId = String(nextPlotCounter(plots));
     setPlots([
       ...plots,
       {
@@ -514,7 +510,6 @@ function Dashboard() {
         signals: [signalInfo],
       },
     ]);
-    setNextPlotId(nextPlotId + 1);
 
     // Advance tour if waiting for new plot creation
     if (tourOpen && currentTourStep === 3) {
@@ -556,17 +551,19 @@ function Dashboard() {
     signalName: string
   ) => {
     setPlots((prevPlots) =>
-      prevPlots.map((plot) => {
-        if (plot.id === plotId) {
-          return {
-            ...plot,
-            signals: plot.signals.filter(
-              (s) => !(s.msgID === msgID && s.signalName === signalName)
-            ),
-          };
-        }
-        return plot;
-      })
+      prevPlots
+        .map((plot) => {
+          if (plot.id === plotId) {
+            return {
+              ...plot,
+              signals: plot.signals.filter(
+                (s) => !(s.msgID === msgID && s.signalName === signalName)
+              ),
+            };
+          }
+          return plot;
+        })
+        .filter((plot) => plot.signals.length > 0)
     );
   };
 
