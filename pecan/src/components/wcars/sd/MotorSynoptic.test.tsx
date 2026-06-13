@@ -7,8 +7,8 @@ import { MotorSynoptic } from "./MotorSynoptic";
 describe("MotorSynoptic", () => {
   beforeEach(() => clearSignals());
   it("renders motor rpm and torque", () => {
-    setSignal("0xA5", "INV_Motor_Speed", 4200);
-    setSignal("0xAC", "INV_Torque_Feedback", 95);
+    setSignal("0x0A5", "INV_Motor_Speed", 4200);
+    setSignal("0x0AC", "INV_Torque_Feedback", 95);
     render(<MotorSynoptic />);
     expect(screen.getByText("4200")).toBeTruthy();
     expect(screen.getByText("95.0")).toBeTruthy();  // torqueFb uses decimals=1

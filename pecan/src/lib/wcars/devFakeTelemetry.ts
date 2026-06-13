@@ -2,7 +2,19 @@ import { dataStore } from "../DataStore";
 import { SD_SIGNALS } from "./sdSignals";
 
 /** Dev-only: inject fake decoded samples into DataStore so SD synoptics render.
- *  Active only when the page loads with ?fakesd=1. Returns a stop function. */
+ *  Active only when the page loads with ?fakesd=1. Returns a stop function.
+ *
+ *  The injected values mirror a real "car powered, on track" situation as
+ *  defined by the WFR25 DBC: 1-bit safety/relay flags read closed/healthy,
+ *  enum state signals carry their DBC label (decoder puts the label in `unit`),
+ *  and analog channels sweep sinusoidally within their configured range. */
+
+/** Enum state signals: steady value + the matching WFR25 DBC VAL_ label. */
+const ENUM_STATE: Record<string, { value: number; label: string }> = {
+  PackStatus: { value: 3, label: "Active" }, // VAL_ 1056 PackStatus 3 "Active"
+  State:      { value: 4, label: "DRIVE" },  // VAL_ 2002 State 4 "DRIVE"
+};
+
 export function startFakeSdTelemetry(): () => void {
   // Group signal keys by msgId so each tick writes one sample per message.
   const byMsg = new Map<string, { signal: string; range: [number, number] }[]>();
@@ -17,7 +29,18 @@ export function startFakeSdTelemetry(): () => void {
     for (const [msgId, sigs] of byMsg) {
       const data: Record<string, { sensorReading: number; unit: string }> = {};
       for (const { signal, range } of sigs) {
+        const enumState = ENUM_STATE[signal];
+        if (enumState) {
+          data[signal] = { sensorReading: enumState.value, unit: enumState.label };
+          continue;
+        }
         const [min, max] = range;
+        // 1-bit boolean (relays, safety-loop flags): healthy / energized = 1.
+        if (min === 0 && max === 1) {
+          data[signal] = { sensorReading: 1, unit: "" };
+          continue;
+        }
+        // Analog channel: sweep within range.
         const mid = (min + max) / 2;
         const amp = (max - min) / 4;
         data[signal] = {

@@ -38,9 +38,14 @@ export function ElecSchematic() {
   const ccl = useSdValue("packCcl");
   const busV = useSdValue("busV");
   const busA = useSdValue("busA");
+  const hv = useSdValue("hvActive");
 
-  // Bus is "energized" when DC bus voltage is present and meaningfully high.
-  const energized = busV.status !== "missing" && (busV.value ?? 0) > 50;
+  // Bus is energized per the real HV_Active flag from the safety loop;
+  // fall back to DC bus voltage only if that frame hasn't arrived.
+  const energized =
+    hv.status !== "missing"
+      ? (hv.value ?? 0) >= 0.5
+      : busV.status !== "missing" && (busV.value ?? 0) > 50;
   const flow = energized ? " wcars-flow--on" : "";
 
   // SoC bar fill (bottom-up).
@@ -81,8 +86,8 @@ export function ElecSchematic() {
         {/* Positive terminal nub */}
         <rect className="wcars-schem-term" x={380} y={272} width={16} height={36} />
 
-        {/* ---- CONTACTOR (K1) ---- */}
-        <text className="wcars-schem-tag" x={480} y={252} textAnchor="middle">K1</text>
+        {/* ---- AIR (accumulator isolation relay), closed when HV_Active ---- */}
+        <text className="wcars-schem-tag" x={480} y={252} textAnchor="middle">AIR</text>
         <line className={`wcars-flow${flow}`} x1={396} y1={290} x2={450} y2={290} />
         <circle className="wcars-schem-node" cx={450} cy={290} r={6} />
         <line

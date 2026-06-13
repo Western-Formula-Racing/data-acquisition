@@ -14,19 +14,22 @@ function useInopPages(): SdPageId[] {
   const motRpm = useSdValue("motorRpm");
   const motTemp = useSdValue("motorTemp");
   const cool = useSdValue("coolant");
+  const loopHv = useSdValue("hvActive");
+  const loopRet = useSdValue("loopReturn");
   return useMemo(() => {
     // Only flag INOP when data is actively flowing (at least one signal present).
     // If no signals have arrived yet, the stream is simply cold — not INOP.
-    const anyPresent = [wheelL, wheelR, elecV, elecSoc, motRpm, motTemp, cool]
+    const anyPresent = [wheelL, wheelR, elecV, elecSoc, motRpm, motTemp, cool, loopHv]
       .some((s) => s.status !== "missing");
     if (!anyPresent) return [];
     const inop: SdPageId[] = [];
     if (wheelL.status === "missing" && wheelR.status === "missing") inop.push("WHEEL");
     if (elecV.status === "missing" && elecSoc.status === "missing") inop.push("ELEC");
+    if (loopHv.status === "missing" && loopRet.status === "missing") inop.push("LOOP");
     if (motRpm.status === "missing" && motTemp.status === "missing") inop.push("MOTOR");
     if (cool.status === "missing") inop.push("COOL");
     return inop;
-  }, [wheelL.status, wheelR.status, elecV.status, elecSoc.status, motRpm.status, motTemp.status, cool.status]);
+  }, [wheelL.status, wheelR.status, elecV.status, elecSoc.status, motRpm.status, motTemp.status, cool.status, loopHv.status, loopRet.status]);
 }
 
 export function SystemDisplay() {

@@ -615,3 +615,57 @@
 @media (prefers-reduced-motion: reduce) {
   .wcars-schem-svg .wcars-flow.wcars-flow--on { animation: none; }
 }
+
+/* ============================================================
+ * SAFETY LOOP / SHUTDOWN CIRCUIT SYNOPTIC
+ * ============================================================ */
+.wcars-safety-schem { display: flex; flex-direction: column; height: 100%; }
+
+/* loop rail: dim when dead, green + flowing when energized */
+.wcars-rail { stroke: #3a4347; stroke-width: 4; }
+.wcars-rail--live {
+  stroke: var(--wcars-green);
+  stroke-dasharray: 10 8;
+  animation: wcars-flow-march 0.8s linear infinite;
+}
+.wcars-rail-cap { fill: var(--wcars-dim); font-size: 13px; letter-spacing: 0.12em; }
+
+/* series safety contacts */
+.wcars-contact-term { fill: #0a0e0a; stroke: var(--wcars-dim); stroke-width: 2; }
+.wcars-contact-arm { stroke-width: 4; stroke-linecap: round; }
+.wcars-contact-lbl { fill: var(--wcars-white); font-size: 16px; font-weight: 700; letter-spacing: 0.08em; }
+.wcars-contact-state { font-size: 13px; letter-spacing: 0.1em; }
+.wcars-contact--closed  .wcars-contact-arm   { stroke: var(--wcars-green); }
+.wcars-contact--closed  .wcars-contact-state { fill: var(--wcars-green); }
+.wcars-contact--open    .wcars-contact-arm   { stroke: var(--wcars-amber); }
+.wcars-contact--open    .wcars-contact-state { fill: var(--wcars-amber); }
+.wcars-contact--missing .wcars-contact-arm   { stroke: var(--wcars-dim); }
+.wcars-contact--missing .wcars-contact-state { fill: var(--wcars-dim); }
+
+/* HV ACTIVE annunciator */
+.wcars-hv-lamp { stroke-width: 2; }
+.wcars-hv-lamp--on  { fill: var(--wcars-green); stroke: var(--wcars-green); }
+.wcars-hv-lamp--off { fill: #1a0d00; stroke: var(--wcars-amber); }
+.wcars-hv-lamp--missing { fill: #0a0e0a; stroke: var(--wcars-dim); }
+.wcars-hv-lamp-text { font-size: 30px; font-weight: 700; letter-spacing: 0.1em; }
+.wcars-hv-lamp--on  + .wcars-hv-lamp-text { fill: #04140a; }
+.wcars-hv-lamp--off + .wcars-hv-lamp-text { fill: var(--wcars-amber); }
+.wcars-hv-lamp--missing + .wcars-hv-lamp-text { fill: var(--wcars-dim); }
+
+/* small status indicators */
+.wcars-ind-dot { stroke-width: 2; }
+.wcars-ind-lbl { fill: var(--wcars-white); font-size: 13px; letter-spacing: 0.08em; }
+.wcars-ind--on  .wcars-ind-dot { fill: var(--wcars-green); stroke: var(--wcars-green); }
+.wcars-ind--off .wcars-ind-dot { fill: #1a0d00; stroke: var(--wcars-amber); }
+.wcars-ind--missing .wcars-ind-dot { fill: #0a0e0a; stroke: var(--wcars-dim); }
+
+/* pack state enum label */
+.wcars-pack-state { font-size: 26px; font-weight: 700; letter-spacing: 0.06em; }
+.wcars-pack-state--normal  { fill: var(--wcars-green); }
+.wcars-pack-state--caution { fill: var(--wcars-amber); }
+.wcars-pack-state--warning { fill: var(--wcars-red); }
+.wcars-pack-state--missing { fill: var(--wcars-dim); }
+
+@media (prefers-reduced-motion: reduce) {
+  .wcars-rail--live { animation: none; }
+}
