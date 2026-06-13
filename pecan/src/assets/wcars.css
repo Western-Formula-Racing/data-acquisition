@@ -1,0 +1,617 @@
+/* pecan/src/assets/wcars.css
+ * Airbus ECAM / E-WD display styling.
+ * Colour philosophy: red = WARNING, amber = CAUTION, green = MEMO/normal,
+ * cyan = action/value, white = remark. Pure phosphor colours on near-black DU.
+ */
+:root {
+  --wcars-bg: #060606;
+  --wcars-du: #000;
+  --wcars-red: #ff2424;
+  --wcars-amber: #ff9b1a;   /* ECAM caution amber leans orange, not yellow */
+  --wcars-green: #1fe33a;   /* pure phosphor green, not mint */
+  --wcars-cyan: #25d4ff;
+  --wcars-white: #e9ecec;
+  --wcars-dim: #5d6b70;     /* desaturated screen-grey for inactive text */
+  --wcars-bezel: #14181a;
+  --wcars-line: #1d2326;
+  --wcars-mono: "B612 Mono", "IBM Plex Mono", monospace;
+}
+
+.wcars-page {
+  position: relative;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #0e1113 0%, var(--wcars-bg) 60%, #000 100%);
+  color: var(--wcars-white);
+  font-family: var(--wcars-mono);
+  min-height: 100vh;
+  padding: 1.25rem 1.5rem 2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  -webkit-font-smoothing: antialiased;
+  text-shadow: 0 0 1px currentColor;  /* faint LCD bloom on all text */
+}
+
+/* very subtle horizontal scanlines for the "display unit" feel */
+.wcars-page::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.16) 3px
+  );
+  z-index: 1;
+}
+
+.wcars-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--wcars-line);
+  padding-bottom: 0.6rem;
+  margin-bottom: 1.1rem;
+  z-index: 2;
+}
+
+.wcars-header h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: 0.45em;
+  color: var(--wcars-cyan);
+  text-shadow: 0 0 8px rgba(37, 212, 255, 0.55);
+}
+
+.wcars-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  z-index: 2;
+}
+
+.wcars-pane-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--wcars-cyan);
+  letter-spacing: 0.22em;
+  margin: 0 0 0.5rem 0;
+  padding-bottom: 0.3rem;
+  opacity: 0.85;
+}
+
+/* Each pane is a physical Display Unit: dark bezel + inset black screen + glow */
+.wcars-ecam,
+.wcars-acars {
+  background: var(--wcars-du);
+  border: 1px solid var(--wcars-bezel);
+  border-radius: 2px;
+  min-height: 72vh;
+  box-shadow:
+    inset 0 0 0 1px #0a0d0e,
+    inset 0 0 60px rgba(0, 0, 0, 0.9),
+    0 0 0 1px #000,
+    0 8px 28px rgba(0, 0, 0, 0.7);
+}
+
+.wcars-acars {
+  padding: 0.85rem 0.9rem;
+  overflow-y: auto;
+}
+
+/* EWD warning area: scrollable alert list + fixed grey-stripe footer */
+.wcars-ecam {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.wcars-ecam-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0.85rem 0.9rem;
+}
+
+/* ---- ECAM active-alert rows ---- */
+.wcars-ecam-row {
+  display: grid;
+  grid-template-columns: 3.2rem 1fr 1.5rem;
+  grid-template-rows: auto auto;
+  gap: 0.1rem 0.6rem;
+  padding: 0.45rem 0.3rem 0.55rem;
+  margin-bottom: 0.35rem;
+  align-items: baseline;
+}
+
+.wcars-warning { color: var(--wcars-red); }
+.wcars-caution { color: var(--wcars-amber); }
+.wcars-memo { color: var(--wcars-green); }
+
+/* severity tag: compact, the colour carries the meaning */
+.wcars-sev {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  opacity: 0.75;
+  align-self: center;
+}
+
+/* Fault title. EWD convention by severity:
+ *   primary failure (WARNING)  -> framed (boxed) wording
+ *   independent  (CAUTION)     -> underlined title
+ *   secondary    (MEMO)        -> plain title
+ */
+.wcars-title {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 4px currentColor;
+}
+.wcars-ecam-row .wcars-title { justify-self: start; }
+
+.wcars-ecam-row.wcars-warning .wcars-title {
+  border: 1px solid currentColor;
+  padding: 0.04rem 0.42rem;
+  box-shadow: 0 0 6px rgba(255, 36, 36, 0.35);
+}
+.wcars-ecam-row.wcars-caution .wcars-title {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.wcars-ecam-row.wcars-memo .wcars-title { text-decoration: none; }
+
+/* corrective/remark line: indented under the title, dimmer white remark */
+.wcars-detail {
+  grid-column: 2 / -1;
+  font-size: 0.82rem;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  color: var(--wcars-white);
+  opacity: 0.82;
+  text-decoration: none;
+  text-shadow: none;
+}
+
+/* ECAM dot-leader action line: REMARK ········· VALUE(cyan) */
+.wcars-leader {
+  display: flex;
+  align-items: baseline;
+  width: 100%;
+}
+.wcars-leader-lbl { white-space: nowrap; }
+.wcars-leader-dots {
+  flex: 1 1 auto;
+  align-self: center;
+  min-width: 1.5em;
+  margin: 0 0.45em;
+  height: 0;
+  border-bottom: 2px dotted currentColor;
+  opacity: 0.4;
+}
+.wcars-leader-val {
+  white-space: nowrap;
+  color: var(--wcars-cyan);
+  text-shadow: 0 0 3px rgba(37, 212, 255, 0.4);
+}
+
+.wcars-clear-btn {
+  grid-row: 1;
+  grid-column: 3;
+  background: transparent;
+  border: none;
+  color: var(--wcars-dim);
+  cursor: pointer;
+  font-family: var(--wcars-mono);
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.1rem 0.2rem;
+  transition: color 0.12s ease;
+}
+.wcars-clear-btn:hover { color: var(--wcars-white); }
+
+.wcars-clear-all {
+  display: block;
+  margin: 1.25rem 0 0.25rem;
+  background: transparent;
+  color: var(--wcars-amber);
+  border: 1px solid var(--wcars-amber);
+  border-radius: 2px;
+  padding: 0.4rem 1.1rem;
+  cursor: pointer;
+  font-family: var(--wcars-mono);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-size: 0.72rem;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.wcars-clear-all:hover {
+  background: var(--wcars-amber);
+  color: #000;
+}
+
+.wcars-green { color: var(--wcars-green); }
+
+/* "WCARS NORMAL" green memo when nothing is active */
+.wcars-ecam--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wcars-ecam--empty .wcars-green {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  color: var(--wcars-green);
+  text-shadow: 0 0 10px rgba(31, 227, 58, 0.6);
+}
+
+/* EWD grey-stripe footer: green overflow arrow when scrollable, else STS box.
+ * The grey stripe separates the warning zone from the status indicators below. */
+.wcars-ewd-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.9rem;
+  border-top: 3px solid #39424700;
+  border-image: linear-gradient(90deg, #2c3438, #4a565b, #2c3438) 1;
+}
+.wcars-overflow {
+  color: var(--wcars-green);
+  font-size: 0.9rem;
+  line-height: 1;
+  text-shadow: 0 0 7px rgba(31, 227, 58, 0.7);
+  animation: wcars-overflow-pulse 1.4s ease-in-out infinite;
+}
+.wcars-overflow--off { visibility: hidden; }
+@keyframes wcars-overflow-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.wcars-sts {
+  margin-left: auto;
+  border: 1px solid var(--wcars-white);
+  color: var(--wcars-white);
+  padding: 0.04rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+/* ---- ACARS message log (datalink printout) ---- */
+.wcars-acars-empty {
+  color: var(--wcars-dim);
+  letter-spacing: 0.25em;
+  font-size: 0.8rem;
+  padding: 0.5rem 0;
+}
+
+.wcars-acars-row {
+  display: grid;
+  grid-template-columns: 5rem 2.6rem 1fr;
+  grid-template-rows: auto auto;
+  gap: 0 0.6rem;
+  font-size: 0.8rem;
+  padding: 0.28rem 0.2rem;
+  border-bottom: 1px solid var(--wcars-line);
+}
+.wcars-acars-row.wcars-warning { color: var(--wcars-red); }
+.wcars-acars-row.wcars-caution { color: var(--wcars-amber); }
+.wcars-acars-row.wcars-memo { color: var(--wcars-green); }
+
+.wcars-acars-row.wcars-replay { opacity: 0.45; }
+
+.wcars-time {
+  color: var(--wcars-dim);
+  letter-spacing: 0.04em;
+  text-shadow: none;
+}
+.wcars-tag {
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  align-self: center;
+}
+.wcars-acars-row .wcars-title {
+  text-decoration: none;
+  text-shadow: 0 0 3px currentColor;
+  letter-spacing: 0.04em;
+}
+.wcars-acars-row .wcars-detail {
+  grid-column: 3 / -1;
+  margin-top: 0.05rem;
+}
+.wcars-acars-row .wcars-detail::before { content: ""; }
+
+/* ---- Master caution / warning chip (glareshield legend, solid-lit) ---- */
+.wcars-chip {
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  padding: 0.3rem 0.85rem;
+  font-family: var(--wcars-mono);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  font-size: 0.74rem;
+  cursor: pointer;
+  text-transform: uppercase;
+  margin-left: 1rem;
+  line-height: 1;
+}
+
+/* glareshield lights are solid, backlit squares — fill + dark legend text */
+.wcars-chip-warn {
+  background: var(--wcars-red);
+  border-color: var(--wcars-red);
+  color: #1a0000;
+  box-shadow: 0 0 14px rgba(255, 36, 36, 0.85), inset 0 0 6px rgba(0, 0, 0, 0.3);
+  text-shadow: none;
+  animation: wcars-flash 0.9s steps(2, end) infinite;
+}
+.wcars-chip-caut {
+  background: var(--wcars-amber);
+  border-color: var(--wcars-amber);
+  color: #1a1000;
+  box-shadow: 0 0 12px rgba(255, 155, 26, 0.7), inset 0 0 6px rgba(0, 0, 0, 0.3);
+  text-shadow: none;
+}
+
+@keyframes wcars-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+.wcars-chip-mount {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem 1rem 0 0;
+}
+
+/* ---- Settings panel ---- */
+.wcars-settings { position: relative; z-index: 3; }
+.wcars-gear {
+  background: transparent;
+  border: 1px solid var(--wcars-cyan);
+  color: var(--wcars-cyan);
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1rem;
+  box-shadow: 0 0 8px rgba(37, 212, 255, 0.4);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.wcars-gear:hover { background: var(--wcars-cyan); color: #000; }
+
+.wcars-settings-panel {
+  position: absolute;
+  right: 0;
+  top: 2.6rem;
+  background: var(--wcars-du);
+  border: 1px solid var(--wcars-cyan);
+  border-radius: 2px;
+  padding: 1rem 1.1rem;
+  z-index: 100;
+  min-width: 19rem;
+  text-transform: none;
+  letter-spacing: normal;
+  box-shadow: 0 0 0 1px #000, 0 12px 34px rgba(0, 0, 0, 0.8);
+}
+
+.wcars-settings-panel h3 {
+  margin: 0 0 0.6rem 0;
+  color: var(--wcars-cyan);
+  letter-spacing: 0.1em;
+  font-size: 0.95rem;
+}
+.wcars-settings-panel label {
+  display: block;
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  color: var(--wcars-white);
+}
+.wcars-settings-panel input { margin-left: 0.5rem; accent-color: var(--wcars-cyan); }
+.wcars-settings-actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
+.wcars-settings-actions button {
+  background: transparent;
+  color: var(--wcars-cyan);
+  border: 1px solid var(--wcars-cyan);
+  border-radius: 2px;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  font-family: var(--wcars-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.wcars-settings-actions button:hover { background: var(--wcars-cyan); color: #000; }
+
+/* ---- Display-unit scrollbars ---- */
+.wcars-ecam-scroll::-webkit-scrollbar,
+.wcars-acars::-webkit-scrollbar { width: 8px; }
+.wcars-ecam-scroll::-webkit-scrollbar-track,
+.wcars-acars::-webkit-scrollbar-track { background: #050505; }
+.wcars-ecam-scroll::-webkit-scrollbar-thumb,
+.wcars-acars::-webkit-scrollbar-thumb {
+  background: var(--wcars-bezel);
+  border-radius: 0;
+}
+.wcars-ecam-scroll::-webkit-scrollbar-thumb:hover,
+.wcars-acars::-webkit-scrollbar-thumb:hover { background: #2a3236; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wcars-chip-warn,
+  .wcars-overflow { animation: none; }
+}
+
+/* ---- System Display (SD) ---- */
+.wcars-sd {
+  display: flex;
+  flex-direction: column;
+  height: 72vh;
+  background: var(--wcars-du);
+  border: 1px solid var(--wcars-bezel);
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px #0a0d0e, inset 0 0 60px rgba(0,0,0,.9),
+              0 0 0 1px #000, 0 8px 28px rgba(0,0,0,.7);
+}
+.wcars-sd-viewport {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0.85rem 0.9rem;
+}
+/* MSG log scrolls internally; never grows the viewport or page */
+.wcars-msg-page { height: 100%; }
+.wcars-msg-page .wcars-acars {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.wcars-syn-title {
+  color: var(--wcars-cyan);
+  letter-spacing: 0.2em;
+  font-size: 0.8rem;
+  margin-bottom: 0.6rem;
+}
+.wcars-syn { height: 100%; }
+
+/* value box */
+.wcars-vbox {
+  display: inline-flex; align-items: baseline; gap: 0.4rem;
+  border: 1px solid currentColor; border-radius: 2px;
+  padding: 0.25rem 0.5rem; margin: 0.25rem;
+}
+.wcars-vbox-label { color: var(--wcars-white); font-size: 0.7rem; letter-spacing: 0.08em; }
+.wcars-vbox-value { font-weight: 700; font-size: 1rem; }
+.wcars-vbox-unit { color: var(--wcars-cyan); font-size: 0.7rem; }
+.wcars-vbox--normal  { color: var(--wcars-green); }
+.wcars-vbox--caution { color: var(--wcars-amber); }
+.wcars-vbox--warning { color: var(--wcars-red); }
+.wcars-vbox--missing { color: var(--wcars-amber); }
+.wcars-vbox--missing .wcars-vbox-value { color: var(--wcars-amber); }
+
+/* gauge */
+.wcars-gauge { display: inline-flex; flex-direction: column; align-items: center; margin: 0.5rem; }
+.wcars-gauge-svg { width: 140px; height: 98px; }
+.wcars-gauge-track { stroke: #2a3236; stroke-width: 4; }
+.wcars-gauge-needle { stroke: var(--wcars-green); stroke-width: 2.5; }
+.wcars-gauge-hub { fill: var(--wcars-white); }
+.wcars-gauge--caution .wcars-gauge-needle { stroke: var(--wcars-amber); }
+.wcars-gauge--warning .wcars-gauge-needle { stroke: var(--wcars-red); }
+.wcars-gauge--missing .wcars-gauge-needle { stroke: var(--wcars-amber); }
+.wcars-gauge-readout { display: flex; gap: 0.35rem; align-items: baseline; }
+.wcars-gauge-label { color: var(--wcars-white); font-size: 0.7rem; }
+.wcars-gauge-value { font-weight: 700; }
+.wcars-gauge--normal  .wcars-gauge-value { color: var(--wcars-green); }
+.wcars-gauge--caution .wcars-gauge-value { color: var(--wcars-amber); }
+.wcars-gauge--warning .wcars-gauge-value { color: var(--wcars-red); }
+.wcars-gauge--missing .wcars-gauge-value { color: var(--wcars-amber); }
+.wcars-gauge-unit { color: var(--wcars-cyan); font-size: 0.7rem; }
+
+/* labels / flow lines */
+.wcars-lbl--title  { color: var(--wcars-cyan); font-weight: 700; }
+.wcars-lbl--remark { color: var(--wcars-white); }
+.wcars-lbl--value  { color: var(--wcars-cyan); font-weight: 700; }
+.wcars-lbl--unit   { color: var(--wcars-cyan); font-size: 0.7rem; }
+.wcars-flow { stroke: #3a4347; stroke-width: 2; }
+.wcars-flow--active { stroke: var(--wcars-green); }
+
+.wcars-sts-line { display: flex; justify-content: space-between; padding: 0.3rem 0; border-bottom: 1px solid var(--wcars-line); }
+
+/* ---- ECP pushbuttons ---- */
+.wcars-ecp-row {
+  flex: 0 0 auto;
+  display: flex; gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-top: 3px solid; border-image: linear-gradient(90deg,#2c3438,#4a565b,#2c3438) 1;
+  background: #0c0f10;
+}
+.wcars-ecp {
+  flex: 1 1 0;
+  display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+  background: linear-gradient(#20262a, #14181a);
+  border: 1px solid #333c40; border-radius: 3px;
+  padding: 0.4rem 0.3rem 0.3rem;
+  color: var(--wcars-white);
+  font-family: var(--wcars-mono); font-weight: 700; letter-spacing: 0.08em;
+  font-size: 0.72rem; cursor: pointer;
+  box-shadow: inset 0 1px 0 #3a444a, 0 1px 2px rgba(0,0,0,.6);
+}
+.wcars-ecp-annunciator {
+  width: 60%; height: 3px; border-radius: 1px; background: #2a3236;
+}
+.wcars-ecp--on { border-color: var(--wcars-cyan); }
+.wcars-ecp--on .wcars-ecp-annunciator {
+  background: var(--wcars-green); box-shadow: 0 0 8px var(--wcars-green);
+}
+.wcars-ecp--inop { color: var(--wcars-amber); opacity: 0.7; cursor: not-allowed; }
+.wcars-ecp--inop .wcars-ecp-annunciator { background: var(--wcars-amber); }
+.wcars-ecp--flash { animation: wcars-flash 0.7s steps(2,end) 6; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wcars-ecp--flash { animation: none; }
+}
+
+/* ============================================================
+ * SD SCHEMATIC SYNOPTIC (ELEC proof-of-concept)
+ * One SVG coordinate canvas: static schematic + data-bound nodes.
+ * ============================================================ */
+.wcars-elec-schem { display: flex; flex-direction: column; height: 100%; }
+.wcars-schem-svg {
+  flex: 1 1 auto; min-height: 0; width: 100%;
+  font-family: var(--wcars-mono);
+}
+
+/* static structure */
+.wcars-schem-box  { fill: none; stroke: var(--wcars-dim); stroke-width: 1.5; }
+.wcars-schem-head { fill: var(--wcars-white); font-size: 17px; font-weight: 700; letter-spacing: 0.1em; }
+.wcars-schem-tag  { fill: var(--wcars-dim); font-size: 14px; letter-spacing: 0.08em; }
+.wcars-schem-term { fill: var(--wcars-dim); }
+.wcars-schem-node { fill: #0a0e0a; stroke: var(--wcars-dim); stroke-width: 2; }
+
+/* contactor switch arm: amber when open, green when closed */
+.wcars-schem-arm { stroke: var(--wcars-amber); stroke-width: 3; stroke-linecap: round; }
+.wcars-schem-arm--closed { stroke: var(--wcars-green); }
+
+/* bus bar + flow pipes: dim when cold, green + animated when energized */
+.wcars-schem-bus { fill: var(--wcars-dim); }
+.wcars-schem-bus.wcars-flow--on { fill: var(--wcars-green); }
+.wcars-schem-svg .wcars-flow { stroke: #3a4347; stroke-width: 3; }
+.wcars-schem-svg .wcars-flow.wcars-flow--on {
+  stroke: var(--wcars-green);
+  stroke-dasharray: 10 8;
+  animation: wcars-flow-march 0.8s linear infinite;
+}
+.wcars-flow-arrow { fill: #3a4347; }
+.wcars-flow-arrow.wcars-flow--on { fill: var(--wcars-green); }
+
+@keyframes wcars-flow-march {
+  to { stroke-dashoffset: -18; }
+}
+
+/* SoC bar */
+.wcars-soc-track { fill: #0a0e0a; stroke: var(--wcars-dim); stroke-width: 1.5; }
+.wcars-soc-fill--normal  { fill: var(--wcars-green); }
+.wcars-soc-fill--caution { fill: var(--wcars-amber); }
+.wcars-soc-fill--warning { fill: var(--wcars-red); }
+.wcars-soc-fill--missing { fill: #0a0e0a; }
+
+/* data-bound readouts */
+.wcars-rd-lbl  { fill: var(--wcars-white); font-size: 14px; letter-spacing: 0.08em; }
+.wcars-rd-val  { font-size: 26px; font-weight: 700; }
+.wcars-rd-unit { fill: var(--wcars-cyan); font-size: 14px; font-weight: 400; }
+.wcars-rd--normal  .wcars-rd-val { fill: var(--wcars-green); }
+.wcars-rd--caution .wcars-rd-val { fill: var(--wcars-amber); }
+.wcars-rd--warning .wcars-rd-val { fill: var(--wcars-red); }
+.wcars-rd--missing .wcars-rd-val { fill: var(--wcars-dim); }
+
+@media (prefers-reduced-motion: reduce) {
+  .wcars-schem-svg .wcars-flow.wcars-flow--on { animation: none; }
+}

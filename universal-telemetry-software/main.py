@@ -238,6 +238,12 @@ if __name__ == "__main__":
         p_telemetry.start()
         processes.append(p_telemetry)
 
+        # Eagerly initialize the WCARS engine in the parent so the ring buffer is
+        # warm before the first frame arrives in the child WS bridge process.
+        if os.getenv("WCARS_ENABLED", "1") == "1":
+            from src.websocket_bridge import get_wcars_engine
+            get_wcars_engine()
+
         p_websocket = multiprocessing.Process(target=start_websocket_bridge, args=(websocket_event,), name="WebSocket")
         p_websocket.start()
         processes.append(p_websocket)

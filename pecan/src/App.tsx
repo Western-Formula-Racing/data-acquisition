@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import "./App.css";
+import "./assets/wcars.css";
 import Sidebar from "./components/Sidebar";
 import Hamburger from "./components/HamburgerMenu";
 import SettingsModal from "./components/SettingsModal";
@@ -19,6 +20,8 @@ import FloatingTools from "./components/FloatingTools";
 import { useRemoteConfig } from "./lib/useRemoteConfig";
 import { updateCategories } from "./config/categories";
 import { useTimeline } from "./context/TimelineContext";
+import { WcarsProvider } from "./context/WcarsContext";
+import { MasterCautionChip } from "./components/wcars/MasterCautionChip";
 
 function App() {
   const location = useLocation();
@@ -130,15 +133,17 @@ function App() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-row overflow-y-auto">
-      <div className={`h-screen transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'lg:w-2/9 md:w-2/5 sm:w-3/5 w-full' : 'w-[60px]'}`}>
-        {!isSidebarOpen && <Hamburger trigger={() => setIsSidebarOpen(true)} />}
-        <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} onOpenSettings={openSettings} onOpenAuth={openAuth} />
-      </div>
+    <WcarsProvider>
+      <div className="h-screen flex flex-row overflow-y-auto">
+        <div className={`h-screen transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'lg:w-2/9 md:w-2/5 sm:w-3/5 w-full' : 'w-[60px]'}`}>
+          {!isSidebarOpen && <Hamburger trigger={() => setIsSidebarOpen(true)} />}
+          <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} onOpenSettings={openSettings} onOpenAuth={openAuth} />
+        </div>
 
-      {/* Main content area, Outlet element is needed to display the rendered child pages received from the routes */}
-      <main id="main-content" className="flex-1 h-full min-w-0">
-        {showAppBanners && (
+        {/* Main content area, Outlet element is needed to display the rendered child pages received from the routes */}
+        <main id="main-content" className="flex-1 h-full min-w-0">
+          <div className="wcars-chip-mount"><MasterCautionChip /></div>
+          {showAppBanners && (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 w-full pointer-events-none">
             <div className="pointer-events-auto w-full flex justify-center">
               <DefaultBanner
@@ -169,7 +174,8 @@ function App() {
       </main>
 
 
-    </div>
+      </div>
+    </WcarsProvider>
   );
 }
 

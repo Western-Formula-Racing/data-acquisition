@@ -47,10 +47,13 @@ services:
       - RELAY_TOKEN=${RELAY_TOKEN:-}
       - RELAY_REQUIRE_TOKEN_ON_LAN=true
       - RELAY_UPSTREAM_WS=ws://127.0.0.1:9080
+      - WCARS_ENABLED=1
+      - WCARS_CONFIG_PATH=/app/wcars_config.json
     volumes:
       - ${DBC_HOST_PATH:-./example.dbc}:/app/default.dbc:ro
       - uploaded_dbc:/app/dbc_uploads
       - raw_can_data:/app/raw_can_logs
+      - wcars_config:/app
     command: sh -c 'if [ ! -s /app/dbc_uploads/active.dbc ]; then cp /app/default.dbc /app/dbc_uploads/active.dbc; fi; exec python main.py'
     logging:
       driver: "json-file"
@@ -165,3 +168,4 @@ volumes:
   timescaledb_data:
   uploaded_dbc:
   raw_can_data:
+  wcars_config:

@@ -83,6 +83,11 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 onClose={onClose}
               />
               <SidebarOption
+                option="WCARS"
+                path="/wcars"
+                onClose={onClose}
+              />
+              <SidebarOption
                 option="CAN TRACE"
                 path="/trace"
                 onClose={onClose}

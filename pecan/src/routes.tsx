@@ -14,6 +14,7 @@ const ThrottleMapper = lazy(() => import("./pages/ThrottleMapper"));
 const SensorValidator = lazy(() => import("./pages/SensorValidator"));
 const Trace = lazy(() => import("./pages/Trace"));
 const DataTransmitter = lazy(() => import("./pages/Transmitter"));
+const Wcars = lazy(() => import("./pages/Wcars"));
 
 // Get base path for GitHub Pages deployment
 const basename = import.meta.env.BASE_URL || '/';
@@ -33,6 +34,7 @@ export const router = createBrowserRouter([
       { path: "chargecart", element: <Suspense fallback={<Fallback />}><ChargeCart /></Suspense> },
       { path: "monitor-builder", element: <Suspense fallback={<Fallback />}><MonitorBuilder /></Suspense> },
       { path: "comms", element: <Suspense fallback={<Fallback />}><Comms /></Suspense> },
+      { path: "wcars", element: <Suspense fallback={<Fallback />}><Wcars /></Suspense> },
       { path: "system-link", element: <Suspense fallback={<Fallback />}><SystemLink /></Suspense> },
       { path: "throttle-mapper", element: <Suspense fallback={<Fallback />}><ThrottleMapper /></Suspense> },
       { path: "sensor-validator", element: <Suspense fallback={<Fallback />}><SensorValidator /></Suspense> },

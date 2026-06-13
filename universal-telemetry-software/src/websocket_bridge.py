@@ -20,6 +20,10 @@ from src.config import (
 )
 from src import redis_utils, utils
 from src.heartbeat import pump_pubsub_with_heartbeat
+from src.wcars.engine import WcarsEngine
+from src.wcars.serialization import encode_alert, encode_backlog, encode_config_ack, decode_config
+from src.wcars.config import load_config, save_config
+from pathlib import Path
 
 logger = logging.getLogger("WebSocketBridge")
 
@@ -29,6 +33,16 @@ ROLE = os.getenv("ROLE", "base")  # "car" = direct CAN write, "base" = Redis rel
 
 connected_clients = set()
 shutdown_event = asyncio.Event()
+
+WCARS_CONFIG_PATH = Path(os.getenv("WCARS_CONFIG_PATH", "/app/wcars_config.json"))
+_wcars_engine: WcarsEngine | None = None
+
+
+def get_wcars_engine() -> WcarsEngine:
+    global _wcars_engine
+    if _wcars_engine is None:
+        _wcars_engine = WcarsEngine(load_config(WCARS_CONFIG_PATH))
+    return _wcars_engine
 
 # Per-client rate limiting state: websocket -> list of timestamps
 _client_send_times: dict = {}
@@ -317,6 +331,35 @@ async def redis_listener():
                         return_exceptions=True
                     )
 
+                # WCARS: feed CAN frames to the engine and broadcast new alerts.
+                # Only the CAN channel carries decodable frames; stats/diag are skipped.
+                channel = msg.get("channel")
+                if isinstance(channel, bytes):
+                    channel = channel.decode("utf-8", errors="replace")
+                if (channel == REDIS_CHANNEL
+                        and os.getenv("WCARS_ENABLED", "1") == "1"
+                        and ROLE == "base"):
+                    try:
+                        engine = get_wcars_engine()
+                        parsed = json.loads(data)
+                        frames = parsed if isinstance(parsed, list) else [parsed]
+                        for f in frames:
+                            if not isinstance(f, dict):
+                                continue
+                            can_id = f.get("canId")
+                            payload = f.get("data")
+                            if not isinstance(can_id, int) or not isinstance(payload, list):
+                                continue
+                            for alert in engine.feed({"canId": can_id, "data": payload}):
+                                frame_out = json.dumps(encode_alert(alert))
+                                if connected_clients:
+                                    await asyncio.gather(
+                                        *[ws.send(frame_out) for ws in connected_clients],
+                                        return_exceptions=True,
+                                    )
+                    except Exception as exc:
+                        logger.exception("WCARS engine error: %s", exc)
+
             await pump_pubsub_with_heartbeat(pubsub, _handler,
                                              should_stop=shutdown_event.is_set, log=logger)
         except asyncio.CancelledError:
@@ -363,6 +406,25 @@ async def _handle_client_message(websocket, raw: str, redis_client):
 
     if msg_type == "page_lock":
         await _handle_page_lock(websocket, msg)
+        return
+
+    if msg_type == "wcars_config":
+        if os.getenv("WCARS_ENABLED", "1") == "1" and ROLE == "base":
+            try:
+                cfg = decode_config(msg)
+            except ValueError as exc:
+                logger.warning("Bad wcars_config uplink: %s", exc)
+                return
+            engine = get_wcars_engine()
+            engine.set_config(cfg)
+            save_config(WCARS_CONFIG_PATH, cfg)
+            ack = json.dumps(encode_config_ack(engine.config))
+            # Broadcast to all clients so every open Pecan sees the new config
+            if connected_clients:
+                await asyncio.gather(
+                    *[ws.send(ack) for ws in connected_clients],
+                    return_exceptions=True,
+                )
         return
 
     # --- Uplink messages below here ---
@@ -516,6 +578,15 @@ async def ws_handler(websocket):
     _client_ids[websocket] = client_id
     logger.info(f"Client connected: {client_info} ({client_id}). Total: {len(connected_clients)}")
     await _publish_client_count()
+
+    # WCARS: send backlog + current config so a late-opening browser catches up
+    if os.getenv("WCARS_ENABLED", "1") == "1" and ROLE == "base":
+        try:
+            engine = get_wcars_engine()
+            await websocket.send(json.dumps(encode_backlog(engine.backlog())))
+            await websocket.send(json.dumps(encode_config_ack(engine.config)))
+        except Exception as exc:
+            logger.exception("WCARS initial send error: %s", exc)
 
     redis_client = None
     if ENABLE_UPLINK and ROLE != "car":
