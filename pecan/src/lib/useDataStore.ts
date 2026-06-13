@@ -7,6 +7,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { dataStore, type TelemetrySample, type TelemetrySource } from './DataStore';
+import { readLatest, readHistory } from './cursorRead';
+import { useTimelineCursor } from '../context/TimelineContext';
 
 /**
  * Hook to get the latest sample for a specific msgID
@@ -16,24 +18,25 @@ import { dataStore, type TelemetrySample, type TelemetrySource } from './DataSto
  * @returns Latest telemetry sample or undefined
  */
 export function useLatestMessage(msgID: string): TelemetrySample | undefined {
-  const [sample, setSample] = useState<TelemetrySample | undefined>(() => 
-    dataStore.getLatest(msgID)
+  const { mode, selectedTimeMs } = useTimelineCursor();
+  const [sample, setSample] = useState<TelemetrySample | undefined>(() =>
+    readLatest(msgID, mode, selectedTimeMs)
   );
 
   useEffect(() => {
-    // Initial value
-    setSample(dataStore.getLatest(msgID));
+    // Re-read whenever the cursor moves (paused) or new data arrives (live).
+    setSample(readLatest(msgID, mode, selectedTimeMs));
 
     // Subscribe to updates
     const unsubscribe = dataStore.subscribe((updatedMsgID) => {
       // Only update if this is our msgID
       if (updatedMsgID === msgID || updatedMsgID === undefined) {
-        setSample(dataStore.getLatest(msgID));
+        setSample(readLatest(msgID, mode, selectedTimeMs));
       }
     });
 
     return unsubscribe;
-  }, [msgID]);
+  }, [msgID, mode, selectedTimeMs]);
 
   return sample;
 }
@@ -45,25 +48,35 @@ export function useLatestMessage(msgID: string): TelemetrySample | undefined {
  * @param windowMs - Time window in milliseconds (optional)
  * @returns Array of telemetry samples within the time window
  */
-export function useMessageHistory(msgID: string, windowMs?: number): TelemetrySample[] {
-  const [history, setHistory] = useState<TelemetrySample[]>(() => 
-    dataStore.getHistory(msgID, windowMs)
+export function useMessageHistory(
+  msgID: string,
+  windowMs?: number,
+  opts?: { followCursor?: boolean }
+): TelemetrySample[] {
+  // Default: follow the scrub cursor. The timeline's own state strip opts out
+  // (followCursor: false) so it always renders the full window, not a clip.
+  const followCursor = opts?.followCursor ?? true;
+  const { mode, selectedTimeMs } = useTimelineCursor();
+  const effectiveMode = followCursor ? mode : "live";
+
+  const [history, setHistory] = useState<TelemetrySample[]>(() =>
+    readHistory(msgID, windowMs, effectiveMode, selectedTimeMs)
   );
 
   useEffect(() => {
-    // Initial value
-    setHistory(dataStore.getHistory(msgID, windowMs));
+    // Re-read on cursor move (paused) or new data (live).
+    setHistory(readHistory(msgID, windowMs, effectiveMode, selectedTimeMs));
 
     // Subscribe to updates
     const unsubscribe = dataStore.subscribe((updatedMsgID) => {
       // Only update if this is our msgID
       if (updatedMsgID === msgID || updatedMsgID === undefined) {
-        setHistory(dataStore.getHistory(msgID, windowMs));
+        setHistory(readHistory(msgID, windowMs, effectiveMode, selectedTimeMs));
       }
     });
 
     return unsubscribe;
-  }, [msgID, windowMs]);
+  }, [msgID, windowMs, effectiveMode, selectedTimeMs]);
 
   return history;
 }
@@ -79,23 +92,30 @@ export function useSignal(msgID: string, signalName: string): {
   sensorReading: number;
   unit: string;
 } | undefined {
-  const [signal, setSignal] = useState(() => 
-    dataStore.getSignal(msgID, signalName)
-  );
+  const { mode, selectedTimeMs } = useTimelineCursor();
+  const read = (m: typeof mode, t: number) => {
+    const latest = readLatest(msgID, m, t);
+    const signalData = latest?.data?.[signalName];
+    if (!signalData) return undefined;
+    return { sensorReading: signalData.sensorReading, unit: signalData.unit };
+  };
+
+  const [signal, setSignal] = useState(() => read(mode, selectedTimeMs));
 
   useEffect(() => {
-    // Initial value
-    setSignal(dataStore.getSignal(msgID, signalName));
+    // Re-read on cursor move (paused) or new data (live).
+    setSignal(read(mode, selectedTimeMs));
 
     // Subscribe to updates for this specific message
     const unsubscribe = dataStore.subscribe((updatedMsgID) => {
       if (updatedMsgID === msgID || updatedMsgID === undefined) {
-        setSignal(dataStore.getSignal(msgID, signalName));
+        setSignal(read(mode, selectedTimeMs));
       }
     });
 
     return unsubscribe;
-  }, [msgID, signalName]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [msgID, signalName, mode, selectedTimeMs]);
 
   return signal;
 }
@@ -108,17 +128,21 @@ export function useSignal(msgID: string, signalName: string): {
  * @returns Map of msgID to latest telemetry sample
  */
 export function useAllLatestMessages(source?: TelemetrySource): Map<string, TelemetrySample> {
-  const [allLatest, setAllLatest] = useState<Map<string, TelemetrySample>>(() =>
-    dataStore.getAllLatest(source)
-  );
+  const { mode, selectedTimeMs } = useTimelineCursor();
+  const paused = mode === "paused";
+  const read = () =>
+    paused ? dataStore.getAllLatestAt(selectedTimeMs, source) : dataStore.getAllLatest(source);
+
+  const [allLatest, setAllLatest] = useState<Map<string, TelemetrySample>>(read);
 
   useEffect(() => {
-    // P0-2: snapshot the version at subscribe time; only rebuild the Map
-    // when the version has actually changed (i.e. data was written).
+    // When paused, re-read on every cursor move (version may not change).
+    // When live, snapshot the version and only rebuild when data was written.
     let lastVersion = dataStore.getVersion();
-    setAllLatest(dataStore.getAllLatest(source));
+    setAllLatest(read());
 
     const unsubscribe = dataStore.subscribe(() => {
+      if (paused) return; // cursor-driven; effect re-runs on selectedTimeMs change
       const currentVersion = dataStore.getVersion();
       if (currentVersion !== lastVersion) {
         lastVersion = currentVersion;
@@ -127,7 +151,8 @@ export function useAllLatestMessages(source?: TelemetrySource): Map<string, Tele
     });
 
     return unsubscribe;
-  }, [source]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, paused, selectedTimeMs]);
 
   return allLatest;
 }

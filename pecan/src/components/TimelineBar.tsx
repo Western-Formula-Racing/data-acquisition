@@ -235,9 +235,11 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
     });
   }, [hasData, sliderMin, sliderMax, clipModeEnabled]);
 
-  // VCU State + PackStatus transitions for timeline overlay
-  const vcuStateHistory  = useMessageHistory(STATE_SIGNALS[0].msgID);
-  const packStatusHistory = useMessageHistory(STATE_SIGNALS[1].msgID);
+  // VCU State + PackStatus transitions for timeline overlay.
+  // This strip visualizes the whole collection window, so it must NOT clip at
+  // the scrub cursor (followCursor: false).
+  const vcuStateHistory  = useMessageHistory(STATE_SIGNALS[0].msgID, undefined, { followCursor: false });
+  const packStatusHistory = useMessageHistory(STATE_SIGNALS[1].msgID, undefined, { followCursor: false });
 
   const stateTransitions = useMemo(() => {
     if (!hasData || durationMs <= 0) return [];

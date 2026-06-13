@@ -7,7 +7,8 @@
  */
 
 import { useState, useEffect } from 'react';
-import { dataStore } from '../../lib/DataStore';
+import { readLatest } from '../../lib/cursorRead';
+import { useTimelineCursor } from '../../context/TimelineContext';
 import CellGrid from './CellGrid';
 import ThermistorBar from './ThermistorBar';
 import {
@@ -47,6 +48,7 @@ interface ModuleStats {
 
 // Hook to calculate module stats at 1Hz
 function useModuleStats(moduleId: ModuleId): ModuleStats {
+    const { mode, selectedTimeMs } = useTimelineCursor();
     const [stats, setStats] = useState<ModuleStats>({
         voltageStats: null,
         tempStats: null,
@@ -59,7 +61,7 @@ function useModuleStats(moduleId: ModuleId): ModuleStats {
             const cellReadings: number[] = [];
             for (let i = 1; i <= CELLS_PER_MODULE; i++) {
                 const { msgId, signalName } = getCellSignalInfo(moduleId, i);
-                const latest = dataStore.getLatest(msgId);
+                const latest = readLatest(msgId, mode, selectedTimeMs);
                 const value = latest?.data[signalName]?.sensorReading;
                 if (value !== undefined) cellReadings.push(value);
             }
@@ -68,7 +70,7 @@ function useModuleStats(moduleId: ModuleId): ModuleStats {
             const tempReadings: number[] = [];
             for (let i = 1; i <= THERMISTORS_PER_MODULE; i++) {
                 const { msgId, signalName } = getThermistorSignalInfo(moduleId, i);
-                const latest = dataStore.getLatest(msgId);
+                const latest = readLatest(msgId, mode, selectedTimeMs);
                 const value = latest?.data[signalName]?.sensorReading;
                 if (value !== undefined) tempReadings.push(value);
             }
@@ -119,7 +121,7 @@ function useModuleStats(moduleId: ModuleId): ModuleStats {
         const interval = setInterval(computeStats, 1000);
 
         return () => clearInterval(interval);
-    }, [moduleId]);
+    }, [moduleId, mode, selectedTimeMs]);
 
     return stats;
 }

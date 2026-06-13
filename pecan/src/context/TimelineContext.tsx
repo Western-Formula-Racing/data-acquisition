@@ -526,3 +526,16 @@ export function useTimeline(): TimelineContextValue {
   }
   return context;
 }
+
+/**
+ * Lightweight, non-throwing accessor for just the scrub cursor (mode + time).
+ * Used by the shared DataStore hooks so any panel follows the timeline without
+ * requiring a provider in isolated test/render contexts (falls back to live).
+ */
+export function useTimelineCursor(): { mode: TimelineMode; selectedTimeMs: number } {
+  const context = useContext(TimelineContext);
+  if (!context) {
+    return { mode: "live", selectedTimeMs: Date.now() };
+  }
+  return { mode: context.mode, selectedTimeMs: context.selectedTimeMs };
+}

@@ -8,6 +8,8 @@
 
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { dataStore } from '../../lib/DataStore';
+import { readLatest } from '../../lib/cursorRead';
+import { useTimelineCursor } from '../../context/TimelineContext';
 import { useAccumulatorContext } from './AccumulatorContext';
 import {
     type ModuleId,
@@ -99,10 +101,26 @@ function Cell({ moduleId, cellIndex, stats, onClick }: {
 
 // Hook to get all cell stats with 1s throttled updates
 function useCellStats(moduleId: ModuleId): Map<number, CellStats> {
+    const { mode, selectedTimeMs } = useTimelineCursor();
     const [cellStats, setCellStats] = useState<Map<number, CellStats>>(new Map());
     const statsAccumulator = useRef<Map<number, number[]>>(new Map());
 
     useEffect(() => {
+        // Paused/scrubbing: read each cell at the cursor. There is no live window
+        // to accumulate, so min/max collapse to the value at the cursor.
+        if (mode === "paused") {
+            const cursorStats = new Map<number, CellStats>();
+            for (let i = 1; i <= CELLS_PER_MODULE; i++) {
+                const { msgId, signalName } = getCellSignalInfo(moduleId, i);
+                const latest = readLatest(msgId, mode, selectedTimeMs);
+                const current = latest?.data[signalName]?.sensorReading ?? null;
+                cursorStats.set(i, { current, min: current, max: current });
+            }
+            statsAccumulator.current.clear();
+            setCellStats(cursorStats);
+            return;
+        }
+
         // Update stats every 1 second
         const interval = setInterval(() => {
             const newStats = new Map<number, CellStats>();
@@ -152,7 +170,7 @@ function useCellStats(moduleId: ModuleId): Map<number, CellStats> {
             clearInterval(interval);
             unsubscribe();
         };
-    }, [moduleId]);
+    }, [moduleId, mode, selectedTimeMs]);
 
     return cellStats;
 }

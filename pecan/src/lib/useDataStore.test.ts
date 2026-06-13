@@ -1,6 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
+import { createElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { dataStore } from "./DataStore";
+import { TimelineProvider, useTimeline } from "../context/TimelineContext";
 import {
   useAllMessageIds,
   useAllSignals,
@@ -139,6 +141,76 @@ describe("useDataStore hooks", () => {
     const { result } = renderHook(() => useMessageData("0x601", 50));
     expect(result.current.latest?.rawData).toBe("1");
     expect(result.current.history).toHaveLength(1);
+  });
+
+  // --- Universal scrub: hooks must follow the timeline cursor when paused ---
+
+  const timelineWrapper = ({ children }: { children: ReactNode }) =>
+    createElement(TimelineProvider, null, children);
+
+  function ingestScrub(msgID: string, reading: number, raw: string, timestamp: number) {
+    dataStore.ingestMessage({
+      msgID,
+      messageName: "Scrub",
+      data: { v: { sensorReading: reading, unit: "" } },
+      rawData: raw,
+      timestamp,
+    });
+  }
+
+  it("useLatestMessage follows the scrub cursor when paused", async () => {
+    // Recent timestamps so the samples live in the hot buffer (within retention).
+    const base = Date.now() - 5000;
+    await act(async () => {
+      ingestScrub("0xD10", 1, "01", base);
+      ingestScrub("0xD10", 2, "02", base + 1000);
+      ingestScrub("0xD10", 3, "03", base + 2000);
+    });
+
+    const { result } = renderHook(
+      () => ({ tl: useTimeline(), latest: useLatestMessage("0xD10") }),
+      { wrapper: timelineWrapper }
+    );
+
+    // Live: newest sample.
+    expect(result.current.latest?.rawData).toBe("03");
+
+    // Scrub between the 1st and 2nd samples → value at the cursor.
+    await act(async () => {
+      result.current.tl.seek(base + 1500);
+    });
+    expect(result.current.latest?.rawData).toBe("02");
+
+    // Returning live snaps back to the newest sample.
+    await act(async () => {
+      result.current.tl.goLive();
+    });
+    expect(result.current.latest?.rawData).toBe("03");
+  });
+
+  it("useAllLatestMessages reflects all panels at the cursor when paused", async () => {
+    const base = Date.now() - 5000;
+    await act(async () => {
+      ingestScrub("0xD20", 10, "0a", base);
+      ingestScrub("0xD20", 20, "14", base + 2000);
+      ingestScrub("0xD21", 99, "63", base + 1000);
+    });
+
+    const { result } = renderHook(
+      () => ({ tl: useTimeline(), all: useAllLatestMessages("live") }),
+      { wrapper: timelineWrapper }
+    );
+
+    // Live: newest of each message.
+    expect(result.current.all.get("0xD20")?.rawData).toBe("14");
+
+    // Scrub before 0xD20's second sample: it reverts to the earlier value,
+    // and 0xD21 (which existed by then) is still present.
+    await act(async () => {
+      result.current.tl.seek(base + 1500);
+    });
+    expect(result.current.all.get("0xD20")?.rawData).toBe("0a");
+    expect(result.current.all.get("0xD21")?.rawData).toBe("63");
   });
 
   it("useTraceBuffer batches updates and supports clearTrace", async () => {
