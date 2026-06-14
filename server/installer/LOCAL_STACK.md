@@ -8,7 +8,7 @@ Minimal stack for testing without internet: TimescaleDB, Grafana, and file-uploa
 
 ```bash
 cd installer
-docker compose -f docker-compose.local.yml pull
+docker compose -f docker-compose.yml pull
 ```
 
 This fetches `timescale/timescaledb:2.17.1-pg16` and `grafana/grafana:latest` from Docker Hub.
@@ -17,7 +17,7 @@ Only needs to be done once, or when you want to update to newer images.
 ### 2. Build the file-uploader image
 
 ```bash
-docker compose -f docker-compose.local.yml build file-uploader
+docker compose -f docker-compose.yml build file-uploader
 ```
 
 This compiles the local `file-uploader/` source into an image.
@@ -49,7 +49,7 @@ Then point the local stack at that directory:
 
 ```bash
 export GRAFANA_DASHBOARDS_PATH=~/daq-internal/grafana-dashboards
-docker compose -f docker-compose.local.yml up
+docker compose -f docker-compose.yml up
 ```
 
 If `GRAFANA_DASHBOARDS_PATH` is not set, the stack falls back to `./grafana/dashboards` (the provisioned dashboards checked into this repo).
@@ -71,14 +71,14 @@ crontab -e
 
 ```bash
 cd installer
-docker compose -f docker-compose.local.yml up
+docker compose -f docker-compose.yml up
 ```
 
 | Service       | URL                        |
 |---------------|----------------------------|
 | Grafana       | http://localhost:8087       |
 | File Uploader | http://localhost:8084       |
-| TimescaleDB      | http://localhost:9000       |
+| TimescaleDB      | postgresql://localhost:5432  |
 
 Grafana credentials: `admin` / `password` (or `GRAFANA_ADMIN_PASSWORD` from `.env`)
 
@@ -122,6 +122,6 @@ Use built-in panel types (Time series, Stat, Table, etc.) for offline-compatible
 To pull the latest versions:
 
 ```bash
-docker compose -f docker-compose.local.yml pull
-docker compose -f docker-compose.local.yml build file-uploader
+docker compose -f docker-compose.yml pull
+docker compose -f docker-compose.yml build file-uploader
 ```

@@ -431,14 +431,24 @@ systemctl status can0   # check the bring-up service
 universal-telemetry-software/
 ├── main.py                     # Main orchestrator
 ├── src/
+│   ├── config.py               # Environment variable loader
 │   ├── data.py                 # UDP/TCP + Redis (car & base)
 │   ├── audio.py                # Audio streaming
 │   ├── video.py                # Video streaming
-│   ├── websocket_bridge.py     # Redis -> WebSocket for PECAN
+│   ├── websocket_bridge.py     # Redis -> WebSocket for PECAN (downlink)
+│   ├── websocket_bridge_tx.py  # WebSocket -> Redis uplink command handler
+│   ├── ws_relay.py             # Downlink-only WebSocket relay for remote viewers
 │   ├── timescale_bridge.py     # TimescaleDB logging (Redis → server TimescaleDB)
 │   ├── leds.py                 # LED status indicators
 │   ├── link_diagnostics.py     # Radio link health
-│   └── poe.py                  # PoE monitor
+│   ├── poe.py                  # PoE monitor
+│   ├── lan_sender.py           # LAN UDP packet analysis / diagnostics
+│   ├── throughput_listener.py  # Network throughput monitoring
+│   ├── heartbeat.py            # Service heartbeat monitoring
+│   ├── status_server.py        # HTTP status page and health endpoint
+│   ├── redis_utils.py          # Shared Redis helpers
+│   ├── utils.py                # Shared utility functions
+│   └── version.py              # Version / git-hash reporting
 ├── tests/
 ├── deploy/
 │   ├── car-telemetry.service           # Native car systemd service

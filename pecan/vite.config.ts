@@ -37,7 +37,7 @@ function startWebSocketServer() {
     const wss = new WebSocketServer({ port: 9077 });
 
     // eslint-disable-next-line no-console
-    console.log('WebSocket server started on ws://localhost:9080');
+    console.log('WebSocket server started on ws://localhost:9077');
 
     wss.on('connection', (ws) => {
       // eslint-disable-next-line no-console
@@ -74,9 +74,9 @@ function startWebSocketServer() {
     });
 
     // eslint-disable-next-line no-console
-    console.log('WebSocket server is running on port 9080');
+    console.log('WebSocket server is running on port 9077');
     // eslint-disable-next-line no-console
-    console.log('Data Sender and Dashboard can connect to ws://localhost:9080');
+    console.log('Data Sender and Dashboard can connect to ws://localhost:9077');
   }).catch((error) => {
     // eslint-disable-next-line no-console
     console.error('Failed to start WebSocket server:', error);
