@@ -4,7 +4,7 @@ import { WheelSynoptic } from "./WheelSynoptic";
 import { ElecSchematic } from "./ElecSchematic";
 import { SafetySynoptic } from "./SafetySynoptic";
 import { MotorSynoptic } from "./MotorSynoptic";
-import { CoolSynoptic } from "./CoolSynoptic";
+import { CoolSchematic } from "./CoolSchematic";
 import { StatusSynoptic } from "./StatusSynoptic";
 import { MsgPage } from "./MsgPage";
 
@@ -21,7 +21,7 @@ export const SD_PAGES: Record<SdPageId, SdPageDef> = {
   ELEC:  { label: "ELEC",  Component: ElecSchematic, primarySignals: ["packV", "packSoc"] },
   LOOP:  { label: "LOOP",  Component: SafetySynoptic, primarySignals: ["hvActive", "loopReturn"] },
   MOTOR: { label: "MOTOR", Component: MotorSynoptic, primarySignals: ["motorRpm", "motorTemp"] },
-  COOL:  { label: "COOL",  Component: CoolSynoptic,  primarySignals: ["coolant"] },
+  COOL:  { label: "COOL",  Component: CoolSchematic, primarySignals: ["coolant"] },
   STS:   { label: "STS",   Component: StatusSynoptic, primarySignals: [] },
   MSG:   { label: "MSG",   Component: MsgPage,        primarySignals: [] },
 };

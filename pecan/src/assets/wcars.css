@@ -669,3 +669,40 @@
 @media (prefers-reduced-motion: reduce) {
   .wcars-rail--live { animation: none; }
 }
+
+/* ============================================================
+ * COOL / THERMAL SYNOPTIC
+ * Inverter + module thermals. No pump/flow/fan in WFR25 DBC, so
+ * the loop is drawn dim/dashed and labelled "no sensor" honestly.
+ * ============================================================ */
+.wcars-cool-schem { display: flex; flex-direction: column; height: 100%; }
+
+.wcars-therm-dot { stroke: #0a0e0a; stroke-width: 1.5; }
+.wcars-rd--normal  .wcars-therm-dot { fill: var(--wcars-green); }
+.wcars-rd--caution .wcars-therm-dot { fill: var(--wcars-amber); }
+.wcars-rd--warning .wcars-therm-dot { fill: var(--wcars-red); }
+.wcars-rd--missing .wcars-therm-dot { fill: var(--wcars-dim); }
+
+.wcars-cool-pipe { stroke-width: 3; }
+.wcars-cool-pipe--normal  { stroke: var(--wcars-green); }
+.wcars-cool-pipe--caution { stroke: var(--wcars-amber); }
+.wcars-cool-pipe--warning { stroke: var(--wcars-red); }
+.wcars-cool-pipe--missing { stroke: var(--wcars-dim); }
+
+.wcars-cool-return {
+  stroke: var(--wcars-dim); stroke-width: 3; stroke-dasharray: 6 8;
+}
+.wcars-schem-tag--dim { fill: var(--wcars-dim); font-size: 11px; }
+
+/* Peak envelope */
+.wcars-cool-peak { stroke-width: 1.5; }
+.wcars-cool-peak--normal  { fill: #04140a; stroke: var(--wcars-green); }
+.wcars-cool-peak--caution { fill: #1a0d00; stroke: var(--wcars-amber); }
+.wcars-cool-peak--warning { fill: #1a0000; stroke: var(--wcars-red); }
+.wcars-cool-peak--missing { fill: #0a0e0a; stroke: var(--wcars-dim); }
+.wcars-cool-peak-lbl  { fill: var(--wcars-white); font-size: 16px; letter-spacing: 0.1em; }
+.wcars-cool-peak-val  { font-size: 30px; font-weight: 700; fill: var(--wcars-cyan); }
+.wcars-cool-peak-unit { fill: var(--wcars-cyan); font-size: 14px; font-weight: 400; }
+.wcars-cool-peak--warning .wcars-cool-peak-val { fill: var(--wcars-red); }
+.wcars-cool-peak--caution .wcars-cool-peak-val { fill: var(--wcars-amber); }
+.wcars-cool-peak--missing .wcars-cool-peak-val { fill: var(--wcars-dim); }
