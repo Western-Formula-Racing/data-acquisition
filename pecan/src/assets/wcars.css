@@ -54,7 +54,7 @@
   border-bottom: 1px solid var(--wcars-line);
   padding-bottom: 0.6rem;
   margin-bottom: 1.1rem;
-  z-index: 2;
+  z-index: 10;  /* must exceed .wcars-grid (z:2) so the settings panel stacks above it */
 }
 
 .wcars-header h1 {
@@ -372,7 +372,7 @@
 }
 
 /* ---- Settings panel ---- */
-.wcars-settings { position: relative; z-index: 3; }
+.wcars-settings { position: relative; z-index: 11; }
 .wcars-gear {
   background: transparent;
   border: 1px solid var(--wcars-cyan);
@@ -395,7 +395,7 @@
   border: 1px solid var(--wcars-cyan);
   border-radius: 2px;
   padding: 1rem 1.1rem;
-  z-index: 100;
+  z-index: 1000;
   min-width: 19rem;
   text-transform: none;
   letter-spacing: normal;
