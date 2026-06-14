@@ -14,8 +14,9 @@ export interface LeaderParts {
 }
 
 /**
- * Split an ECAM remark into a label + trailing cyan value for dot-leader layout,
- * matching the A350 EWD "ACTION ······· VALUE" convention.
+ * Split an ECVM (Electronic Centralised Vehicle Monitor) remark into a
+ * label + trailing cyan value for dot-leader layout, following the
+ * "ACTION ······· VALUE" convention.
  *
  *   "Thermistor 2 at 57.2C (limit 55)" -> { label: "Thermistor 2 at 57.2C", value: "limit 55" }
  *   "delta 0.142V (limit 0.10)"        -> { label: "delta 0.142V",          value: "limit 0.10" }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useWcars } from "../../context/WcarsContext";
 import { SEVERITY_LABEL, splitLeader } from "../../lib/wcars/ewdFormat";
 
-export function EcamPanel() {
+export function EcvMPanel() {
   const { alerts, clear, clearAll } = useWcars();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [overflow, setOverflow] = useState(false);
@@ -20,19 +20,19 @@ export function EcamPanel() {
 
   if (alerts.length === 0) {
     return (
-      <div className="wcars-ecam wcars-ecam--empty" data-testid="ecam-empty">
+      <div className="wcars-ecvm wcars-ecvm--empty" data-testid="ecvm-empty">
         <span className="wcars-green">WCARS NORMAL</span>
       </div>
     );
   }
 
   return (
-    <div className="wcars-ecam" data-testid="ecam">
-      <div className="wcars-ecam-scroll" ref={scrollRef}>
+    <div className="wcars-ecvm" data-testid="ecvm">
+      <div className="wcars-ecvm-scroll" ref={scrollRef}>
         {alerts.map((a) => {
           const { label, value } = splitLeader(a.detail);
           return (
-            <div key={a.id} className={`wcars-ecam-row wcars-${a.severity.toLowerCase()}`}>
+            <div key={a.id} className={`wcars-ecvm-row wcars-${a.severity.toLowerCase()}`}>
               <span className="wcars-sev">{SEVERITY_LABEL[a.severity]}</span>
               <span className="wcars-title">{a.title}</span>
               <button

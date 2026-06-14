@@ -26,7 +26,7 @@ function arcPath(startDeg: number, endDeg: number, r: number) {
   return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} 1 ${e.x} ${e.y}`;
 }
 
-export function EcamGauge({
+export function EcvMGauge({
   label, value, range, unit, status, decimals = 0, sweepDeg = 240,
 }: Props) {
   const [min, max] = range;

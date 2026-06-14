@@ -8,7 +8,7 @@ interface Props {
   decimals?: number;
 }
 
-export function EcamValueBox({ label, value, unit, status, decimals = 0 }: Props) {
+export function EcvMValueBox({ label, value, unit, status, decimals = 0 }: Props) {
   const text =
     value === null || status === "missing" ? "XX" : value.toFixed(decimals);
   return (

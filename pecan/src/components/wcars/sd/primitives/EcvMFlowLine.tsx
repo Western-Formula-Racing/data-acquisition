@@ -3,7 +3,7 @@ interface Props {
   active?: boolean;
 }
 
-export function EcamFlowLine({ x1, y1, x2, y2, active = false }: Props) {
+export function EcvMFlowLine({ x1, y1, x2, y2, active = false }: Props) {
   return (
     <line
       className={`wcars-flow${active ? " wcars-flow--active" : ""}`}

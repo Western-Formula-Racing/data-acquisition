@@ -1,5 +1,5 @@
 /* pecan/src/assets/wcars.css
- * Airbus ECAM / E-WD display styling.
+ * Vehicle (WFR25) ECVM / E-WD display styling.
  * Colour philosophy: red = WARNING, amber = CAUTION, green = MEMO/normal,
  * cyan = action/value, white = remark. Pure phosphor colours on near-black DU.
  */
@@ -7,7 +7,7 @@
   --wcars-bg: #060606;
   --wcars-du: #000;
   --wcars-red: #ff2424;
-  --wcars-amber: #ff9b1a;   /* ECAM caution amber leans orange, not yellow */
+  --wcars-amber: #ff9b1a;   /* ECVM caution amber leans orange, not yellow */
   --wcars-green: #1fe33a;   /* pure phosphor green, not mint */
   --wcars-cyan: #25d4ff;
   --wcars-white: #e9ecec;
@@ -85,7 +85,7 @@
 }
 
 /* Each pane is a physical Display Unit: dark bezel + inset black screen + glow */
-.wcars-ecam,
+.wcars-ecvm,
 .wcars-acars {
   background: var(--wcars-du);
   border: 1px solid var(--wcars-bezel);
@@ -104,19 +104,19 @@
 }
 
 /* EWD warning area: scrollable alert list + fixed grey-stripe footer */
-.wcars-ecam {
+.wcars-ecvm {
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
-.wcars-ecam-scroll {
+.wcars-ecvm-scroll {
   flex: 1 1 auto;
   overflow-y: auto;
   padding: 0.85rem 0.9rem;
 }
 
-/* ---- ECAM active-alert rows ---- */
-.wcars-ecam-row {
+/* ---- ECVM active-alert rows ---- */
+.wcars-ecvm-row {
   display: grid;
   grid-template-columns: 3.2rem 1fr 1.5rem;
   grid-template-rows: auto auto;
@@ -149,19 +149,19 @@
   letter-spacing: 0.06em;
   text-shadow: 0 0 4px currentColor;
 }
-.wcars-ecam-row .wcars-title { justify-self: start; }
+.wcars-ecvm-row .wcars-title { justify-self: start; }
 
-.wcars-ecam-row.wcars-warning .wcars-title {
+.wcars-ecvm-row.wcars-warning .wcars-title {
   border: 1px solid currentColor;
   padding: 0.04rem 0.42rem;
   box-shadow: 0 0 6px rgba(255, 36, 36, 0.35);
 }
-.wcars-ecam-row.wcars-caution .wcars-title {
+.wcars-ecvm-row.wcars-caution .wcars-title {
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
-.wcars-ecam-row.wcars-memo .wcars-title { text-decoration: none; }
+.wcars-ecvm-row.wcars-memo .wcars-title { text-decoration: none; }
 
 /* corrective/remark line: indented under the title, dimmer white remark */
 .wcars-detail {
@@ -175,7 +175,7 @@
   text-shadow: none;
 }
 
-/* ECAM dot-leader action line: REMARK ········· VALUE(cyan) */
+/* ECVM dot-leader action line: REMARK ········· VALUE(cyan) */
 .wcars-leader {
   display: flex;
   align-items: baseline;
@@ -236,12 +236,12 @@
 .wcars-green { color: var(--wcars-green); }
 
 /* "WCARS NORMAL" green memo when nothing is active */
-.wcars-ecam--empty {
+.wcars-ecvm--empty {
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.wcars-ecam--empty .wcars-green {
+.wcars-ecvm--empty .wcars-green {
   font-size: 1.15rem;
   font-weight: 700;
   letter-spacing: 0.3em;
@@ -432,16 +432,16 @@
 .wcars-settings-actions button:hover { background: var(--wcars-cyan); color: #000; }
 
 /* ---- Display-unit scrollbars ---- */
-.wcars-ecam-scroll::-webkit-scrollbar,
+.wcars-ecvm-scroll::-webkit-scrollbar,
 .wcars-acars::-webkit-scrollbar { width: 8px; }
-.wcars-ecam-scroll::-webkit-scrollbar-track,
+.wcars-ecvm-scroll::-webkit-scrollbar-track,
 .wcars-acars::-webkit-scrollbar-track { background: #050505; }
-.wcars-ecam-scroll::-webkit-scrollbar-thumb,
+.wcars-ecvm-scroll::-webkit-scrollbar-thumb,
 .wcars-acars::-webkit-scrollbar-thumb {
   background: var(--wcars-bezel);
   border-radius: 0;
 }
-.wcars-ecam-scroll::-webkit-scrollbar-thumb:hover,
+.wcars-ecvm-scroll::-webkit-scrollbar-thumb:hover,
 .wcars-acars::-webkit-scrollbar-thumb:hover { background: #2a3236; }
 
 @media (prefers-reduced-motion: reduce) {

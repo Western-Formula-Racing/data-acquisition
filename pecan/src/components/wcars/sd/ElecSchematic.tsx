@@ -47,7 +47,7 @@ function Readout({
 export function ElecSchematic() {
   const pack = usePackAggregates();
   // Synthetic SdValue for the computed pack voltage, so the existing
-  // EcamValueBox status logic still works.
+  // EcvMValueBox status logic still works.
   const packVsd: SdValue = {
     value: pack.cellCount > 0 ? pack.packVoltage : null,
     label: "",
