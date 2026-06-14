@@ -9,27 +9,27 @@ const PIN_MS = 8000;
 function useInopPages(): SdPageId[] {
   const wheelL = useSdValue("leftRpm");
   const wheelR = useSdValue("rightRpm");
-  const elecV = useSdValue("packV");
+  const elecV = useSdValue("busV");
   const elecSoc = useSdValue("packSoc");
   const motRpm = useSdValue("motorRpm");
   const motTemp = useSdValue("motorTemp");
   const cool = useSdValue("coolant");
-  const loopHv = useSdValue("hvActive");
-  const loopRet = useSdValue("loopReturn");
+  const airPos = useSdValue("airPos");
+  const airNeg = useSdValue("airNeg");
   return useMemo(() => {
     // Only flag INOP when data is actively flowing (at least one signal present).
     // If no signals have arrived yet, the stream is simply cold — not INOP.
-    const anyPresent = [wheelL, wheelR, elecV, elecSoc, motRpm, motTemp, cool, loopHv]
+    const anyPresent = [wheelL, wheelR, elecV, elecSoc, motRpm, motTemp, cool, airPos, airNeg]
       .some((s) => s.status !== "missing");
     if (!anyPresent) return [];
     const inop: SdPageId[] = [];
     if (wheelL.status === "missing" && wheelR.status === "missing") inop.push("WHEEL");
     if (elecV.status === "missing" && elecSoc.status === "missing") inop.push("ELEC");
-    if (loopHv.status === "missing" && loopRet.status === "missing") inop.push("LOOP");
+    if (airPos.status === "missing" && airNeg.status === "missing") inop.push("LOOP");
     if (motRpm.status === "missing" && motTemp.status === "missing") inop.push("MOTOR");
     if (cool.status === "missing") inop.push("COOL");
     return inop;
-  }, [wheelL.status, wheelR.status, elecV.status, elecSoc.status, motRpm.status, motTemp.status, cool.status, loopHv.status, loopRet.status]);
+  }, [wheelL.status, wheelR.status, elecV.status, elecSoc.status, motRpm.status, motTemp.status, cool.status, airPos.status, airNeg.status]);
 }
 
 export function SystemDisplay() {

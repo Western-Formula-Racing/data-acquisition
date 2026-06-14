@@ -50,8 +50,8 @@ export function SafetySynoptic() {
   const ams = useSdValue("amsRelay");
   const bspd = useSdValue("bspdRelay");
   const latch = useSdValue("latchRelay");
-  const loopReturn = useSdValue("loopReturn");
-  const hv = useSdValue("hvActive");
+  const airPos = useSdValue("airPos");
+  const airNeg = useSdValue("airNeg");
   const pcEn = useSdValue("prechargeEnable");
   const pcOk = useSdValue("prechargeOk");
   const state = useSdValue("packState");
@@ -60,13 +60,21 @@ export function SafetySynoptic() {
   const closed = [imd, ams, bspd, latch].map(isOn);
   const nodes = seriesEnergized(closed); // length 5: source + after each contact
   const cx = [240, 410, 580, 750]; // contact centres
-  const loopComplete = nodes[4] && isOn(loopReturn);
+  // On the new DBC there is no Safetyloop_return frame; we approximate loop
+  // closure with the AIR negative contactor (it's the final series element
+  // that returns the loop to ground through the master TSMS).
+  const loopComplete = isOn(airNeg);
 
   const seg = (energized: boolean) => `wcars-rail${energized ? " wcars-rail--live" : ""}`;
 
-  const hvOn = isOn(hv);
-  const hvMissing = hv.status === "missing";
-  const hvText = hvMissing ? "HV ——" : hvOn ? "HV ACTIVE" : "HV OFF";
+  const airPosOn = isOn(airPos);
+  const airNegOn = isOn(airNeg);
+  const airPosMissing = airPos.status === "missing";
+  const airText = airPosMissing
+    ? "AIR ——"
+    : airPosOn
+      ? `AIR${airNegOn ? "+/– CLOSED" : "+ CLOSED / – OPEN"}`
+      : "AIR OPEN";
 
   const stateText =
     state.status === "missing" ? "XX" : state.label || String(state.value ?? "");
@@ -98,12 +106,12 @@ export function SafetySynoptic() {
         <Contact cx={cx[2]} label="BSPD" sd={bspd} />
         <Contact cx={cx[3]} label="LATCH" sd={latch} />
 
-        {/* ---- HV ACTIVE LAMP ---- */}
+        {/* ---- AIR ACCUMULATOR ISOLATION RELAY LAMPS ---- */}
         <rect
-          className={`wcars-hv-lamp wcars-hv-lamp--${hvMissing ? "missing" : hvOn ? "on" : "off"}`}
+          className={`wcars-hv-lamp wcars-hv-lamp--${airPosMissing ? "missing" : airPosOn ? "on" : "off"}`}
           x={90} y={325} width={300} height={95} rx={10}
         />
-        <text className="wcars-hv-lamp-text" x={240} y={385} textAnchor="middle">{hvText}</text>
+        <text className="wcars-hv-lamp-text" x={240} y={385} textAnchor="middle">{airText}</text>
 
         {/* ---- PRECHARGE ---- */}
         <rect className="wcars-schem-box" x={430} y={325} width={240} height={95} rx={8} />

@@ -706,3 +706,23 @@
 .wcars-cool-peak--warning .wcars-cool-peak-val { fill: var(--wcars-red); }
 .wcars-cool-peak--caution .wcars-cool-peak-val { fill: var(--wcars-amber); }
 .wcars-cool-peak--missing .wcars-cool-peak-val { fill: var(--wcars-dim); }
+
+/* ============================================================
+ * ELEC HEALTH PANEL
+ * MEAS = computed pack V from 100 cell readings
+ * PRED = OCV(SoC) × 100
+ * SAG  = I × R₀(SoC, T) × 100
+ * Δ    = MEAS − PRED (small when SoC is well-tracked, ≈ −SAG under load)
+ * ============================================================ */
+.wcars-health-panel {
+  fill: #0a0e0a;
+  stroke: var(--wcars-bezel);
+  stroke-width: 1.5;
+}
+.wcars-schem-head--small { font-size: 13px; }
+.wcars-health-lbl { fill: var(--wcars-dim); font-size: 12px; letter-spacing: 0.1em; }
+.wcars-health-val { fill: var(--wcars-cyan); font-size: 18px; font-weight: 700; }
+.wcars-health-cell--ok    .wcars-health-val { fill: var(--wcars-green); }
+.wcars-health-cell--drift .wcars-health-val { fill: var(--wcars-amber); }
+.wcars-health-cell--bad   .wcars-health-val { fill: var(--wcars-red); }
+.wcars-health-cell--missing .wcars-health-val { fill: var(--wcars-dim); }

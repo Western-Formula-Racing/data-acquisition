@@ -28,12 +28,12 @@ export const SD_SIGNALS = {
   brakeR:    { msgId: "0x7D0", signal: "brakePressure2Signal", unit: "", range: [0, 5] },
   brakePct:  { msgId: "0x7D2", signal: "Brake_Percent", unit: "%", range: [0, 100] },
   throttle:  { msgId: "0x7D2", signal: "Throttle", unit: "%", range: [0, 100] },
-  // ELEC / BATT
-  packV:     { msgId: "0x6B0", signal: "Pack_Inst_Voltage", unit: "V", range: [0, 600] },
-  packA:     { msgId: "0x6B0", signal: "Pack_Current", unit: "A", range: [0, 300], amber: 200, red: 250 },
-  packSoc:   { msgId: "0x6B0", signal: "Pack_SOC", unit: "%", range: [0, 100], amberLow: 30, redLow: 15 },
-  packDcl:   { msgId: "0x6B1", signal: "Pack_DCL", unit: "A", range: [0, 300] },
-  packCcl:   { msgId: "0x6B1", signal: "Pack_CCL", unit: "A", range: [0, 300] },
+  // ELEC / BATT — pack-level now sourced from MOBO 0x420 (Orion retired)
+  // packV is *computed* by usePackVoltage() (sum of 100 cell voltages)
+  packA:     { msgId: "0x420", signal: "PackCurrent", unit: "A", range: [-300, 300], amber: 200, red: 250 },
+  packSoc:   { msgId: "0x420", signal: "SOC", unit: "%", range: [0, 100], amberLow: 30, redLow: 15 },
+  packDcl:   { msgId: "0x202", signal: "BMS_Max_Discharge_Current", unit: "A", range: [0, 300] },
+  packCcl:   { msgId: "0x202", signal: "BMS_Max_Charge_Current", unit: "A", range: [0, 300] },
   busV:      { msgId: "0x0A7", signal: "INV_DC_Bus_Voltage", unit: "V", range: [0, 600] },
   busA:      { msgId: "0x0A6", signal: "INV_DC_Bus_Current", unit: "A", range: [-300, 300] },
   // MOTOR
@@ -51,13 +51,14 @@ export const SD_SIGNALS = {
   // STS (enum: label is in `unit`, raw int in sensorReading)
   vcuState:  { msgId: "0x7D2", signal: "State", unit: "", range: [0, 15] },
   rtdButton: { msgId: "0x7D2", signal: "RTD_Button", unit: "", range: [0, 1] },
-  // SAFETY LOOP / SHUTDOWN CIRCUIT (MOBO PackStatus 0x420 + VCU Precharge 0x7D3)
-  hvActive:        { msgId: "0x420", signal: "HV_Active",         unit: "", range: [0, 1] },
-  loopReturn:      { msgId: "0x420", signal: "Safetyloop_return", unit: "", range: [0, 1] },
+  // SAFETY LOOP / SHUTDOWN CIRCUIT (MOBO PackStatus 0x420)
+  // New DBC: HV_Active + Safetyloop_return retired, replaced with AIR+/AIR- relays.
   imdRelay:        { msgId: "0x420", signal: "IMDRelay",          unit: "", range: [0, 1] },
   amsRelay:        { msgId: "0x420", signal: "AMSRelay",          unit: "", range: [0, 1] },
   bspdRelay:       { msgId: "0x420", signal: "BSPDRelay",         unit: "", range: [0, 1] },
   latchRelay:      { msgId: "0x420", signal: "LatchRelay",        unit: "", range: [0, 1] },
+  airPos:          { msgId: "0x420", signal: "AIR_Positive_Relay", unit: "", range: [0, 7] },
+  airNeg:          { msgId: "0x420", signal: "AIR_Negative_Relay", unit: "", range: [0, 1] },
   packState:       { msgId: "0x420", signal: "PackStatus",        unit: "", range: [0, 6] },
   prechargeEnable: { msgId: "0x7D3", signal: "Precharge_Enable",  unit: "", range: [0, 1] },
   prechargeOk:     { msgId: "0x7D3", signal: "Precharge_OK",      unit: "", range: [0, 1] },
