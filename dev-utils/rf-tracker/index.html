@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RF Tracker</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: #58a6ff;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .status-bar {
+      font-size: 0.8rem;
+      color: #8b949e;
+      margin-bottom: 24px;
+    }
+
+    .status-bar.connected { color: #3fb950; }
+    .status-bar.error    { color: #f85149; }
+
+    /* Fan display — top-down antenna view */
+    .fan-container {
+      position: relative;
+      width: 340px;
+      height: 340px;
+    }
+
+    .fan-bg {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: radial-gradient(circle, #161b22 0%, #0d1117 100%);
+      border: 2px solid #21262d;
+    }
+
+    /* Fan blades — 120-degree spread */
+    .fan-blade {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 140px;
+      height: 4px;
+      background: linear-gradient(to right, rgba(88,166,255,0.15), rgba(88,166,255,0.05));
+      transform-origin: 0% 50%;
+      border-radius: 2px;
+    }
+
+    .fan-blade:nth-child(1) { transform: rotate(-60deg); }
+    .fan-blade:nth-child(2) { transform: rotate(0deg); background: rgba(88,166,255,0.2); }
+    .fan-blade:nth-child(3) { transform: rotate(60deg); }
+
+    /* Center dot */
+    .fan-center {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 14px;
+      height: 14px;
+      background: #21262d;
+      border: 2px solid #8b949e;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10;
+    }
+
+    /* Arrow — rotates to show direction */
+    .arrow {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 4px;
+      height: 120px;
+      transform-origin: 50% 100%;
+      transform: translate(-50%, -100%) rotate(0deg);
+      transition: transform 0.15s ease-out;
+      z-index: 5;
+    }
+
+    .arrow::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 10px solid transparent;
+      border-bottom: 16px solid #58a6ff;
+    }
+
+    .arrow::after {
+      content: '';
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 4px;
+      height: calc(100% - 16px);
+      background: #58a6ff;
+      border-radius: 2px;
+    }
+
+    /* Heading labels */
+    .heading-label {
+      position: absolute;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: #484f58;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .heading-label.left  { left: 8px;  top: 50%; transform: translateY(-50%); }
+    .heading-label.right { right: 8px; top: 50%; transform: translateY(-50%); }
+    .heading-label.front { top: 8px;  left: 50%; transform: translateX(-50%); }
+
+    /* Car dot */
+    .car-dot {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 10px;
+      height: 10px;
+      background: #f0883e;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 8px rgba(240,136,62,0.6);
+      z-index: 20;
+    }
+
+    /* Signal data panel */
+    .data-panel {
+      margin-top: 28px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      width: 340px;
+    }
+
+    .data-card {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+
+    .data-card .label {
+      font-size: 0.7rem;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+
+    .data-card .value {
+      font-size: 1.4rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .data-card.chain0 .value { color: #58a6ff; }
+    .data-card.chain1 .value { color: #bc8cff; }
+    .data-card.strength .value { color: #3fb950; }
+    .data-card.error .value { color: #f0883e; }
+
+    /* Calibration panel */
+    .calibration {
+      margin-top: 20px;
+      width: 340px;
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .calibration h3 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+
+    .calibration-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .calibration-row label {
+      font-size: 0.8rem;
+      color: #8b949e;
+      width: 80px;
+    }
+
+    .calibration-row input[type="range"] {
+      flex: 1;
+      accent-color: #58a6ff;
+    }
+
+    .calibration-row .bias-value {
+      font-size: 0.85rem;
+      font-variant-numeric: tabular-nums;
+      color: #e6edf3;
+      width: 40px;
+      text-align: right;
+    }
+
+    .calibration-btns {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    button {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid #30363d;
+      background: #21262d;
+      color: #e6edf3;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    button:hover { background: #30363d; }
+    button:active { background: #484f58; }
+
+    button.primary {
+      background: #1f6feb;
+      border-color: #1f6feb;
+    }
+    button.primary:hover { background: #388bfd; }
+
+    button.danger {
+      border-color: #f8514966;
+      color: #f85149;
+    }
+    button.danger:hover { background: #f8514922; }
+
+    /* Normalized meter */
+    .meter {
+      margin-top: 16px;
+      height: 8px;
+      border-radius: 4px;
+      background: #21262d;
+      overflow: hidden;
+    }
+
+    .meter-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.15s ease-out, background 0.15s;
+    }
+
+    .normalized-row {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 4px;
+      font-size: 0.7rem;
+      color: #484f58;
+    }
+
+    /* Instructions */
+    .instructions {
+      margin-top: 20px;
+      font-size: 0.75rem;
+      color: #484f58;
+      text-align: center;
+      line-height: 1.6;
+      width: 340px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>RF Tracker</h1>
+  <div class="status-bar" id="status">Connecting…</div>
+
+  <!-- Fan display -->
+  <div class="fan-container">
+    <div class="fan-bg"></div>
+    <div class="fan-blade"></div>
+    <div class="fan-blade"></div>
+    <div class="fan-blade"></div>
+    <div class="fan-center"></div>
+    <div class="arrow" id="arrow"></div>
+    <div class="car-dot"></div>
+    <div class="heading-label left">← LEFT</div>
+    <div class="heading-label right">RIGHT →</div>
+    <div class="heading-label front">FRONT</div>
+  </div>
+
+  <!-- Signal data -->
+  <div class="data-panel">
+    <div class="data-card chain0">
+      <div class="label">Chain 0</div>
+      <div class="value" id="chain0">—</div>
+    </div>
+    <div class="data-card chain1">
+      <div class="label">Chain 1</div>
+      <div class="value" id="chain1">—</div>
+    </div>
+    <div class="data-card strength">
+      <div class="label">Strength</div>
+      <div class="value" id="strength">—</div>
+    </div>
+    <div class="data-card error">
+      <div class="label">Error</div>
+      <div class="value" id="error">—</div>
+    </div>
+  </div>
+
+  <!-- Normalized meter -->
+  <div class="data-panel" style="grid-template-columns: 1fr;">
+    <div class="data-card" style="grid-column: 1;">
+      <div class="label">Direction (← L | 0 | R →)</div>
+      <div class="meter">
+        <div class="meter-fill" id="meterFill" style="width:50%;background:#58a6ff;"></div>
+      </div>
+      <div class="normalized-row">
+        <span>← Strong Left</span>
+        <span>Centered</span>
+        <span>Strong Right →</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calibration -->
+  <div class="calibration">
+    <h3>Calibration</h3>
+    <div class="calibration-row">
+      <label>Bias Offset</label>
+      <input type="range" id="biasSlider" min="-20" max="20" step="0.5" value="0">
+      <span class="bias-value" id="biasValue">0.0</span>
+    </div>
+    <div class="calibration-btns">
+      <button class="primary" id="setBiasBtn">Set Baseline Here</button>
+      <button class="danger" id="resetBiasBtn">Reset</button>
+    </div>
+    <p style="font-size:0.72rem;color:#484f58;margin-top:8px;">
+      Point antenna at car, click "Set Baseline Here" to zero the offset.
+    </p>
+  </div>
+
+  <p class="instructions">
+    Rotate antenna until arrow points to <strong>FRONT</strong> and error is near zero.<br>
+    Maximize signal strength while centering the arrow.
+  </p>
+
+  <script>
+    const API = window.location.origin + '/signal';
+    const UPDATE_MS = 300;
+
+    // Calibration state (persisted in localStorage)
+    let bias = parseFloat(localStorage.getItem('rf-tracker-bias') || '0');
+    let prevNormalized = 0;
+    const SMOOTH = 0.7;
+
+    // Load saved bias on startup
+    document.getElementById('biasSlider').value = bias;
+    document.getElementById('biasValue').textContent = bias.toFixed(1);
+
+    document.getElementById('biasSlider').addEventListener('input', (e) => {
+      bias = parseFloat(e.target.value);
+      document.getElementById('biasValue').textContent = bias.toFixed(1);
+    });
+
+    document.getElementById('biasSlider').addEventListener('change', () => {
+      localStorage.setItem('rf-tracker-bias', bias.toString());
+    });
+
+    document.getElementById('setBiasBtn').addEventListener('click', async () => {
+      try {
+        const res = await fetch(API);
+        const data = await res.json();
+        if (data.error) return;
+        // Set bias so current error becomes 0
+        bias = data.error;
+        document.getElementById('biasSlider').value = bias;
+        document.getElementById('biasValue').textContent = bias.toFixed(1);
+        localStorage.setItem('rf-tracker-bias', bias.toString());
+      } catch (e) {
+        // ignore
+      }
+    });
+
+    document.getElementById('resetBiasBtn').addEventListener('click', () => {
+      bias = 0;
+      document.getElementById('biasSlider').value = 0;
+      document.getElementById('biasValue').textContent = '0.0';
+      localStorage.removeItem('rf-tracker-bias');
+    });
+
+    async function update() {
+      try {
+        const res = await fetch(API);
+        if (!res.ok) throw new Error('bad response');
+        const data = await res.json();
+
+        if (data.error === 'no data') {
+          document.getElementById('status').textContent = 'No data from Rocket M2';
+          document.getElementById('status').className = 'status-bar error';
+          return;
+        }
+
+        document.getElementById('status').textContent = 'Connected';
+        document.getElementById('status').className = 'status-bar connected';
+
+        // Apply calibration bias
+        const correctedError = data.error - bias;
+        const normalized = Math.max(-1, Math.min(1, correctedError / 20));
+
+        // Exponential smoothing to reduce jitter
+        const smoothed = SMOOTH * prevNormalized + (1 - SMOOTH) * normalized;
+        prevNormalized = smoothed;
+
+        // Update data cards
+        document.getElementById('chain0').textContent = data.chain0;
+        document.getElementById('chain1').textContent = data.chain1;
+        document.getElementById('strength').textContent = data.strength.toFixed(1);
+        document.getElementById('error').textContent = correctedError.toFixed(1);
+
+        // Rotate arrow: ±60 degrees full scale
+        const angle = smoothed * 60;
+        document.getElementById('arrow').style.transform =
+          `translate(-50%, -100%) rotate(${angle}deg)`;
+
+        // Update meter: 0 center, range 0-100%
+        const meterPct = ((smoothed + 1) / 2) * 100;
+        const meterEl = document.getElementById('meterFill');
+        meterEl.style.width = meterPct + '%';
+        // Color: blue when centered, orange when extreme
+        const intensity = Math.abs(smoothed);
+        const r = Math.round(88 + intensity * (240 - 88));
+        const g = Math.round(166 * (1 - intensity * 0.4));
+        const b = Math.round(255 * (1 - intensity));
+        meterEl.style.background = `rgb(${r},${g},${b})`;
+
+      } catch (e) {
+        document.getElementById('status').textContent = 'Cannot reach server';
+        document.getElementById('status').className = 'status-bar error';
+      }
+    }
+
+    update();
+    setInterval(update, UPDATE_MS);
+  </script>
+</body>
+</html>
