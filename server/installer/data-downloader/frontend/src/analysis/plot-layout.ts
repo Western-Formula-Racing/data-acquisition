@@ -171,7 +171,7 @@ export function parseLayout(raw: string | null): ParsedLayout | null {
       data.v === 2 && data.colors && typeof data.colors === "object" && !Array.isArray(data.colors)
         ? Object.fromEntries(
             Object.entries(data.colors as Record<string, unknown>).filter(
-              ([, v]) => typeof v === "string",
+              (entry): entry is [string, string] => typeof entry[1] === "string",
             ),
           )
         : {};

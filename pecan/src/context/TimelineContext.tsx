@@ -66,6 +66,9 @@ const REPLAY_CHECKPOINTS_STORAGE_KEY = "pecan:timeline:replay:checkpoints";
 const DEFAULT_WINDOW_MS = 30000;
 
 const TimelineContext = createContext<TimelineContextValue | null>(null);
+const TimelineCursorContext = createContext<{ mode: TimelineMode; selectedTimeMs: number } | null>(null);
+
+const BOUNDS_UPDATE_THROTTLE_MS = 100; // 10 Hz cap for timeline bounds updates during live stream
 
 function clampTime(value: number, min: number | null, max: number | null): number {
   if (min === null || max === null) return value;
@@ -200,8 +203,36 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
     };
 
     updateBounds();
-    const unsubscribe = dataStore.subscribe(() => updateBounds());
-    return unsubscribe;
+
+    let lastUpdateMs = Date.now();
+    let trailingTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const throttledUpdateBounds = () => {
+      const now = Date.now();
+      const elapsed = now - lastUpdateMs;
+      if (elapsed >= BOUNDS_UPDATE_THROTTLE_MS) {
+        if (trailingTimer !== null) {
+          clearTimeout(trailingTimer);
+          trailingTimer = null;
+        }
+        lastUpdateMs = now;
+        updateBounds();
+      } else if (trailingTimer === null) {
+        trailingTimer = setTimeout(() => {
+          trailingTimer = null;
+          lastUpdateMs = Date.now();
+          updateBounds();
+        }, BOUNDS_UPDATE_THROTTLE_MS - elapsed);
+      }
+    };
+
+    const unsubscribe = dataStore.subscribe(throttledUpdateBounds);
+    return () => {
+      unsubscribe();
+      if (trailingTimer !== null) {
+        clearTimeout(trailingTimer);
+      }
+    };
   }, [mode, source]);
 
   // Keep the cursor tracking wall time in live mode regardless of data flow.
@@ -516,7 +547,23 @@ export function TimelineProvider({ children }: { children: ReactNode }) {
     ]
   );
 
-  return <TimelineContext.Provider value={value}>{children}</TimelineContext.Provider>;
+  // Stabilize the cursor context in live mode: readLatest/readHistory ignore cursorMs
+  // when mode === "live", so keeping selectedTimeMs fixed at 0 in live mode prevents
+  // every useTimelineCursor() consumer from re-rendering and tearing down subscriptions
+  // on every timeline tick.
+  const cursorSelectedTimeMs = mode === "paused" ? selectedTimeMs : 0;
+  const cursorValue = useMemo(
+    () => ({ mode, selectedTimeMs: cursorSelectedTimeMs }),
+    [mode, cursorSelectedTimeMs]
+  );
+
+  return (
+    <TimelineContext.Provider value={value}>
+      <TimelineCursorContext.Provider value={cursorValue}>
+        {children}
+      </TimelineCursorContext.Provider>
+    </TimelineContext.Provider>
+  );
 }
 
 export function useTimeline(): TimelineContextValue {
@@ -533,9 +580,9 @@ export function useTimeline(): TimelineContextValue {
  * requiring a provider in isolated test/render contexts (falls back to live).
  */
 export function useTimelineCursor(): { mode: TimelineMode; selectedTimeMs: number } {
-  const context = useContext(TimelineContext);
-  if (!context) {
-    return { mode: "live", selectedTimeMs: Date.now() };
+  const cursorContext = useContext(TimelineCursorContext);
+  if (!cursorContext) {
+    return { mode: "live", selectedTimeMs: 0 };
   }
-  return { mode: context.mode, selectedTimeMs: context.selectedTimeMs };
+  return cursorContext;
 }

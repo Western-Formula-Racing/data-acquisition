@@ -3,6 +3,7 @@ name: Telemetry System CI/CD
 on:
   workflow_dispatch:
   push:
+    branches: [ main, dev, fdr ]
     paths:
       - 'universal-telemetry-software/**'
       - 'pecan/**'
@@ -130,14 +131,22 @@ jobs:
         sleep 3
         kill $PID 2>/dev/null || true
 
-    - name: Build and typecheck PECAN
+    - name: Typecheck and unit test PECAN
       working-directory: ./pecan
       run: |
         npm ci
-        npx tsc --noEmit
+        npx tsc -b --noEmit
+        npm run test:ci
 
-    - name: Build and typecheck FDR
+    - name: Typecheck and unit test FDR
       working-directory: ./flight-recorder
+      run: |
+        npm ci
+        npx tsc --noEmit
+        npm test
+
+    - name: Typecheck FDR relay worker
+      working-directory: ./flight-recorder/relay-worker
       run: |
         npm ci
         npx tsc --noEmit
@@ -167,6 +176,10 @@ jobs:
           tests/test_stats_publisher.py \
           tests/test_status_server.py \
           tests/test_heartbeat.py \
+          tests/test_retransmission_starvation.py \
+          tests/test_status_mosaic.py \
+          tests/test_websocket_client_count_health.py \
+          tests/test_deploy_contracts.py \
           -v
 
   # ── Integration tests: full docker-compose stack ─────────────────────────
@@ -298,7 +311,11 @@ jobs:
 
     - name: Set up virtual CAN interface
       run: |
-        sudo apt-get install -y linux-modules-extra-$(uname -r)
+        if ! sudo modprobe vcan 2>/dev/null; then
+          sudo apt-get update
+          sudo apt-get install -y "linux-modules-extra-$(uname -r)" || sudo apt-get install -y linux-modules-extra-azure || true
+        fi
+        sudo apt-get install -y can-utils || (sudo apt-get update && sudo apt-get install -y can-utils)
         sudo modprobe can
         sudo modprobe can_raw
         sudo modprobe vcan
@@ -306,9 +323,6 @@ jobs:
         sudo ip link set up can0
         ip link show can0
         echo "✓ vcan interface can0 is UP"
-
-    - name: Install can-utils
-      run: sudo apt-get install -y can-utils
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -358,12 +372,6 @@ jobs:
       working-directory: ./universal-telemetry-software
       run: |
         python -m pytest tests/test_can_pipeline.py -v -s --timeout=60
-
-    - name: Run pecan UI vCAN tests
-      working-directory: ./pecan
-      run: |
-        npm ci
-        npm run test:ci
 
     - name: Collect vCAN test logs on failure
       if: failure()

@@ -34,29 +34,47 @@ class TelemetryHandler {
       }
 
       const messages = Array.isArray(decoded) ? decoded : [decoded];
-      messages.forEach(msg => {
-        if (!msg?.signals) return;
+      const batch: Array<{
+        msgID: string;
+        messageName: string;
+        data: Record<string, { sensorReading: number; unit: string }>;
+        rawData: string;
+        timestamp: number;
+      }> = [];
+
+      for (const msg of messages) {
+        if (!msg?.signals) continue;
 
         if (msg.canId === UTS_HEARTBEAT_CAN_ID || msg.canId === RELAY_HEARTBEAT_CAN_ID) {
-          dataStore.ingestMessage({
+          batch.push({
             msgID: DIAG_MSG_IDS.HEARTBEAT,
             messageName: 'Heartbeat',
             data: {},
             rawData: msg.rawData,
             timestamp: msg.time || Date.now(),
           });
-          return;
+          continue;
         }
 
         const hexId = formatCanId(msg.canId);
-        dataStore.ingestMessage({
+        batch.push({
           msgID: hexId,
           messageName: msg.messageName || `CAN_${hexId}`,
           data: msg.signals,
           rawData: msg.rawData,
-          timestamp: msg.time || Date.now()
+          timestamp: msg.time || Date.now(),
         });
-      });
+      }
+
+      if (batch.length === 1) {
+        dataStore.ingestMessage(batch[0]);
+      } else if (batch.length > 1) {
+        if (typeof dataStore.ingestMessagesBatch === 'function') {
+          dataStore.ingestMessagesBatch(batch);
+        } else {
+          batch.forEach((sample) => dataStore.ingestMessage(sample));
+        }
+      }
     });
 
     // Listen for named diagnostic events (type field set by UTS/bridge)

@@ -496,10 +496,14 @@ function Trace() {
     });
   }, [frames, filter, paused, selectedTimeMs]);
 
-  // buildEnriched is cheap; no need for a chain of memos.
-  // fixed was a no-op: useMemo(() => enriched, [enriched]) always === enriched.
-  const enriched = buildEnriched(filteredFrames);
-  const fixed = enriched;
+  const enriched = useMemo(() => buildEnriched(filteredFrames), [filteredFrames]);
+  const fixed = useMemo(() => {
+    const latestByMsgId = new Map<string, EnrichedFrame>();
+    for (const frame of enriched) {
+      latestByMsgId.set(frame.msgID, frame);
+    }
+    return Array.from(latestByMsgId.values());
+  }, [enriched]);
 
   const totalFrames = frames.length;
 

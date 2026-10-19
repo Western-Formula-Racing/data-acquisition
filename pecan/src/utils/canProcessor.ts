@@ -268,37 +268,69 @@ export function setActiveDbcText(text: string): void {
   usingCache = true;
 }
 
+let cachedDbcForLookups: string | null = null;
+const valueDefsCache = new Map<string, Record<number, string> | null>();
+const signalAxisDefCache = new Map<string, { min?: number; max?: number; unit?: string } | null>();
+
+function ensureDbcLookupCachesFresh(): void {
+  if (cachedDbcForLookups !== dbcFile) {
+    cachedDbcForLookups = dbcFile;
+    valueDefsCache.clear();
+    signalAxisDefCache.clear();
+  }
+}
+
 /**
  * Parse VAL_ definitions for a signal from the active DBC text.
  * Returns a map of { numericValue -> label } or null if no definitions exist.
  */
 export function getValueDefs(signalName: string): Record<number, string> | null {
+  ensureDbcLookupCachesFresh();
+  if (valueDefsCache.has(signalName)) {
+    return valueDefsCache.get(signalName)!;
+  }
+
   // VAL_ <msgId> <signalName> <val> "<label>" ... ;
   const escaped = signalName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex = new RegExp(`VAL_\\s+\\d+\\s+${escaped}\\s+((?:\\d+\\s+"[^"]*"\\s*)+);`);
   const match = dbcFile.match(regex);
-  if (!match) return null;
+  if (!match) {
+    valueDefsCache.set(signalName, null);
+    return null;
+  }
 
   const defs: Record<number, string> = {};
   for (const [, num, label] of match[1].matchAll(/(\d+)\s+"([^"]*)"/g)) {
     defs[parseInt(num)] = label;
   }
-  return Object.keys(defs).length > 0 ? defs : null;
+  const result = Object.keys(defs).length > 0 ? defs : null;
+  valueDefsCache.set(signalName, result);
+  return result;
 }
 
 export function getSignalAxisDef(signalName: string): { min?: number; max?: number; unit?: string } | null {
+  ensureDbcLookupCachesFresh();
+  if (signalAxisDefCache.has(signalName)) {
+    return signalAxisDefCache.get(signalName)!;
+  }
+
   const escaped = signalName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex = new RegExp(`^\\s*SG_\\s+${escaped}\\s*:[^\\n]*\\[([^|\\]]+)\\|([^\\]]+)\\]\\s*"([^"]*)"`, "m");
   const match = dbcFile.match(regex);
-  if (!match) return null;
+  if (!match) {
+    signalAxisDefCache.set(signalName, null);
+    return null;
+  }
 
   const min = Number(match[1]);
   const max = Number(match[2]);
-  return {
+  const result = {
     min: Number.isFinite(min) ? min : undefined,
     max: Number.isFinite(max) ? max : undefined,
     unit: match[3] || undefined,
   };
+  signalAxisDefCache.set(signalName, result);
+  return result;
 }
 
 export async function clearDbcCache() {

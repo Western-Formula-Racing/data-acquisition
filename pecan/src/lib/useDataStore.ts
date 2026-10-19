@@ -103,13 +103,24 @@ export function useSignal(msgID: string, signalName: string): {
   const [signal, setSignal] = useState(() => read(mode, selectedTimeMs));
 
   useEffect(() => {
+    const updateSignal = () => {
+      const next = read(mode, selectedTimeMs);
+      setSignal((prev) => {
+        if (!prev && !next) return prev;
+        if (prev && next && prev.sensorReading === next.sensorReading && prev.unit === next.unit) {
+          return prev;
+        }
+        return next;
+      });
+    };
+
     // Re-read on cursor move (paused) or new data (live).
-    setSignal(read(mode, selectedTimeMs));
+    updateSignal();
 
     // Subscribe to updates for this specific message
     const unsubscribe = dataStore.subscribe((updatedMsgID) => {
       if (updatedMsgID === msgID || updatedMsgID === undefined) {
-        setSignal(read(mode, selectedTimeMs));
+        updateSignal();
       }
     });
 
@@ -168,13 +179,21 @@ export function useAllMessageIds(): string[] {
   );
 
   useEffect(() => {
+    const syncMessageIds = () => {
+      const next = dataStore.getAllMessageIds();
+      setMessageIds((prev) => {
+        if (prev.length === next.length && prev.every((id, idx) => id === next[idx])) {
+          return prev;
+        }
+        return next;
+      });
+    };
+
     // Initial value
-    setMessageIds(dataStore.getAllMessageIds());
+    syncMessageIds();
 
     // Subscribe to updates
-    const unsubscribe = dataStore.subscribe(() => {
-      setMessageIds(dataStore.getAllMessageIds());
-    });
+    const unsubscribe = dataStore.subscribe(syncMessageIds);
 
     return unsubscribe;
   }, []);

@@ -41,6 +41,7 @@ function TxDashboard() {
 
   // Performance monitoring (same as Dashboard)
   useEffect(() => {
+    let rafId: number;
     const updateFPS = () => {
       frameCountRef.current++;
       const now = Date.now();
@@ -52,9 +53,9 @@ function TxDashboard() {
         frameCountRef.current = 0;
         lastFpsUpdateRef.current = now;
       }
-      requestAnimationFrame(updateFPS);
+      rafId = requestAnimationFrame(updateFPS);
     };
-    requestAnimationFrame(updateFPS);
+    rafId = requestAnimationFrame(updateFPS);
 
     const updateMemory = () => {
       if ("memory" in performance) {
@@ -68,7 +69,10 @@ function TxDashboard() {
     };
     const memoryInterval = setInterval(updateMemory, 2000);
 
-    return () => clearInterval(memoryInterval);
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearInterval(memoryInterval);
+    };
   }, []);
 
   // ✅ Filter to TX only
