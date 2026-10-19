@@ -1,10 +1,10 @@
 # Flight Recorder
 
-Flight Recorder is a supported phone-based store-and-forward telemetry recorder with an optional live relay. It gives the team a lightweight way to get run data into the database without setting up the full base-station workflow or pulling the SD card from the `ECU_25` ECU code setup after every run.
+**Deprecated.** This was a temporary phone store-and-forward experiment. It was never used in competition or day-to-day running. Do not deploy it, and do not build on it. Live telemetry is PECAN plus Universal Telemetry Software.
 
-Internal app: <https://fdr.westernformularacing.org> (`wfr-fdr.pages.dev`, protected by Cloudflare Zero Trust)
+The rest of this file is historical and is not a setup guide.
 
-Typical use:
+Historical use:
 
 1. Connect a phone to the car hotspot.
 2. Open Flight Recorder.
@@ -33,7 +33,7 @@ The phone must stay connected to the car hotspot and keep the page open during t
 
 ## Relationship To `lte-relay`
 
-The old `lte-relay` branch explored publishing the car's live WebSocket over Cloudflare/LTE. Flight Recorder is the preferred path for no-SD-card database ingest because it records locally first and uploads later. That store-and-forward behavior is more tolerant of weak cellular/WiFi links than a live-only relay.
+The old `lte-relay` branch explored publishing the car's live WebSocket over Cloudflare/LTE. Flight Recorder was tried as a later store-and-forward idea and was never used.
 
 Keep LTE relay concepts only for remote live viewing or debugging. Do not treat LTE relay as the primary run-data ingestion path.
 

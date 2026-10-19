@@ -369,7 +369,9 @@ def delete_analysis_config(config_id: str) -> None:
     return None
 
 
-# ── CAN frames batch ingest (for flight-recorder sync) ─────────────────────────
+# ── CAN frames batch ingest ────────────────────────────────────────────────────
+# Added for Flight Recorder, a temporary experiment that was never used.
+# The route remains so old clients do not 404. Do not build on it.
 
 # Cache of known signal columns per table, thread-safe
 _table_known_signals: Dict[str, Set[str]] = {}
@@ -393,7 +395,9 @@ def _ensure_signal_columns(cur, table: str, signal_names: Set[str]) -> None:
 @app.post("/api/can-frames/batch")
 def ingest_can_frames(payload: CanFramesBatchPayload) -> dict:
     """
-    Batch ingest CAN frames from flight-recorder.
+    Batch ingest CAN frames.
+
+    Deprecated with Flight Recorder, which was never used.
 
     Writes to TimescaleDB using the same pattern as timescale_bridge:
     - Wide format: one row per CAN message, all signals as columns
