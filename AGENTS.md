@@ -7,8 +7,8 @@ This is the Western Formula Racing data acquisition monorepo. Prefer this file a
 - `universal-telemetry-software/`: shared Python telemetry code used by both car and base roles.
 - `pecan/`: React/Vite live telemetry dashboard.
 - `server/installer/`: VPS/server stack with TimescaleDB, Grafana, upload/query APIs, health monitoring, Slack bot, and related services.
-- `flight-recorder/`: phone-based store-and-forward telemetry recorder/relay for lightweight database ingest.
-- `flight-recorder/relay-worker/`: Wrangler Cloudflare Worker + Durable Object for optional phone-forwarded live WebSocket relay.
+- `flight-recorder/`: deprecated. Temporary phone store-and-forward experiment that was never used. Do not deploy or extend it.
+- `flight-recorder/relay-worker/`: deprecated with Flight Recorder. Do not deploy.
 - `car-simulate/`: CAN simulation and replay tools.
 - `WEBSOCKET_PROTOCOL.md`: canonical PECAN/UTS WebSocket protocol spec.
 
@@ -31,7 +31,7 @@ UTS is one shared Python codebase with role-specific runtime behavior.
 - MacBook base: `universal-telemetry-software/deploy/MACBOOK_DEPLOY.md`
 - WebSocket protocol: `WEBSOCKET_PROTOCOL.md`
 - UTS WebSocket runtime notes: `universal-telemetry-software/WEBSOCKET_RUNTIME_NOTES.md`
-- Flight Recorder: `flight-recorder/README.md`
+- Flight Recorder (deprecated, never used): `flight-recorder/README.md`
 - PECAN dashboard: `pecan/README.md`
 - Server stack: `server/installer/README.md`
 

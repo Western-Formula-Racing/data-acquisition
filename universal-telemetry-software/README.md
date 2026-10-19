@@ -146,18 +146,18 @@ Load the CAN modules at boot:
 ```bash
 echo "can" | sudo tee -a /etc/modules
 echo "can_raw" | sudo tee -a /etc/modules
-echo "mcp251xfd" | sudo tee -a /etc/modules
+echo "mcp251x" | sudo tee -a /etc/modules
 ```
 
 ### 2. Configure the HAT overlay
 
 Edit `/boot/firmware/config.txt` (Ubuntu on RPi uses `/boot/firmware/`, not `/boot/`):
 ```ini
-dtoverlay=mcp251xfd,oscillator=20000000,interrupt=25
+dtoverlay=mcp2515-can0,oscillator=<crystal-hz>,interrupt=<gpio>
 dtoverlay=spi-bcm2835
 ```
 
-> Our HAT uses the **MCP2517FD** CAN FD controller with a **20 MHz** crystal (S73305 20.000X15R) and MCP2562FDT-HSN transceiver. The interrupt GPIO (25) may need to be adjusted depending on how your HAT is wired — check the HAT schematic.
+> The car uses a custom HAT. The controller is the Microchip **MCP2515T-I/ML** (CAN, SPI, 2.7–5.5 V, QFN). The transceiver is the **MCP2562FDT-H/SN** (up to 8 Mbps, Normal/Standby, AEC-Q100, 8-pin SOIC). Set `oscillator` and `interrupt` from that hat's schematic. The interface is brought up at 500 kbps below. This is not an MCP2517FD board, so do not use the `mcp251xfd` overlay.
 
 Reboot after editing:
 ```bash

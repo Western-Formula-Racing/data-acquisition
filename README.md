@@ -50,8 +50,6 @@ flowchart LR
     (server stack)"]
     GRAFANA["Grafana
     (server stack)"]
-    FLIGHTREC["Flight Recorder
-    (phone store-and-forward relay)"]
     DOWNLOADER["Data Downloader
     (server stack)"]
 
@@ -62,7 +60,6 @@ flowchart LR
     REDIS -->|WebSocket| DASH
     BASE -->|direct write| TIMESERIES
     TIMESERIES --> GRAFANA
-    FLIGHTREC -->|store-and-forward upload| DOWNLOADER
     DOWNLOADER --> TIMESERIES
 ```
 
@@ -73,7 +70,7 @@ flowchart LR
 3. The base-side UTS receives telemetry and publishes it to Redis
 4. Redis-to-WebSocket bridge broadcasts messages to connected clients (PECAN dashboard)
 5. Base-side TimescaleDB bridge writes decoded CAN frames directly to the server stack's TimescaleDB over the network
-6. Grafana visualizes historical data from TimescaleDB; Flight Recorder can relay phone-recorded runs to the data downloader API when the full base-station stack is not present
+6. Grafana visualizes historical data from TimescaleDB. The data downloader serves query and export endpoints against that database.
 
 For the detailed WebSocket message contract between PECAN and UTS, see [`WEBSOCKET_PROTOCOL.md`](./WEBSOCKET_PROTOCOL.md).
 
@@ -136,23 +133,7 @@ GUI adapters for Kvaser and PECAN CAN hardware interfaces. Used during bench tes
 
 ### Flight Recorder (`/flight-recorder`)
 
-Supported phone-based store-and-forward telemetry recorder for lightweight run recording and upload. Put a phone on the car hotspot, point Flight Recorder at the car UTS WebSocket, record telemetry into browser storage during the run, then sync the captured data to the server database when WiFi or cellular access is available. This gives the team a permanent no-SD-card workflow for `ECU_25` run data when the full base-station stack is not set up.
-
-**Use cases:**
-- Quick shakedown runs without setting up the full base station
-- Phone-backed database ingest when the car is running on its hotspot
-- No-SD-card upload path for `ECU_25` run data
-- Store-and-forward recording when server connectivity is intermittent
-
-**Notes:**
-- Not the primary live telemetry dashboard; use PECAN + UTS for real-time monitoring
-- Stores received CAN frames locally in browser IndexedDB first, then marks them synced only after upload
-- Uploads decoded signal batches via `POST /api/can-frames/batch` on the data-downloader API
-- Has separate guarded controls for `WS Relay` and `DB Forward`; live relay and TimescaleDB upload can be used independently
-- The phone must stay connected to the car hotspot and keep the page open during the run
-- Supersedes the `lte-relay` branch for no-SD-card database ingest; optional remote live relay uses the public Wrangler Worker in `flight-recorder/relay-worker` to receive phone-forwarded WebSocket frames and rebroadcast them
-
-**Internal app:** https://fdr.westernformularacing.org (`wfr-fdr.pages.dev`, protected by Cloudflare Zero Trust)
+**Deprecated.** This was a temporary phone store-and-forward experiment. It was never used in competition or day-to-day running. Do not deploy it, and do not build on it. Live telemetry is PECAN plus Universal Telemetry Software.
 
 ### WebSocket Backend (`/ws-backend`)
 
@@ -301,7 +282,7 @@ data-acquisition/
 │       ├── components/ # React components
 │       ├── pages/      # Page components
 │       └── services/   # WebSocket and data services
-├── flight-recorder/   # React data recording PWA
+├── flight-recorder/   # Deprecated. Temporary experiment, never used.
 ├── car-simulate/      # CAN data simulators (CSV playback, WebSocket broadcast)
 ├── ws-backend/        # WebSocket broadcast server for PECAN
 ├── server/            # VPS server stack (TimescaleDB, Grafana, data APIs)
