@@ -20,7 +20,9 @@ jobs:
         uses: snok/container-retention-policy@v2
         with:
           image-names: ${{ matrix.package }}
-          cut-off: 5 versions
+          # cut-off must be a timezone-aware datetime (dateparser); version
+          # counts belong in keep-at-least. "5 versions" fails validation.
+          cut-off: 4 weeks ago UTC
           keep-at-least: 5
           skip-tags: latest, test-latest
           account-type: org
