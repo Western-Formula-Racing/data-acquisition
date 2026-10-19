@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import ReactFlow, {
   ReactFlowProvider,
   addEdge,
@@ -369,22 +369,32 @@ const AdvancedMathNode = ({ id, data }: { id: string; data: { expression?: strin
     return edge ? getNodeValue(edge.source) || 0 : 0;
   });
 
+  const compiledExpression = useMemo(() => {
+    try {
+      // Basic Sandboxing: Shadow global objects to prevent accidental or malicious access
+      // eslint-disable-next-line no-new-func
+      const fn = new Function('A', 'B', 'C', 'D', 'window', 'document', 'location', 'fetch', 'localStorage', 'sessionStorage', `
+        "use strict";
+        return ${expression};
+      `);
+      return { fn, compileError: null as string | null };
+    } catch (e: any) {
+      return { fn: null, compileError: (e?.message ?? 'Invalid expression') as string };
+    }
+  }, [expression]);
+
   const [A, B, C, D] = inputs;
   let result = 0;
-  let error = null;
+  let error = compiledExpression.compileError;
 
-  try {
-    // Basic Sandboxing: Shadow global objects to prevent accidental or malicious access
-    // eslint-disable-next-line no-new-func
-    const fn = new Function('A', 'B', 'C', 'D', 'window', 'document', 'location', 'fetch', 'localStorage', 'sessionStorage', `
-      "use strict";
-      return ${expression};
-    `);
-    // Pass null for global objects
-    result = fn(A, B, C, D, null, null, null, null, null, null);
-    if (typeof result !== 'number' || isNaN(result)) result = 0;
-  } catch (e: any) {
-    error = e.message;
+  if (compiledExpression.fn) {
+    try {
+      // Pass null for global objects
+      result = compiledExpression.fn(A, B, C, D, null, null, null, null, null, null);
+      if (typeof result !== 'number' || isNaN(result)) result = 0;
+    } catch (e: any) {
+      error = e.message;
+    }
   }
 
   useEffect(() => {
