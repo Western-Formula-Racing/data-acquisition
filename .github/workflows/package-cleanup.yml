@@ -20,7 +20,7 @@ jobs:
         uses: snok/container-retention-policy@v2
         with:
           image-names: ${{ matrix.package }}
-          cut-off: 5 versions
+          cut-off: 14 days ago
           keep-at-least: 5
           skip-tags: latest, test-latest
           account-type: org

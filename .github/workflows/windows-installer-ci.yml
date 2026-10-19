@@ -12,7 +12,7 @@ name: Windows Base Station Installer CI
 
 on:
   push:
-    branches: [ main, deploy ]
+    branches: [ main, dev, deploy ]
     paths:
       - 'universal-telemetry-software/deploy/install.ps1'
       - 'universal-telemetry-software/deploy/docker-compose.windows-base.yml'
@@ -23,7 +23,7 @@ on:
       - 'universal-telemetry-software/tests/test_deploy_contracts.py'
       - '.github/workflows/windows-installer-ci.yml'
   pull_request:
-    branches: [ main, deploy ]
+    branches: [ main, dev, deploy ]
     paths:
       - 'universal-telemetry-software/deploy/install.ps1'
       - 'universal-telemetry-software/deploy/docker-compose.windows-base.yml'

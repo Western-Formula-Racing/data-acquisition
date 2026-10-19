@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - 'server/installer/slackbot/**'
+      - 'server/installer/sandbox/**'
       - '.github/workflows/slackbot-ci.yml'
   pull_request:
     paths:
       - 'server/installer/slackbot/**'
+      - 'server/installer/sandbox/**'
       - '.github/workflows/slackbot-ci.yml'
   workflow_dispatch:
 
@@ -80,6 +82,12 @@ jobs:
               sys.exit(1)
           print("OK: all command handlers are defined and callable")
           EOF
+
+      - name: Run sandbox follow-up and session unit tests
+        working-directory: ${{ github.workspace }}/server/installer/sandbox
+        run: |
+          pip install pytest flask requests
+          python -m pytest test_followup.py -v
 
   docker-build:
     runs-on: ubuntu-latest
