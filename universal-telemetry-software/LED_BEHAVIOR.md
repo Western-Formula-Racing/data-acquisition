@@ -4,15 +4,15 @@
 
 | Jack | Color | GPIO | Function |
 |------|-------|------|----------|
-| — | Blue | 3 | CAN activity |
-| DATA LAN | Yellow | 6 | CAN telemetry process |
-| DATA LAN | Green | 10 | WebSocket bridge |
-| RADIO LAN | Yellow | 7 | Audio streaming |
-| RADIO LAN | Green | 9 | Video streaming |
+| — | Blue | 27 | CAN activity |
+| DATA LAN | Yellow | 5 | CAN telemetry process |
+| DATA LAN | Green | 6 | WebSocket bridge |
+| RADIO LAN | Yellow | 19 | Audio streaming |
+| RADIO LAN | Green | 13 | Video streaming |
 
 ## Normal Operation
 
-### CAN Activity (Blue, GPIO 3)
+### CAN Activity (Blue, GPIO 27)
 
 | Role | Condition | LED |
 |------|-----------|-----|
@@ -40,6 +40,6 @@
 
 ## PoE Error Override
 
-When the PoE physical switch is off (GPIO 27 enable HIGH but GPIO 25 read LOW), **all 5 LEDs flash in unison** (0.5 s on / 0.5 s off), overriding all normal behavior. This indicates the user has enabled PoE in software but the physical switch on the board is off.
+When the PoE physical switch is off (GPIO 26 enable LOW but GPIO 25 read HIGH), **all 5 LEDs flash in unison** (0.5 s on / 0.5 s off), overriding all normal behavior. This indicates the user has enabled PoE in software but the physical switch on the board is off.
 
 Normal LED behavior resumes immediately when the switch is turned on.

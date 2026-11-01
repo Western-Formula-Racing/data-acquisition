@@ -2,16 +2,18 @@
 PoE enable and switch monitor for the PoE injection board.
 
 GPIO assignments (BCM numbering):
-  GPIO 26  OUTPUT  PoE Enable  – drives MOSFET gate (BSS316NH6327XTSA1)
+  GPIO 26  OUTPUT  PoE Enable  – drives P-channel MOSFET gate (DMP3014SFDE-13)
   GPIO 25  INPUT   PoE Read    – reads downstream side of physical switch
 
 Hardware topology:
   GPIO 26 ──► physical switch ──► MOSFET gate ──► GPIO 25
 
-  When software sets GPIO 26 HIGH and the physical switch is ON,
-  GPIO 25 reads HIGH and PoE power flows to the downstream device.
+  Both signals are active-low. GPIO 25 has its internal pull-up enabled.
 
-  If GPIO 26 is HIGH but GPIO 25 reads LOW, the physical switch is OFF
+  When software sets GPIO 26 LOW and the physical switch is ON,
+  GPIO 25 reads LOW and PoE power flows to the downstream device.
+
+  If GPIO 26 is LOW but GPIO 25 reads HIGH, the physical switch is OFF
   and the user should be warned (all LEDs flash via poe_ok_event).
 
 Runs in its own process; call run_poe() from main.py.
@@ -22,8 +24,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-PIN_POE_ENABLE = 26   # OUTPUT – drive HIGH to request PoE
-PIN_POE_READ   = 25   # INPUT  – reads HIGH when switch is ON and power flows
+PIN_POE_ENABLE = 26   # OUTPUT – drive LOW to request PoE
+PIN_POE_READ   = 25   # INPUT  – reads LOW when switch is ON and power flows
 
 POLL_INTERVAL  = 1.0  # seconds between switch checks
 
@@ -86,7 +88,7 @@ def run_poe(poe_ok_event):
         # Leave PoE enable LOW on shutdown (hardware default is safer with power on)
         if gpio is not None:
             try:
-                gpio.cleanup([PIN_POE_READ])  # only clean up input; leave enable HIGH
+                gpio.cleanup([PIN_POE_READ])  # only clean up input; leave enable LOW
             except Exception:
                 pass
         logger.info("PoE monitor stopped")
