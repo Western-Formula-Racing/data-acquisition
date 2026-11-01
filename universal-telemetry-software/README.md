@@ -37,6 +37,100 @@ The deployed car service sets `ROLE=car` explicitly in `deploy/car-telemetry.ser
 
 ---
 
+## Reliability & Retransmission
+
+The link between car and base is a **best-effort UDP stream with a pull-based recovery channel over TCP**. The car never waits for acknowledgements — it fires CAN batches over UDP as fast as it reads them and keeps a short backlog in memory. The base station detects the gaps and asks for the missing pieces back. This keeps the live path low-latency while still recovering most dropped packets a few seconds later.
+
+All of this lives in `src/data.py`: the car side in `run_car()` (`udp_sender`, `handle_resend`), the base side in `run_base()` (`udp_receiver`, `missing_reporter`).
+
+### Data flow
+
+```mermaid
+sequenceDiagram
+    participant CAN as CAN bus
+    participant Car as Car (udp_sender)
+    participant RB as Ring buffer (60s)
+    participant Base as Base (udp_receiver)
+    participant MR as Base (missing_reporter)
+
+    CAN->>Car: raw frames
+    Note over Car: batch 20 msgs OR 50ms<br/>assign seq_num (uint64)
+    Car->>RB: store (seq, batch, t)
+    Car--)Base: UDP :5005  [seq | count | msgs]
+    Note over Base: track expected_seq<br/>seq > expected ⇒ gap<br/>add skipped seqs to missing set
+    loop every 10s, if missing set non-empty
+        MR->>Car: TCP :5006  {"missing": [seq, ...]}
+        Car->>RB: look up seqs still in buffer
+        Car-->>MR: JSON [{seq, msgs:[{t,id,d}]}]
+        Note over MR: re-publish to Redis<br/>mark seq recovered
+    end
+```
+
+### Sender: batching, sequencing, ring buffer (car)
+
+- **Batching** — CAN frames are accumulated and flushed when the batch hits `BATCH_SIZE` (20 messages) **or** `BATCH_TIMEOUT` (50 ms) elapses, whichever comes first. Each flush is one UDP datagram.
+- **Sequencing** — every batch gets a monotonic `seq_num` (uint64). This is the unit of loss detection and retransmission; individual CAN messages are never tracked, only whole batches.
+- **Wire format** — the UDP payload is a 10-byte header followed by fixed-size messages:
+
+  | Field | Type | Bytes | Notes |
+  |-------|------|-------|-------|
+  | `seq` | `uint64` big-endian (`!Q`) | 8 | batch sequence number |
+  | `count` | `uint16` big-endian (`!H`) | 2 | number of messages in this batch |
+  | `messages` | `count × CANMessage` | 20 each | packed via `CANMessage.pack()` |
+
+- **Ring buffer** — after sending, the car also appends `(seq, batch, timestamp)` to an in-memory `deque` and evicts anything older than `BUFFER_DURATION` (**60 seconds**). This is the *only* copy available for retransmission. A gap that isn't requested within ~60s is gone for good on the live link (it may still be recovered later from the car's own CSV log, but not through this channel).
+
+### Receiver: gap detection state machine (base)
+
+The base tracks a single `expected_seq` and classifies every incoming datagram:
+
+| Condition | Meaning | Action |
+|-----------|---------|--------|
+| `seq == expected_seq` | in order | process; `expected_seq = seq + 1` |
+| `seq > expected_seq` | **gap** | add every seq in `[expected_seq, seq)` to the `missing` set; process; advance `expected_seq` |
+| `seq < expected_seq`, in `missing` set | late/out-of-order arrival | remove from `missing`, count as recovered |
+| `seq < expected_seq`, not in `missing` | duplicate | ignore |
+| `seq < expected_seq − 1000` | **sequence reset** (car restarted) | reset `expected_seq`, clear `missing` |
+
+The `missing` set is capped at **1000 entries**; when it overflows the oldest sequence is evicted (and will never be requested). A per-second status map (`0` = missing, `1` = UDP, `2` = TCP-recovered) is maintained purely for the PECAN link-health visualization.
+
+### Recovery: request / response schema (TCP :5006)
+
+A `missing_reporter` task wakes every `MISSING_CHECK_INTERVAL` (**10 seconds**). If the `missing` set is non-empty it opens a TCP connection to the car's resend server and sends:
+
+```json
+{ "missing": [12043, 12044, 12051] }
+```
+
+Only the **100 oldest** missing sequences are sent per cycle — `sorted(missing)[:100]` — so that gaps closest to aging out of the car's 60s ring buffer get priority. Newer gaps can wait; they have more buffer time left. The car's `handle_resend` looks each one up in the ring buffer and returns whatever it still holds:
+
+```json
+[
+  { "seq": 12043, "msgs": [ { "t": 1752345600.12, "id": 256, "d": "a1b2c3..." } ] }
+]
+```
+
+Recovered messages are re-published to the same `can_messages` Redis channel as the live path, so downstream consumers (WebSocket bridge, TimescaleDB) see one merged stream.
+
+> **Format note:** the resend response uses a JSON shape (`t`/`id`/`d`-hex) that differs from the binary `CANMessage` on the primary UDP path. Both are normalized to the same `{time, canId, data}` shape before hitting Redis, but the two encodings are worth keeping in mind when touching either path.
+
+### Tuning knobs & limits
+
+| Constant | Default | Location | Effect |
+|----------|---------|----------|--------|
+| `BATCH_SIZE` | `20` | `src/data.py` | messages per UDP datagram |
+| `BATCH_TIMEOUT` | `0.05` s | `src/data.py` | max latency before a partial batch is flushed |
+| `BUFFER_DURATION` | `60` s | `src/data.py` | how far back the car can retransmit |
+| `MISSING_CHECK_INTERVAL` | `10` s | `src/data.py` | how often the base requests resends |
+| `UDP_PORT` / `TCP_PORT` | `5005` / `5006` | `src/config.py` | live stream / recovery channel |
+
+**Known limitations** (by design — this is a soft-real-time telemetry link, not a guaranteed-delivery bus):
+
+- Recovery is best-effort. Nothing is retried indefinitely; a gap older than ~60s or beyond the 1000-entry `missing` cap is dropped from the live stream.
+- There is no end-to-end ACK, so the car has no knowledge of what the base did or didn't receive — all loss detection is receiver-driven.
+
+---
+
 ## Hardware Setup (Ubuntu)
 
 This section covers setting up a CAN HAT (e.g. MCP2515-based) on Ubuntu before running the software.
@@ -52,18 +146,18 @@ Load the CAN modules at boot:
 ```bash
 echo "can" | sudo tee -a /etc/modules
 echo "can_raw" | sudo tee -a /etc/modules
-echo "mcp251xfd" | sudo tee -a /etc/modules
+echo "mcp251x" | sudo tee -a /etc/modules
 ```
 
 ### 2. Configure the HAT overlay
 
 Edit `/boot/firmware/config.txt` (Ubuntu on RPi uses `/boot/firmware/`, not `/boot/`):
 ```ini
-dtoverlay=mcp251xfd,oscillator=20000000,interrupt=25
+dtoverlay=mcp2515-can0,oscillator=<crystal-hz>,interrupt=<gpio>
 dtoverlay=spi-bcm2835
 ```
 
-> Our HAT uses the **MCP2517FD** CAN FD controller with a **20 MHz** crystal (S73305 20.000X15R) and MCP2562FDT-HSN transceiver. The interrupt GPIO (25) may need to be adjusted depending on how your HAT is wired — check the HAT schematic.
+> The car uses a custom HAT. The controller is the Microchip **MCP2515T-I/ML** (CAN, SPI, 2.7–5.5 V, QFN). The transceiver is the **MCP2562FDT-H/SN** (up to 8 Mbps, Normal/Standby, AEC-Q100, 8-pin SOIC). Set `oscillator` and `interrupt` from that hat's schematic. The interface is brought up at 500 kbps below. This is not an MCP2517FD board, so do not use the `mcp251xfd` overlay.
 
 Reboot after editing:
 ```bash
@@ -238,8 +332,8 @@ Images are built for both `linux/amd64` and `linux/arm64` (Raspberry Pi).
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 5005 | UDP | CAN data streaming |
-| 5006 | TCP | Packet retransmission |
+| 5005 | UDP | CAN data streaming (see [Reliability & Retransmission](#reliability--retransmission)) |
+| 5006 | TCP | Packet retransmission (see [Reliability & Retransmission](#reliability--retransmission)) |
 | 6379 | TCP | Redis (internal) |
 | 8080 | HTTP | Status monitoring page |
 | 9080 | WebSocket | PECAN dashboard feed |

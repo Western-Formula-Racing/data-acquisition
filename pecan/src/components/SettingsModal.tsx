@@ -585,8 +585,16 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                             <div>{bridgeOs === "linux" ? "python3 src/main.py" : "python src/main.py"}</div>
                                         </div>
                                     </div>
+                                    <div className="space-y-2">
+                                        <p className="text-gray-300 font-medium">Connect this (hosted) dashboard to the bridge:</p>
+                                        <ol className="list-decimal list-inside pl-1 space-y-1">
+                                            <li>Run the bridge on the <span className="text-gray-300">same PC</span> as this browser, then set <span className="text-gray-300">Custom WebSocket URL</span> above to <code>wss://127.0.0.1:9081</code>.</li>
+                                            <li>In the bridge window click <span className="text-gray-300">Trust Certificate (Automatic)</span> — one click, no admin. Chrome/Edge will then connect with no warning. {bridgeOs === "windows" ? "" : "(Automatic install is Windows-only.)"}</li>
+                                            <li>Reload this page. For Firefox, use <span className="text-gray-300">Manual…</span> instead (Advanced → Proceed → green confirmation page).</li>
+                                        </ol>
+                                    </div>
                                     <p className="italic">
-                                        Note: Ensure the bridge is pointing to <code>ws://localhost:9081</code> (default).
+                                        The bridge serves <code>wss://</code> on loopback with a self-signed certificate, so this HTTPS dashboard can reach it. Trusting is once per PC/browser.
                                     </p>
                                 </div>
                             </div>

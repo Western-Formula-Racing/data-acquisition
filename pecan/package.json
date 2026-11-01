@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "lsof -ti tcp:9077 | xargs kill -9 2>/dev/null; true",
     "dev": "vite",
+    "prepreview": "lsof -ti tcp:9077 | xargs kill -9 2>/dev/null; true",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",

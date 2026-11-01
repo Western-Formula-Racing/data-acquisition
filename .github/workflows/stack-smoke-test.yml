@@ -2,12 +2,54 @@ name: Installer Stack Smoke Test
 
 on:
   push:
-    branches: [ main, deploy ]
+    branches: [ main, dev, deploy ]
+    paths:
+      - 'server/**'
+      - '.github/workflows/stack-smoke-test.yml'
   pull_request:
-    branches: [ main, deploy ]
+    branches: [ main, dev, deploy ]
+    paths:
+      - 'server/**'
+      - '.github/workflows/stack-smoke-test.yml'
   workflow_dispatch:
 
 jobs:
+  data-downloader-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: server/installer/data-downloader/backend/requirements.txt
+
+      - name: Run data-downloader backend unit tests
+        working-directory: server/installer/data-downloader/backend
+        run: |
+          pip install -r requirements.txt pytest httpx
+          python -m pytest tests/ -v
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: server/installer/data-downloader/frontend/package-lock.json
+
+      - name: Typecheck, test, and build data-downloader frontend
+        working-directory: server/installer/data-downloader/frontend
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:ci
+          npm run build
+
   stack-smoke-test:
     runs-on: ubuntu-latest
     timeout-minutes: 45

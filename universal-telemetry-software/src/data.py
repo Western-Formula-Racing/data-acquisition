@@ -752,7 +752,7 @@ class TelemetryNode:
                     logger.info(f"Requesting resend for {len(missing_seqs)} batches")
                     try:
                         reader, writer = await asyncio.open_connection(REMOTE_IP, TCP_PORT)
-                        request = {"missing": sorted(list(missing_seqs))[-100:]} # Limit request size
+                        request = {"missing": sorted(list(missing_seqs))[:100]}
                         writer.write(json.dumps(request).encode())
                         await writer.drain()
                         

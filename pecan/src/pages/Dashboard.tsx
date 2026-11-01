@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useSearchParams } from "react-router";
 import DataCard from "../components/DataCard";
 import DataRow from "../components/DataRow";
@@ -110,7 +110,6 @@ function Dashboard() {
     } catch { /* ignore */ }
     return [];
   });
-  const [nextPlotId, setNextPlotId] = useState(1);
   const livePlotsSnapshotRef = useRef<Plot[] | null>(null);
   // Stores the loadedAtMs of the replay session whose layout has been applied,
   // or false when no replay layout is active. Using the timestamp rather than a
@@ -181,7 +180,6 @@ function Dashboard() {
       const detail = (e as CustomEvent<Plot[]>).detail;
       if (Array.isArray(detail) && detail.length > 0) {
         setPlots(detail);
-        setNextPlotId(nextPlotCounter(detail));
       }
     };
     window.addEventListener("pecan:plots-imported", handler);
@@ -247,7 +245,6 @@ function Dashboard() {
 
         if (importedPlots.length > 0) {
           setPlots(importedPlots);
-          setNextPlotId(nextPlotCounter(importedPlots));
         }
       }
 
@@ -264,7 +261,6 @@ function Dashboard() {
     const snapshot = livePlotsSnapshotRef.current;
     if (snapshot) {
       setPlots(snapshot);
-      setNextPlotId(nextPlotCounter(snapshot));
     }
 
     livePlotsSnapshotRef.current = null;
@@ -284,8 +280,14 @@ function Dashboard() {
     (window as any).dataStore = dataStore;
   }, []);
 
-  // Performance monitoring
+  // Performance monitoring (only active when the performance overlay is enabled)
   useEffect(() => {
+    if (!showPerfOverlay) return;
+
+    let rafId: number;
+    frameCountRef.current = 0;
+    lastFpsUpdateRef.current = Date.now();
+
     // FPS monitoring
     const updateFPS = () => {
       frameCountRef.current++;
@@ -303,9 +305,9 @@ function Dashboard() {
         frameCountRef.current = 0;
         lastFpsUpdateRef.current = now;
       }
-      requestAnimationFrame(updateFPS);
+      rafId = requestAnimationFrame(updateFPS);
     };
-    requestAnimationFrame(updateFPS);
+    rafId = requestAnimationFrame(updateFPS);
 
     // Memory monitoring
     const updateMemory = () => {
@@ -322,12 +324,14 @@ function Dashboard() {
         }
       }
     };
+    updateMemory();
     const memoryInterval = setInterval(updateMemory, 2000);
 
     return () => {
+      cancelAnimationFrame(rafId);
       clearInterval(memoryInterval);
     };
-  }, []);
+  }, [showPerfOverlay]);
 
   // Convert Map to array for rendering, anchored to timeline when paused
   const canMessagesArray = useMemo(() => {
@@ -480,7 +484,7 @@ function Dashboard() {
 
   // Plot Management Functions
   // =====================================================================
-  const handleSignalClick = (
+  const handleSignalClick = useCallback((
     msgID: string,
     signalName: string,
     messageName: string,
@@ -498,7 +502,7 @@ function Dashboard() {
     if (tourOpen && currentTourStep === 2) {
       setCurrentTourStep(3);
     }
-  };
+  }, [tourOpen, currentTourStep]);
 
   const handleNewPlot = (signalInfo: {
     msgID: string;
@@ -506,7 +510,7 @@ function Dashboard() {
     messageName: string;
     unit: string;
   }) => {
-    const newPlotId = String(nextPlotId);
+    const newPlotId = String(nextPlotCounter(plots));
     setPlots([
       ...plots,
       {
@@ -514,7 +518,6 @@ function Dashboard() {
         signals: [signalInfo],
       },
     ]);
-    setNextPlotId(nextPlotId + 1);
 
     // Advance tour if waiting for new plot creation
     if (tourOpen && currentTourStep === 3) {
@@ -556,17 +559,19 @@ function Dashboard() {
     signalName: string
   ) => {
     setPlots((prevPlots) =>
-      prevPlots.map((plot) => {
-        if (plot.id === plotId) {
-          return {
-            ...plot,
-            signals: plot.signals.filter(
-              (s) => !(s.msgID === msgID && s.signalName === signalName)
-            ),
-          };
-        }
-        return plot;
-      })
+      prevPlots
+        .map((plot) => {
+          if (plot.id === plotId) {
+            return {
+              ...plot,
+              signals: plot.signals.filter(
+                (s) => !(s.msgID === msgID && s.signalName === signalName)
+              ),
+            };
+          }
+          return plot;
+        })
+        .filter((plot) => plot.signals.length > 0)
     );
   };
 
@@ -578,9 +583,27 @@ function Dashboard() {
   // =====================================================================
   const [tracePanelFilter, setTracePanelFilter] = useState<string | null>(null);
 
-  const handleTraceClick = (msgID: string) => {
+  const handleTraceClick = useCallback((msgID: string) => {
     setTracePanelFilter(msgID);
-  };
+  }, []);
+
+  // Hoist tour target index lookup out of filteredMsgs.map() so it runs O(N) once per render instead of O(N^2)
+  const { tourTargetIndex, tourSignalName } = useMemo(() => {
+    const targetNumericId = 1031;
+    const parseCanId = (id: string): number | null => {
+      if (id.startsWith("0x") || id.startsWith("0X")) {
+        const n = parseInt(id, 16);
+        return Number.isNaN(n) ? null : n;
+      }
+      const n = Number(id);
+      return Number.isNaN(n) ? null : n;
+    };
+    const foundIndex = filteredMsgs.findIndex(([id]) => parseCanId(id) === targetNumericId);
+    return {
+      tourTargetIndex: foundIndex !== -1 ? foundIndex : 0,
+      tourSignalName: foundIndex !== -1 ? "M1_Thermistor1" : undefined,
+    };
+  }, [filteredMsgs]);
 
   return (
     <div className="flex flex-col md:grid md:grid-cols-3 gap-0 w-100 h-full">
@@ -784,26 +807,6 @@ function Dashboard() {
                       [key]: `${value.sensorReading} ${value.unit}`,
                     })
                   );
-
-                  // Tour Targeting Logic:
-                  // Try to find message 1031 (0x407) for M1_Thermistor1 signal.
-                  // Handles both decimal (e.g. "1031") and hex (e.g. "0x407") IDs.
-                  // If not found, default to the first message (index 0).
-                  const targetNumericId = 1031;
-                  const parseCanId = (id: string): number | null => {
-                    if (id.startsWith("0x") || id.startsWith("0X")) {
-                      const n = parseInt(id, 16);
-                      return Number.isNaN(n) ? null : n;
-                    }
-                    const n = Number(id);
-                    return Number.isNaN(n) ? null : n;
-                  };
-                  const targetSignal = "M1_Thermistor1";
-                  const foundIndex = filteredMsgs.findIndex(([id]) => parseCanId(id) === targetNumericId);
-
-                  // If found, target that index. If not, target 0.
-                  const tourTargetIndex = foundIndex !== -1 ? foundIndex : 0;
-                  const tourSignalName = foundIndex !== -1 ? targetSignal : undefined;
 
                   // Check if THIS row is the target
                   const isTarget = i === tourTargetIndex;

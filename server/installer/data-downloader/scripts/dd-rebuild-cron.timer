@@ -1,0 +1,10 @@
+[Unit]
+Description=WFR DAQ: check main every 5 min and rebuild data-downloader
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

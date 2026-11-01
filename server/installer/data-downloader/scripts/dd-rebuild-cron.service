@@ -1,0 +1,15 @@
+[Unit]
+Description=WFR DAQ: rebuild data-downloader when main advances
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+Environment=HOME=/home/ubuntu
+WorkingDirectory=/home/ubuntu/projects/data-acquisition
+ExecStart=/usr/local/bin/dd-rebuild-cron.sh
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=1800

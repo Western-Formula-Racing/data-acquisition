@@ -74,25 +74,26 @@ context.window.setTimeout = context.setTimeout;
 
 vm.createContext(context);
 vm.runInContext(script, context);
-context.updateStats({ status_buffer: Array(50).fill(1), received: 50, missing: 0, recovered: 0, messages: 0 });
-const before = vm.runInContext('packetHistory.slice()', context);
+context.updateStats({ second_buffer: Array(60).fill(1), car_alive: true, received: 50, missing: 0, recovered: 0, messages: 0 });
+const before = vm.runInContext('secondBuffer.slice()', context);
 
 const oneSecondTick = intervalCallbacks.find(callback => callback.ms === 1000);
 if (!oneSecondTick) throw new Error('missing one-second mosaic timer');
+fills.length = 0;
 oneSecondTick.fn();
 
-const after = vm.runInContext('packetHistory', context);
-if (before.length !== 50) throw new Error(`expected 50 cells before tick, got ${before.length}`);
-if (after.length !== 100) throw new Error(`expected 100 cells after tick, got ${after.length}`);
-if (!after.slice(0, 50).every(value => value === 1)) throw new Error('existing packet history was not preserved');
-if (!after.slice(50).every(value => value === undefined)) throw new Error('new second should be idle cells');
-if (!fills.slice(-50).every(fill => fill.color === '#374151')) throw new Error('newest idle column should pulse visibly');
+const after = vm.runInContext('secondBuffer.slice()', context);
+if (before.length !== 60) throw new Error(`expected 60 cells before tick, got ${before.length}`);
+if (after.length !== 60) throw new Error(`expected 60 cells after tick, got ${after.length}`);
+if (!after.every(value => value === 1)) throw new Error('existing second buffer was not preserved');
+if (fills.length !== 60) throw new Error(`expected 60 drawn columns, got ${fills.length}`);
+if (fills[59].color !== '#374151') throw new Error(`newest column should pulse visibly, got ${fills[59].color}`);
 const pulseClear = timeoutCallbacks.find(callback => callback.ms === 180);
 if (!pulseClear) throw new Error('pulse should schedule a redraw when it expires');
 now = 1200;
 fills.length = 0;
 pulseClear.fn();
-if (fills.slice(-50).some(fill => fill.color === '#374151')) throw new Error('pulse should clear after expiry');
+if (fills[59].color !== '#4ade80') throw new Error(`pulse should clear back to ok color after expiry, got ${fills[59].color}`);
 """
     )
 

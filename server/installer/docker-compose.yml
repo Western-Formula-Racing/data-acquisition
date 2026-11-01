@@ -14,6 +14,34 @@ services:
     image: timescale/timescaledb:latest-pg16
     container_name: timescaledb
     restart: unless-stopped
+    # Postgres tuning for the permanent 12GB/6-core VPS, sized to this container's
+    # 4096M / cpus:3 limit (shared_buffers=25%, effective_cache_size=75%). The image
+    # entrypoint still runs initdb/init scripts, then exec's `postgres` with these -c args
+    # (they override postgresql.conf; shared_preload_libraries=timescaledb stays from conf).
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1024MB
+      - -c
+      - effective_cache_size=3072MB
+      - -c
+      - work_mem=48MB
+      - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - max_wal_size=2GB
+      - -c
+      - min_wal_size=1GB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=256
+      - -c
+      - max_parallel_workers=3
+      - -c
+      - max_parallel_workers_per_gather=2
+      - -c
+      - timescaledb.max_background_workers=8
     ports:
       - "5432:5432"
     environment:
@@ -34,7 +62,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2048M
+          cpus: "3"
+          memory: 4096M
 
   grafana:
     image: grafana/grafana
@@ -75,7 +104,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          cpus: "1.5"
+          memory: 2048M
 
   slackbot:
     build: ./slackbot
@@ -111,6 +141,7 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "1"
           memory: 256M
 
   lap-detector:
@@ -158,7 +189,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1"
+          cpus: "2"
           memory: 1536M
 
   data-downloader-api:
@@ -166,18 +197,27 @@ services:
       context: ./data-downloader
       dockerfile: backend/Dockerfile
     container_name: data-downloader-api
-    env_file:
-      - .env
+    # Explicit allowlist only; avoid env_file so Grafana/Slack/Anthropic secrets stay out.
     environment:
+      DATA_DIR: "${DATA_DIR:-/app/data}"
       POSTGRES_DSN: "${POSTGRES_DSN:-postgresql://wfr:wfr_password@timescaledb:5432/wfr}"
+      DEFAULT_SEASON_TABLE: "${DEFAULT_SEASON_TABLE:-wfr26}"
       SEASONS: "${SEASONS:-}"
-      # DBC grouping — same token as file-uploader; most recently committed .dbc auto-selected
+      SCANNER_BIN: "${SCANNER_BIN:-hour}"
+      SCANNER_INCLUDE_COUNTS: "${SCANNER_INCLUDE_COUNTS:-true}"
+      SCANNER_INITIAL_CHUNK_DAYS: "${SCANNER_INITIAL_CHUNK_DAYS:-31}"
+      SENSOR_WINDOW_DAYS: "${SENSOR_WINDOW_DAYS:-7}"
+      SENSOR_LOOKBACK_DAYS: "${SENSOR_LOOKBACK_DAYS:-30}"
+      SCAN_INTERVAL_SECONDS: "${SCAN_INTERVAL_SECONDS:-3600}"
+      SCAN_DAILY_TIME: "${SCAN_DAILY_TIME:-}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173,https://daq.westernformularacing.org}"
+      # Same GitHub DBC token as file-uploader; newest .dbc auto-selected when path unset.
       GITHUB_DBC_TOKEN: "${GITHUB_DBC_TOKEN:-}"
       GITHUB_DBC_REPO: "${GITHUB_DBC_REPO:-Western-Formula-Racing/DBC}"
       GITHUB_DBC_BRANCH: "${GITHUB_DBC_BRANCH:-main}"
-      # Optional: pin a specific file (e.g. WFR26.dbc); leave unset to auto-pick newest
+      # Optional pin (e.g. WFR26.dbc); leave unset to auto-pick newest.
       GITHUB_DBC_PATH: "${GITHUB_DBC_PATH:-}"
-      # Fallback: local DBC file (mounted below or already on disk)
+      # Fallback local DBC path when GitHub is unavailable.
       DBC_FILE_PATH: "${DBC_FILE_PATH:-}"
     ports:
       - "8000:8000"
@@ -193,6 +233,7 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "1.5"
           memory: 1024M
 
   data-downloader-scanner:
@@ -218,6 +259,7 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "1"
           memory: 512M
 
   health-monitor:
@@ -242,6 +284,7 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "0.5"
           memory: 256M
 
   data-downloader-frontend:
@@ -262,6 +305,7 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "0.5"
           memory: 128M
 
   # Custom sandbox execution container
@@ -293,6 +337,7 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "1.5"
           memory: 1024M
 
   # Grafana bridge - Pecan → Grafana dashboard creation API
@@ -317,6 +362,7 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "1"
           memory: 256M
 
   # Code generator - MiniMax/Anthropic + LangGraph + ChromaDB RAG
@@ -348,4 +394,5 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "1.5"
           memory: 1024M

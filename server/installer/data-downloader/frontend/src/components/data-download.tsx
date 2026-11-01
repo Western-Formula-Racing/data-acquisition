@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DateTime } from "luxon";
 import Papa from "papaparse";
 import { Download } from "lucide-react";
+import type { Config, Data, Layout } from "plotly.js";
 import Plot from "react-plotly.js";
 
 import { RunRecord, SensorDataPoint, SensorDataResponse, SensorsGroupedResponse } from "../types";
@@ -226,57 +227,48 @@ export function DataDownload({ runs, sensors, sensorsGrouped, season, externalSe
   const chartGrid = isDark ? "#2c313a" : "#e5e7eb";
   const chartLine = isDark ? "#60a5fa" : "#2563eb";
 
-  const plotData = useMemo(
-    () =>
-      series.length === 0
-        ? []
-        : [
-          {
-            x: series.map((point) => point.time),
-            y: series.map((point) => point.value),
-            customdata: series.map((point) => toUtcTooltip(point.time)),
-            type: "scatter",
-            mode: "lines",
-            line: { color: chartLine, width: 2 },
-            hovertemplate: "%{y}<br>%{customdata}<extra></extra>",
-            name: selectedSensor || "Sensor"
-          }
-        ],
-    [series, selectedSensor, chartLine]
-  );
-
-  const plotLayout = useMemo(
-    () => ({
-      autosize: true,
-      margin: { t: 10, r: 20, b: 40, l: 50, pad: 4 },
-      hovermode: "x unified",
-      font: { color: chartFont },
-      xaxis: {
-        title: "Time (UTC)",
-        type: "date",
-        tickformat: "%H:%M\n%b %d",
-        gridcolor: chartGrid,
-        zerolinecolor: chartGrid
+  const plotData = useMemo((): Data[] => {
+    if (series.length === 0) return [];
+    return [
+      {
+        x: series.map((point) => point.time),
+        y: series.map((point) => point.value),
+        customdata: series.map((point) => toUtcTooltip(point.time)),
+        type: "scatter",
+        mode: "lines",
+        line: { color: chartLine, width: 2 },
+        hovertemplate: "%{y}<br>%{customdata}<extra></extra>",
+        name: selectedSensor || "Sensor",
       },
-      yaxis: {
-        title: selectedSensor || "Value",
-        zeroline: false,
-        gridcolor: chartGrid
-      },
-      paper_bgcolor: "rgba(0,0,0,0)",
-      plot_bgcolor: "rgba(0,0,0,0)"
-    }),
-    [selectedSensor, chartFont, chartGrid]
-  );
+    ];
+  }, [series, selectedSensor, chartLine]);
 
-  const plotConfig = useMemo(
-    () => ({
-      responsive: true,
-      displaylogo: false,
-      modeBarButtonsToRemove: ["select2d", "lasso2d"]
-    }),
-    []
-  );
+  const plotLayout = useMemo((): Partial<Layout> => ({
+    autosize: true,
+    margin: { t: 10, r: 20, b: 40, l: 50, pad: 4 },
+    hovermode: "x unified",
+    font: { color: chartFont },
+    xaxis: {
+      title: "Time (UTC)",
+      type: "date",
+      tickformat: "%H:%M\n%b %d",
+      gridcolor: chartGrid,
+      zerolinecolor: chartGrid,
+    },
+    yaxis: {
+      title: selectedSensor || "Value",
+      zeroline: false,
+      gridcolor: chartGrid,
+    },
+    paper_bgcolor: "rgba(0,0,0,0)",
+    plot_bgcolor: "rgba(0,0,0,0)",
+  }), [selectedSensor, chartFont, chartGrid]);
+
+  const plotConfig = useMemo((): Partial<Config> => ({
+    responsive: true,
+    displaylogo: false,
+    modeBarButtonsToRemove: ["select2d", "lasso2d"],
+  }), []);
 
   const handleDownload = () => {
     if (series.length === 0) return;

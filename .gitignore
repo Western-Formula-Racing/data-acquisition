@@ -286,6 +286,7 @@ server/docs/superpowers/
 wfr-data
 /.superpowers
 .worktrees/
+/pecan/.superpowers
 
 # Local backups, deployment snapshots, and temporary files
 *.bak
@@ -302,3 +303,4 @@ wfr-data
 tmp/
 temp/
 /universal-telemetry-software/srcbak.*.tgz
+

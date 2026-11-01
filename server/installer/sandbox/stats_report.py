@@ -123,7 +123,7 @@ def build_metrics_plot(df: pd.DataFrame) -> bytes:
     ok_vals = df[df["success"]]["sandbox_ms"].values
     fail_vals = df[~df["success"]]["sandbox_ms"].values
     data = [ok_vals, fail_vals] if (len(ok_vals) or len(fail_vals)) else [[], []]
-    bp = ax.boxplot(data, labels=["Success", "Failure"], patch_artist=True)
+    bp = ax.boxplot(data, tick_labels=["Success", "Failure"], patch_artist=True)
     if ok_vals.size:
         bp["boxes"][0].set_facecolor("#4ecb71")
     if fail_vals.size:

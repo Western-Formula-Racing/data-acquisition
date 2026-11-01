@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
+import subprocess
 import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Callable
@@ -16,7 +17,7 @@ import webbrowser
 import platform as _platform
 
 import config
-from bridge import Bridge, BridgeState, BridgeStatus
+from bridge import Bridge, BridgeState, BridgeStatus, CERT_FILE
 
 
 def _platform_interfaces() -> list[str]:
@@ -172,15 +173,29 @@ class TrayApp:
 
         # Trust cert helper
         ttk.Label(status_frame, text='First time?').grid(row=5, column=0, sticky='w', padx=4, pady=2)
-        trust_btn = ttk.Button(status_frame, text='Trust Certificate', command=self._open_cert_trust)
-        trust_btn.grid(row=5, column=1, sticky='w', padx=4, pady=2)
+        trust_box = ttk.Frame(status_frame)
+        trust_box.grid(row=5, column=1, columnspan=2, sticky='w', padx=4, pady=2)
+        if _platform.system() == 'Windows':
+            # One-click install into the current-user trusted-root store (no admin,
+            # no browser warning). Chrome/Edge read this store.
+            ttk.Button(trust_box, text='Trust Certificate (Automatic)',
+                       command=self._trust_cert_auto).pack(side='left')
+            ttk.Button(trust_box, text='Manual…',
+                       command=self._open_cert_trust, width=8).pack(side='left', padx=(4, 0))
+            warn_text = ('One click trusts this PC for Chrome/Edge — no admin needed.\n'
+                         'Use "Manual…" only for Firefox or if the automatic step fails.')
+        else:
+            ttk.Button(trust_box, text='Trust Certificate',
+                       command=self._open_cert_trust).pack(side='left')
+            warn_text = ('Same browser as the dashboard: click Advanced -> Proceed,\n'
+                         'then wait for the green "Certificate trusted" page.')
 
         # Warning label
         warn = ttk.Label(
             status_frame,
-            text='Open in the same browser you use for the dashboard,\nthen click Advanced -> Proceed.',
+            text=warn_text,
             foreground='#b45309',
-            wraplength=220,
+            wraplength=240,
             justify='left',
         )
         warn.grid(row=6, column=0, columnspan=3, sticky='w', padx=4, pady=(0, 4))
@@ -264,20 +279,61 @@ class TrayApp:
             self._bridge.set_bitrate(br)
 
     def _get_ws_url(self) -> str:
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(('8.8.8.8', 80))
-            ip = s.getsockname()[0]
-            s.close()
-        except Exception:
-            ip = 'localhost'
+        # Loopback: the bridge runs on the same machine as the dashboard browser,
+        # and the bundled certificate's SAN is IP:127.0.0.1, so the connection
+        # must use 127.0.0.1 (not the LAN IP or `localhost`) for the cert to match.
         scheme = 'wss' if self._bridge.get_status().tls else 'ws'
-        return f'{scheme}://{ip}:{self._ws_port_var.get()}'
+        return f'{scheme}://127.0.0.1:{self._ws_port_var.get()}'
 
     def _get_https_url(self) -> str:
         """HTTPS URL for the cert trust page (same host/port as WSS)."""
         wss = self._url_var.get()
         return wss.replace('wss://', 'https://', 1)
+
+    def _trust_cert_auto(self) -> None:
+        """Install the bridge cert into the current-user trusted-root store (Windows).
+
+        Uses `certutil -addstore -user Root`, which writes to HKCU and needs no
+        admin rights. Chrome and Edge read this store, so afterwards the dashboard
+        connects over wss://127.0.0.1 with no browser warning at all.
+        """
+        cert = str(CERT_FILE)
+        try:
+            # CREATE_NO_WINDOW (0x08000000) keeps a console flash from appearing.
+            proc = subprocess.run(
+                ['certutil', '-addstore', '-user', '-f', 'Root', cert],
+                capture_output=True, text=True,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+        except FileNotFoundError:
+            messagebox.showerror(
+                'Trust Certificate',
+                'Could not find "certutil" (Windows built-in). '
+                'Use the "Manual…" button instead.',
+                parent=self._root,
+            )
+            return
+        except Exception as e:
+            messagebox.showerror('Trust Certificate', f'Failed to run certutil:\n{e}', parent=self._root)
+            return
+
+        if proc.returncode == 0:
+            messagebox.showinfo(
+                'Trust Certificate',
+                'Certificate installed for Chrome and Edge on this PC.\n\n'
+                'Reload (or reconnect) the PECAN dashboard — it will connect with '
+                'no security warning.\n\n'
+                'Note: Firefox keeps its own store; use "Manual…" there.',
+                parent=self._root,
+            )
+        else:
+            detail = (proc.stderr or proc.stdout or '').strip()[:300]
+            messagebox.showerror(
+                'Trust Certificate',
+                'Automatic install failed. Use the "Manual…" button instead.\n\n'
+                f'{detail}',
+                parent=self._root,
+            )
 
     def _open_cert_trust(self) -> None:
         """Open the bridge's HTTPS endpoint so the user can accept the self-signed cert."""
@@ -285,8 +341,12 @@ class TrayApp:
             'Trust Certificate',
             'A page will open in your browser.\n\n'
             'IMPORTANT: Use the same browser you use for the dashboard.\n\n'
-            '1. Click "Advanced"\n'
-            '2. Click "Proceed to ... (unsafe)"\n\n'
+            '1. You will see a security warning (this is expected — the\n'
+            '   bridge runs locally with a self-signed certificate).\n'
+            '2. Click "Advanced", then "Proceed to ... (unsafe)".\n'
+            '3. Wait for the green "Certificate trusted" page with a\n'
+            '   "Live connection confirmed" check.\n\n'
+            'Then close the tab and return to the dashboard.\n'
             'You only need to do this once per browser.',
             parent=self._root,
         )

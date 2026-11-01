@@ -2,6 +2,8 @@ import os
 import base64
 import json
 import datetime
+import tempfile
+import time as _time
 import threading
 from pathlib import Path
 from threading import Event
@@ -25,9 +27,45 @@ _recent_success: dict[str, dict] = {}
 # Value: dict with prompt/code/output/result/creator + bot_message_ts + channel
 pending_approvals: dict[str, dict] = {}
 
+# Conversation sessions keyed by Slack thread_ts for AI follow-up.
+# Value: { "user": str, "timeout": int, "created_at": float,
+#          "history": [ { "role": "user"|"assistant", "prompt": str,
+#                         "code": str, "output": str, "error": str,
+#                         "rag_context": str } ] }
+_thread_sessions: dict[str, dict] = {}
+_THREAD_SESSION_TTL = 24 * 3600  # 24 hours
+_THREAD_SESSION_MAX_TURNS = 15  # max conversation turns per thread
+
+
+def _prune_thread_sessions() -> None:
+    """Remove expired thread sessions."""
+    now = _time.time()
+    expired = [ts for ts, s in _thread_sessions.items()
+               if now - s.get("created_at", 0) > _THREAD_SESSION_TTL]
+    for ts in expired:
+        del _thread_sessions[ts]
+
+
+def _get_thread_session(thread_ts: str) -> dict | None:
+    """Return a thread session if it exists and is not expired."""
+    _prune_thread_sessions()
+    session = _thread_sessions.get(thread_ts)
+    if session is None:
+        return None
+    if _time.time() - session.get("created_at", 0) > _THREAD_SESSION_TTL:
+        _thread_sessions.pop(thread_ts, None)
+        return None
+    return session
+
 # --- Logging Configuration ---
-LOG_DIR = Path("/app/logs")
-LOG_DIR.mkdir(parents=True, exist_ok=True)
+# Defaults to the container's /app/logs; falls back to a temp dir when that
+# path isn't writable (e.g. importing the module on a CI runner).
+LOG_DIR = Path(os.environ.get("SLACKBOT_LOG_DIR", "/app/logs"))
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    LOG_DIR = Path(tempfile.gettempdir()) / "slackbot-logs"
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- Slack App Configuration ---
 app_token = os.environ["SLACK_APP_TOKEN"]
@@ -263,12 +301,31 @@ def handle_agent(user, command_full, thread_ts=None, timeout=120, channel=None):
             pending_approvals[user]["bot_ts"] = bot_ts
             pending_approvals[user]["channel"] = channel
 
+            # ── Store thread session for follow-up conversations ──
+            _thread_sessions[thread_ts] = {
+                "user": user,
+                "timeout": timeout,
+                "channel": channel,
+                "created_at": _time.time(),
+                "history": [
+                    {"role": "user", "prompt": instructions,
+                     "code": "", "output": "", "error": "", "rag_context": ""},
+                    {"role": "assistant", "prompt": "",
+                     "code": result.get("code", ""),
+                     "output": exec_result.get("output", ""),
+                     "error": "",
+                     "rag_context": result.get("rag_context", "")},
+                ],
+            }
+            print(f"💬 Thread session created for {thread_ts} (user {user})")
+
             # Prompt user to approve via reaction or command
             send_slack_message(
                 channel,
                 text=(
                     "_React with :+1: to save this as a verified example, "
-                    "or type `!approve` in this thread._"
+                    "or type `!approve` in this thread._\n"
+                    "_Type `!reply <instructions>` in this thread to refine the result._"
                 ),
                 thread_ts=thread_ts,
             )
@@ -286,6 +343,30 @@ def handle_agent(user, command_full, thread_ts=None, timeout=120, channel=None):
             
             send_slack_message(channel, text=error_msg, thread_ts=thread_ts)
             
+            # Store session even on failure so user can follow up with corrections
+            _thread_sessions[thread_ts] = {
+                "user": user,
+                "timeout": timeout,
+                "channel": channel,
+                "created_at": _time.time(),
+                "history": [
+                    {"role": "user", "prompt": instructions,
+                     "code": "", "output": "", "error": "", "rag_context": ""},
+                    {"role": "assistant", "prompt": "",
+                     "code": result.get("code", ""),
+                     "output": "",
+                     "error": error,
+                     "rag_context": result.get("rag_context", "")},
+                ],
+            }
+            print(f"💬 Thread session created for {thread_ts} (user {user}, failed)")
+
+            send_slack_message(
+                channel,
+                text="_Type `!reply <corrections>` in this thread to try again._",
+                thread_ts=thread_ts,
+            )
+
             # Log failed interaction
             log_interaction(user, instructions, result, "failed", error)
     
@@ -524,6 +605,180 @@ def handle_aistats(user, thread_ts=None, channel=None):
             )
 
 
+def handle_agent_followup(user, followup_text, thread_ts, session, channel=None):
+    """
+    Handle a follow-up reply in an existing !agent thread.
+    Sends the conversation history + new prompt to the code-generator followup endpoint.
+    """
+    channel = channel or session.get("channel") or DEFAULT_CHANNEL
+    timeout = session.get("timeout", 120)
+
+    # Enforce max turns
+    history = session.get("history", [])
+    if len(history) >= _THREAD_SESSION_MAX_TURNS * 2:  # user+assistant = 2 entries per turn
+        send_slack_message(
+            channel,
+            text=f"⚠️ <@{user}> This thread has reached the maximum of {_THREAD_SESSION_MAX_TURNS} "
+                 "follow-up turns. Start a new `!agent` command for a fresh conversation.",
+            thread_ts=thread_ts,
+        )
+        return
+
+    # Acknowledge
+    turn_num = len([h for h in history if h.get("role") == "user"]) + 1
+    send_slack_message(
+        channel,
+        text=f"🔄 <@{user}> Follow-up #{turn_num}: `{followup_text[:100]}...`\nContinuing conversation with prior context...",
+        thread_ts=thread_ts,
+    )
+
+    try:
+        response = requests.post(
+            f"{CODE_GENERATOR_URL}/api/generate-code-followup",
+            json={"prompt": followup_text, "history": history},
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        retries = result.get("retries", [])
+        if retries:
+            retry_msg = f"⚠️ Initial code had errors. Retried {len(retries)} time(s) with error feedback."
+            send_slack_message(channel, text=retry_msg, thread_ts=thread_ts)
+
+        exec_result = result.get("result", {})
+        status = exec_result.get("status", "unknown")
+
+        if status == "success":
+            output = exec_result.get("output", "")
+            files = exec_result.get("files", [])
+
+            success_msg = f"✅ <@{user}> Follow-up code executed successfully!"
+            if retries:
+                success_msg += f" (after {len(retries)} retry/retries)"
+
+            success_reply = send_slack_message(channel, text=success_msg, thread_ts=thread_ts)
+            bot_ts = (success_reply.get("ts") if isinstance(success_reply, dict) else None) or thread_ts
+
+            if output:
+                output_msg = f"**Output:**\n```\n{output[:2000]}\n```"
+                send_slack_message(channel, text=output_msg, thread_ts=thread_ts)
+
+            for file_info in files:
+                filename = file_info.get("name")
+                b64_data = file_info.get("data")
+                file_type = file_info.get("type")
+
+                if file_type == "image" and b64_data:
+                    try:
+                        temp_path = Path(f"/tmp/{filename}")
+                        image_data = base64.b64decode(b64_data)
+                        temp_path.write_bytes(image_data)
+                        send_slack_image(
+                            channel,
+                            str(temp_path),
+                            title=f"Generated: {filename}",
+                            initial_comment=f"📊 <@{user}> Here's your updated visualization:",
+                            thread_ts=thread_ts,
+                        )
+                        temp_path.unlink()
+                    except Exception as e:
+                        print(f"Error uploading image {filename}: {e}")
+                        send_slack_message(
+                            channel,
+                            text=f"⚠️ Could not upload image {filename}: {e}",
+                            thread_ts=thread_ts,
+                        )
+
+            log_interaction(user, f"[followup] {followup_text}", result, "success")
+
+            # Append this turn to the thread session history
+            session["history"].append(
+                {"role": "user", "prompt": followup_text,
+                 "code": "", "output": "", "error": "", "rag_context": ""}
+            )
+            session["history"].append(
+                {"role": "assistant", "prompt": "",
+                 "code": result.get("code", ""),
+                 "output": exec_result.get("output", ""),
+                 "error": "",
+                 "rag_context": result.get("rag_context", "")}
+            )
+
+            # Update pending approval to latest result
+            _recent_success[user] = {
+                "prompt": followup_text,
+                "code": result.get("code", ""),
+                "output": exec_result.get("output", ""),
+                "result": exec_result,
+                "creator": user,
+            }
+            pending_approvals[user] = _recent_success[user].copy()
+            pending_approvals[user]["bot_ts"] = bot_ts
+            pending_approvals[user]["channel"] = channel
+
+            send_slack_message(
+                channel,
+                text=(
+                    "_React with :+1: to save, or `!reply <instructions>` to refine further._"
+                ),
+                thread_ts=thread_ts,
+            )
+            print(f"💬 Thread session updated for {thread_ts} — turn #{turn_num}")
+
+        else:
+            error = exec_result.get("error", "Unknown error")
+            max_retries_reached = result.get("max_retries_reached", False)
+
+            error_msg = f"❌ <@{user}> Follow-up code execution failed"
+            if max_retries_reached:
+                error_msg += f" after {len(retries)} retries"
+            error_msg += f":\n```\n{error[:1500]}\n```"
+
+            send_slack_message(channel, text=error_msg, thread_ts=thread_ts)
+
+            # Still append to history so the next follow-up has the error context
+            session["history"].append(
+                {"role": "user", "prompt": followup_text,
+                 "code": "", "output": "", "error": "", "rag_context": ""}
+            )
+            session["history"].append(
+                {"role": "assistant", "prompt": "",
+                 "code": result.get("code", ""),
+                 "output": "",
+                 "error": error,
+                 "rag_context": result.get("rag_context", "")}
+            )
+
+            send_slack_message(
+                channel,
+                text="_Type `!reply <corrections>` to try again._",
+                thread_ts=thread_ts,
+            )
+            log_interaction(user, f"[followup] {followup_text}", result, "failed", error)
+
+    except requests.exceptions.Timeout:
+        send_slack_message(
+            channel,
+            text=f"⏱️ <@{user}> Follow-up request timed out.",
+            thread_ts=thread_ts,
+        )
+    except requests.exceptions.RequestException as e:
+        send_slack_message(
+            channel,
+            text=f"❌ <@{user}> Failed to connect to code generation service: {e}",
+            thread_ts=thread_ts,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        send_slack_message(
+            channel,
+            text=f"❌ <@{user}> Unexpected error during follow-up: {e}",
+            thread_ts=thread_ts,
+        )
+
+
 def handle_help(user, thread_ts=None, channel=None):
     channel = channel or DEFAULT_CHANNEL
     help_text = (
@@ -542,6 +797,8 @@ def handle_help(user, thread_ts=None, channel=None):
         "                              Timeout: 1200s (20 minutes)\n"
         "                              Use for complex analysis or large datasets.\n"
         "                              Automatically retries up to 2 times if code fails.\n"
+        "!reply <instructions>      - Continue an !agent conversation from inside its thread,\n"
+        "                              reusing the prior code, output, and context.\n"
         "!approve                   - Save your most recent successful !agent result as a\n"
         "                              verified example (golden sample) for future queries.\n"
         "!aistats                   - Show AI code-generator observability dashboard:\n"
@@ -553,6 +810,9 @@ def handle_help(user, thread_ts=None, channel=None):
         "```\n"
         "💬 React with :+1: on the result message — same as !approve, just quicker.\n"
         "💬 Verified examples make future !agent queries smarter.\n"
+        "💬 *`!reply <instructions>` inside an !agent thread* continues the conversation —\n"
+        "   the AI remembers the prior code, output, and context. Plain replies are ignored,\n"
+        "   so teammates can discuss in the thread without triggering the bot.\n"
         "💬 Tip: You can also DM me these commands directly!"
     )
     send_slack_message(channel, text=help_text, thread_ts=thread_ts)
@@ -734,6 +994,10 @@ def process_events(client: SocketModeClient, req: SocketModeRequest):
             return
 
         text = event.get("text", "").strip()
+
+        # Follow-ups now require an explicit `!reply` command (handled in the
+        # dispatch below) so teammates can chat freely in an !agent thread
+        # without the bot responding to every message.
         if not text.startswith("!"):
             return
 
@@ -763,6 +1027,38 @@ def process_events(client: SocketModeClient, req: SocketModeRequest):
             handle_agent(user, command_full, thread_ts, timeout=120, channel=response_channel)
         elif main_command == "agent-debug":
             handle_agent(user, command_full, thread_ts, timeout=1200, channel=response_channel)
+        elif main_command == "reply":
+            followup_text = command_full[len("reply"):].strip()
+            parent_ts = event.get("thread_ts")
+            if not parent_ts:
+                send_slack_message(
+                    response_channel,
+                    text=f"⚠️ <@{user}> `!reply` only works inside an `!agent` thread — "
+                         "reply to the result message.",
+                    thread_ts=thread_ts,
+                )
+            elif not followup_text:
+                send_slack_message(
+                    response_channel,
+                    text=f"⚠️ <@{user}> Usage: `!reply <your follow-up instruction>`",
+                    thread_ts=parent_ts,
+                )
+            else:
+                session = _get_thread_session(parent_ts)
+                if session is None:
+                    send_slack_message(
+                        response_channel,
+                        text=f"⚠️ <@{user}> This thread has no active `!agent` session "
+                             "(they expire after 24h). Start a new `!agent` command.",
+                        thread_ts=parent_ts,
+                    )
+                else:
+                    threading.Thread(
+                        target=handle_agent_followup,
+                        args=(user, followup_text, parent_ts, session),
+                        kwargs={"channel": response_channel},
+                        daemon=True,
+                    ).start()
         elif main_command == "help":
             handle_help(user, thread_ts, response_channel)
         elif main_command == "approve":
