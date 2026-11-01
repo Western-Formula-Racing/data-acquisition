@@ -31,13 +31,13 @@ Environment=REDIS_URL=redis://127.0.0.1:6379/0
 Environment=WS_PORT=9080
 Environment=STATUS_PORT=8080
 Environment=SIMULATE=false
-Environment=ENABLE_VIDEO=true
+Environment=ENABLE_VIDEO=false
 Environment=ENABLE_AUDIO=false
 Environment=SET_TIME_ENABLED=true
 Environment=SHUTDOWN_ENABLED=true
 Environment=ENABLE_TIMESCALE_LOGGING=false
 # Set OFF_THE_SHELF=false when using our custom PoE injection board + status LEDs
-Environment=OFF_THE_SHELF=true
+Environment=OFF_THE_SHELF=false
 # Set at install time: sed -i "s/GIT_HASH=unknown/GIT_HASH=$(git rev-parse --short HEAD)/" car-telemetry.service
 Environment=GIT_HASH=c2827a4
 # REDIS_URL points to localhost — Redis is optional on the car.

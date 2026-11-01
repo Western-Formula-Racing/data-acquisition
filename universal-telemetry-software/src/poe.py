@@ -2,16 +2,16 @@
 PoE enable and switch monitor for the PoE injection board.
 
 GPIO assignments (BCM numbering):
-  GPIO 27  OUTPUT  PoE Enable  – drives MOSFET gate (BSS316NH6327XTSA1)
+  GPIO 26  OUTPUT  PoE Enable  – drives MOSFET gate (BSS316NH6327XTSA1)
   GPIO 25  INPUT   PoE Read    – reads downstream side of physical switch
 
 Hardware topology:
-  GPIO 27 ──► physical switch ──► MOSFET gate ──► GPIO 25
+  GPIO 26 ──► physical switch ──► MOSFET gate ──► GPIO 25
 
-  When software sets GPIO 27 HIGH and the physical switch is ON,
+  When software sets GPIO 26 HIGH and the physical switch is ON,
   GPIO 25 reads HIGH and PoE power flows to the downstream device.
 
-  If GPIO 27 is HIGH but GPIO 25 reads LOW, the physical switch is OFF
+  If GPIO 26 is HIGH but GPIO 25 reads LOW, the physical switch is OFF
   and the user should be warned (all LEDs flash via poe_ok_event).
 
 Runs in its own process; call run_poe() from main.py.
@@ -22,7 +22,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-PIN_POE_ENABLE = 27   # OUTPUT – drive HIGH to request PoE
+PIN_POE_ENABLE = 26   # OUTPUT – drive HIGH to request PoE
 PIN_POE_READ   = 25   # INPUT  – reads HIGH when switch is ON and power flows
 
 POLL_INTERVAL  = 1.0  # seconds between switch checks
@@ -48,10 +48,10 @@ def run_poe(poe_ok_event):
         import RPi.GPIO as GPIO
         GPIO.setmode(GPIO.BCM)
         GPIO.setwarnings(False)
-        GPIO.setup(PIN_POE_ENABLE, GPIO.OUT, initial=GPIO.HIGH)
-        GPIO.setup(PIN_POE_READ, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+        GPIO.setup(PIN_POE_ENABLE, GPIO.OUT, initial=GPIO.LOW)
+        GPIO.setup(PIN_POE_READ, GPIO.IN, pull_up_down=GPIO.PUD_UP)
         gpio = GPIO
-        logger.info("PoE enabled (GPIO %d HIGH), monitoring switch on GPIO %d",
+        logger.info("PoE enabled (GPIO %d LOW), monitoring switch on GPIO %d",
                      PIN_POE_ENABLE, PIN_POE_READ)
     except ImportError:
         logger.warning("RPi.GPIO not available – PoE monitor running in stub mode")
@@ -70,7 +70,7 @@ def run_poe(poe_ok_event):
 
     try:
         while True:
-            switch_on = gpio.input(PIN_POE_READ) == gpio.HIGH
+            switch_on = gpio.input(PIN_POE_READ) == gpio.LOW
             if switch_on:
                 if not poe_ok_event.is_set():
                     poe_ok_event.set()
@@ -78,12 +78,12 @@ def run_poe(poe_ok_event):
             else:
                 if poe_ok_event.is_set():
                     poe_ok_event.clear()
-                    logger.warning("PoE switch OFF – enable is HIGH but read is LOW")
+                    logger.warning("PoE switch OFF – enable is LOW but read is HIGH")
             time.sleep(POLL_INTERVAL)
     except KeyboardInterrupt:
         pass
     finally:
-        # Leave PoE enable HIGH on shutdown (hardware default is safer with power on)
+        # Leave PoE enable LOW on shutdown (hardware default is safer with power on)
         if gpio is not None:
             try:
                 gpio.cleanup([PIN_POE_READ])  # only clean up input; leave enable HIGH
