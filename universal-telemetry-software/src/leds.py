@@ -2,11 +2,11 @@
 LED controller for the PoE injection board.
 
 Pin assignments (BCM numbering):
-  CAN activity   Blue    GPIO 26
-  CAN telemetry  Yellow  GPIO 6   – DATA LAN jack (PCB label)
-  WebSocket      Green   GPIO 10  – DATA LAN jack (PCB label)
-  Audio          Yellow  GPIO 7   – RADIO LAN jack (PCB label)
-  Video          Green   GPIO 9   – RADIO LAN jack (PCB label)
+  CAN activity   Blue    GPIO 27
+  CAN telemetry  Yellow  GPIO 5   – DATA LAN jack (PCB label)
+  WebSocket      Green   GPIO 6  – DATA LAN jack (PCB label)
+  Audio          Yellow  GPIO 19   – RADIO LAN jack (PCB label)
+  Video          Green   GPIO 13   – RADIO LAN jack (PCB label)
 
 CAN LED behaviour (blue):
   Off            Not in car mode (base station)
@@ -30,12 +30,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ── GPIO pin numbers (BCM) ────────────────────────────────────────────────────
-PIN_CAN_BLUE    = 26
+PIN_CAN_BLUE    = 27
 
-PIN_TELEMETRY   = 6    # Yellow – DATA LAN jack – CAN telemetry process
-PIN_WEBSOCKET   = 10   # Green  – DATA LAN jack – WebSocket bridge
-PIN_AUDIO       = 7    # Yellow – RADIO LAN jack – audio streaming
-PIN_VIDEO       = 9    # Green  – RADIO LAN jack – video streaming
+PIN_TELEMETRY   = 5    # Yellow – DATA LAN jack – CAN telemetry process
+PIN_WEBSOCKET   = 6   # Green  – DATA LAN jack – WebSocket bridge
+PIN_AUDIO       = 19    # Yellow – RADIO LAN jack – audio streaming
+PIN_VIDEO       = 13    # Green  – RADIO LAN jack – video streaming
 
 ALL_PINS = (PIN_CAN_BLUE, PIN_TELEMETRY, PIN_WEBSOCKET, PIN_AUDIO, PIN_VIDEO)
 
