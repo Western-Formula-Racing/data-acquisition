@@ -15,7 +15,8 @@ import {
     Tooltip,
     Legend,
 } from 'recharts';
-import { dataStore } from '../../lib/DataStore';
+import { readHistory } from '../../lib/cursorRead';
+import { useTimelineCursor } from '../../context/TimelineContext';
 import {
     MODULE_IDS,
     CELLS_PER_MODULE,
@@ -38,6 +39,7 @@ interface ChartDataPoint {
 export default function ChargingCurve({
     timeWindowMs = 300000
 }: ChargingCurveProps) {
+    const { mode, selectedTimeMs } = useTimelineCursor();
     const [data, setData] = useState<ChartDataPoint[]>([]);
 
     const chartColors = useMemo(() => {
@@ -52,13 +54,14 @@ export default function ChargingCurve({
     // Update chart data every second
     useEffect(() => {
         const updateData = () => {
-            const now = Date.now();
+            // When paused/scrubbing, anchor "now" and the history window at the cursor.
+            const now = mode === "paused" ? selectedTimeMs : Date.now();
             const bucketMs = 2000; // 2 second buckets for smoother data
             const voltageBuckets = new Map<number, number[]>();
             const tempBuckets = new Map<number, number[]>();
 
             // Cache histories per msgId to avoid redundant getHistory calls
-            const historyCache = new Map<string, ReturnType<typeof dataStore.getHistory>>();
+            const historyCache = new Map<string, ReturnType<typeof readHistory>>();
 
             // Collect data from all modules
             for (const moduleId of MODULE_IDS) {
@@ -67,7 +70,7 @@ export default function ChargingCurve({
                     
                     // Get history from cache or fetch and cache it
                     if (!historyCache.has(msgId)) {
-                        historyCache.set(msgId, dataStore.getHistory(msgId, timeWindowMs));
+                        historyCache.set(msgId, readHistory(msgId, timeWindowMs, mode, selectedTimeMs));
                     }
                     const history = historyCache.get(msgId)!;
 
@@ -86,7 +89,7 @@ export default function ChargingCurve({
                     
                     // Get history from cache or fetch and cache it
                     if (!historyCache.has(msgId)) {
-                        historyCache.set(msgId, dataStore.getHistory(msgId, timeWindowMs));
+                        historyCache.set(msgId, readHistory(msgId, timeWindowMs, mode, selectedTimeMs));
                     }
                     const history = historyCache.get(msgId)!;
 
@@ -130,7 +133,7 @@ export default function ChargingCurve({
         updateData();
 
         return () => clearInterval(interval);
-    }, [timeWindowMs]);
+    }, [timeWindowMs, mode, selectedTimeMs]);
 
     // Calculate axis ranges
     const { voltageRange, tempRange } = useMemo(() => {

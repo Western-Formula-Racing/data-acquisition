@@ -8,7 +8,12 @@ from typing import Dict, List, Optional
 import psycopg2
 
 from backend.config import Settings, SeasonConfig
-from backend.storage import RunsRepository, SensorsRepository, ScannerStatusRepository
+from backend.storage import (
+    RunsRepository,
+    SensorsRepository,
+    ScannerStatusRepository,
+    AnalysisConfigsRepository,
+)
 from backend.db_queries import fetch_signal_series
 from backend.server_scanner import ScannerConfig, scan_runs
 from backend.sql import SensorQueryConfig, fetch_unique_sensors, discover_season_tables
@@ -50,6 +55,7 @@ class DataDownloaderService:
             self._refresh_seasons_from_db()
 
         self.status_repo = ScannerStatusRepository(self._data_dir)
+        self.configs_repo = AnalysisConfigsRepository(self._data_dir)
         self._log_db_connectivity()
 
     # ------------------------------------------------------------------
@@ -111,6 +117,18 @@ class DataDownloaderService:
         if not repo:
             return None
         return repo.update_note(key, note)
+
+    def list_analysis_configs(self) -> dict:
+        return self.configs_repo.list_configs()
+
+    def create_analysis_config(self, fields: dict) -> dict:
+        return self.configs_repo.create_config(fields)
+
+    def update_analysis_config(self, config_id: str, name, note):
+        return self.configs_repo.update_config(config_id, name, note)
+
+    def delete_analysis_config(self, config_id: str) -> bool:
+        return self.configs_repo.delete_config(config_id)
 
     def get_scanner_status(self) -> dict:
         return self.status_repo.get_status()

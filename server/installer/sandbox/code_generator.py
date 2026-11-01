@@ -23,7 +23,7 @@ from stats_report import init_metrics, record_metrics, stats_response
 from langchain_anthropic import ChatAnthropic
 from langchain_chroma import Chroma
 from langchain_community.embeddings import FastEmbedEmbeddings
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -406,6 +406,7 @@ def _format_response(state: AgentState) -> dict:
     retry_history = state.get("retry_history", [])
     return {
         "code": state.get("code", ""),
+        "rag_context": state.get("rag_context", ""),
         "result": {
             "status": "success" if result.get("ok") else "error",
             "output": result.get("std_out", "").strip(),
@@ -538,6 +539,199 @@ def generate_code_endpoint():
         logger.exception("Graph execution failed for prompt: %s", user_prompt[:80])
         return jsonify({
             "error": str(e),
+            "result": {"status": "error", "output": "", "error": str(e), "files": []},
+        }), 500
+
+
+@app.route("/api/generate-code-followup", methods=["POST"])
+def generate_code_followup_endpoint():
+    """Continue an AI conversation with prior context.
+
+    Body:
+        prompt: str          — the user's follow-up instruction
+        history: list[dict]  — prior turns, each with:
+            role: "user" | "assistant"
+            prompt: str      — the instruction or description
+            code: str        — generated code (assistant turns)
+            output: str      — execution stdout (assistant turns)
+            error: str       — execution error (assistant turns)
+            rag_context: str — RAG context from that turn (optional)
+    """
+    data = request.get_json() or {}
+    user_prompt = data.get("prompt", "").strip()
+    history = data.get("history", [])
+
+    if not user_prompt:
+        return jsonify({"error": "prompt is required"}), 400
+
+    try:
+        # ── Step 1: RAG retrieval on the new prompt ────────────────────────
+        index_data_dir()
+        rag_parts: list[str] = []
+
+        try:
+            sensor_docs = sensors_store.similarity_search(user_prompt, k=RAG_SENSOR_K)
+            if sensor_docs:
+                names = [d.page_content for d in sensor_docs]
+                rag_parts.append("RELEVANT SENSORS:\n" + "\n".join(f"  - {n}" for n in names))
+        except Exception:
+            logger.warning("Followup: sensor RAG failed", exc_info=True)
+
+        try:
+            run_docs = runs_store.similarity_search(user_prompt, k=RAG_RUN_K)
+            if run_docs:
+                descs = [d.page_content for d in run_docs]
+                rag_parts.append("RELEVANT RUNS:\n" + "\n".join(f"  - {d}" for d in descs))
+        except Exception:
+            logger.warning("Followup: runs RAG failed", exc_info=True)
+
+        try:
+            solution_docs = solutions_store.similarity_search(user_prompt, k=RAG_SOLUTION_K)
+            if solution_docs:
+                summaries = [d.page_content for d in solution_docs]
+                rag_parts.append("SUCCESSFUL EXAMPLES:\n" + "\n".join(f"  - {s}" for s in summaries))
+        except Exception:
+            logger.warning("Followup: solutions RAG failed", exc_info=True)
+
+        new_rag_context = "\n\n".join(rag_parts)
+
+        # ── Step 2: Build multi-turn message list ──────────────────────────
+        guide = _load_guide()
+        system_content = guide
+        # Merge RAG context: combine history's RAG with freshly retrieved
+        all_rag_parts: list[str] = []
+        for turn in history:
+            rc = turn.get("rag_context", "")
+            if rc:
+                all_rag_parts.append(rc)
+        if new_rag_context:
+            all_rag_parts.append(new_rag_context)
+        combined_rag = "\n\n".join(dict.fromkeys(all_rag_parts))  # deduplicate, preserve order
+        if combined_rag:
+            system_content += f"\n\n--- RETRIEVED CONTEXT ---\n{combined_rag}"
+
+        messages = [SystemMessage(content=system_content)]
+
+        for turn in history:
+            role = turn.get("role", "user")
+            if role == "user":
+                messages.append(HumanMessage(content=turn.get("prompt", "")))
+            elif role == "assistant":
+                code = turn.get("code", "")
+                output = turn.get("output", "")
+                error = turn.get("error", "")
+                parts = []
+                if code:
+                    parts.append(f"```python\n{code}\n```")
+                if output:
+                    parts.append(f"Output:\n{output}")
+                if error:
+                    parts.append(f"Error:\n{error}")
+                messages.append(AIMessage(content="\n\n".join(parts) or "(no output)"))
+
+        # The new follow-up instruction
+        messages.append(HumanMessage(content=user_prompt))
+
+        logger.info(
+            "Followup: %d history turns, %d total messages, prompt=%s",
+            len(history), len(messages), user_prompt[:80],
+        )
+
+        # ── Step 3: LLM call ───────────────────────────────────────────────
+        response = llm.invoke(messages)
+        code = _extract_python(response.content)
+
+        # ── Step 4: Execute in sandbox ─────────────────────────────────────
+        retry_history: list[dict] = []
+        retries = 0
+        final_result = {}
+        sandbox_ms = 0.0
+
+        while True:
+            try:
+                t0 = _time.perf_counter()
+                resp = requests.post(SANDBOX_URL, json={"code": code}, timeout=120)
+                sandbox_ms = (_time.perf_counter() - t0) * 1000
+                resp.raise_for_status()
+                final_result = resp.json()
+            except Exception as e:
+                err = str(e)
+                retries += 1
+                retry_history.append({"attempt": retries, "error": err})
+                if retries <= MAX_RETRIES:
+                    # Retry: ask LLM to fix
+                    messages.append(AIMessage(content=f"```python\n{code}\n```"))
+                    messages.append(HumanMessage(
+                        content=f"ATTEMPT {retries} FAILED:\n{err}\n\nFix the error above."
+                    ))
+                    response = llm.invoke(messages)
+                    code = _extract_python(response.content)
+                    continue
+                final_result = {}
+                break
+
+            if not final_result.get("ok"):
+                parts_err: list[str] = []
+                rc = final_result.get("return_code")
+                if rc is not None and rc != 0:
+                    parts_err.append(f"Exit code: {rc}")
+                if final_result.get("std_err"):
+                    parts_err.append(f"STDERR:\n{final_result['std_err'].strip()}")
+                if final_result.get("std_out"):
+                    parts_err.append(f"STDOUT:\n{final_result['std_out'].strip()}")
+                err = "\n".join(parts_err)
+                retries += 1
+                retry_history.append({"attempt": retries, "error": err})
+                if retries <= MAX_RETRIES:
+                    messages.append(AIMessage(content=f"```python\n{code}\n```"))
+                    messages.append(HumanMessage(
+                        content=f"ATTEMPT {retries} FAILED:\n{err}\n\nFix the error above."
+                    ))
+                    response = llm.invoke(messages)
+                    code = _extract_python(response.content)
+                    continue
+                break
+            else:
+                break
+
+        # ── Step 5: Format response ────────────────────────────────────────
+        state: AgentState = {
+            "prompt": user_prompt,
+            "rag_context": new_rag_context,
+            "code": code,
+            "sandbox_result": final_result,
+            "error": retry_history[-1]["error"] if retry_history and not final_result.get("ok") else "",
+            "retries": retries,
+            "retry_history": retry_history,
+            "llm_cache_hit": False,
+            "exec_cache_hit": False,
+        }
+        formatted = _format_response(state)
+
+        # Record metrics
+        ok = formatted["result"]["status"] == "success"
+        creator = data.get("creator", "") or ""
+        prompt_key = "followup:" + hashlib.sha256(user_prompt.encode()).hexdigest()
+        try:
+            record_metrics(
+                prompt_hash=prompt_key,
+                llm_cache_hit=False,
+                exec_cache_hit=False,
+                retry_count=retries,
+                sandbox_ms=sandbox_ms,
+                success=ok,
+                creator=creator,
+            )
+        except Exception:
+            logger.exception("Failed to record followup metrics")
+
+        return jsonify(formatted)
+
+    except Exception as e:
+        logger.exception("Followup generation failed for prompt: %s", user_prompt[:80])
+        return jsonify({
+            "error": str(e),
+            "rag_context": "",
             "result": {"status": "error", "output": "", "error": str(e), "files": []},
         }), 500
 

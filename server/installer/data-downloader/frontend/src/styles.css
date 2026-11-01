@@ -561,3 +561,991 @@ body {
   max-height: none;
   margin-top: 0;
 }
+
+/* ── Workspace tabs ───────────────────────────────────────────────────────── */
+
+.app-shell.is-analysis {
+  max-width: 1400px;
+}
+
+.workspace-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0 0 1.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.workspace-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.45rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.workspace-tab:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.workspace-tab.is-selected {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.workspace-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+/* ── Analysis workspace ───────────────────────────────────────────────────── */
+
+.analysis-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.analysis-toolbar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  box-shadow: var(--shadow-card);
+}
+
+.analysis-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+}
+
+.analysis-toolbar-run {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.analysis-toolbar-start,
+.analysis-toolbar-end {
+  flex: 1 1 180px;
+  min-width: 160px;
+}
+
+.analysis-toolbar-actions {
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.analysis-toolbar-loading {
+  margin: 0;
+}
+
+.analysis-toolbar-error {
+  margin: 0.5rem 0 0;
+}
+
+.analysis-export-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 0.9rem;
+}
+
+.analysis-export-confirm p {
+  margin: 0;
+  flex: 1 1 240px;
+}
+
+.analysis-export-confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr) 320px;
+  gap: 1rem;
+  align-items: start;
+  min-height: 420px;
+}
+
+.analysis-grid.is-config-collapsed {
+  grid-template-columns: 320px minmax(0, 1fr) auto;
+}
+
+.analysis-rail {
+  position: sticky;
+  top: 0.75rem;
+  max-height: calc(100vh - 2rem);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+  padding: 0.85rem;
+}
+
+.analysis-signal-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-height: 0;
+  flex: 1;
+}
+
+.analysis-signal-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.analysis-signal-picker-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.analysis-signal-picker-count {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.analysis-signal-clear {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+}
+
+.analysis-signal-search {
+  width: 100%;
+}
+
+.analysis-signal-groups {
+  margin-top: 0.25rem;
+  max-height: none;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.analysis-signal-chip.is-selected {
+  background: var(--accent-soft-bg);
+  border-color: var(--accent);
+  color: var(--accent-soft-text);
+  font-weight: 600;
+}
+
+.analysis-plots {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.analysis-plot-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.analysis-plot-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+  padding: 0.75rem 0.85rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+}
+
+.analysis-plot-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+
+.analysis-plot-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.analysis-plot-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.analysis-plot-badge,
+.analysis-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--accent-soft-bg);
+  color: var(--accent-soft-text);
+}
+
+.analysis-plot-badge.is-envelope {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.analysis-plot-count,
+.analysis-plot-resolution {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.analysis-plot-body {
+  flex: 1;
+  min-height: 180px;
+}
+
+.analysis-plot-stack-wrap {
+  position: relative;
+}
+
+.analysis-refreshing {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  background: rgba(127, 127, 127, 0.18);
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.analysis-plotly {
+  width: 100%;
+  height: 180px;
+}
+
+.analysis-plot-empty,
+.analysis-empty,
+.analysis-idle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 180px;
+  padding: 1.25rem 1.35rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.analysis-empty p,
+.analysis-idle {
+  margin: 0;
+}
+
+.analysis-empty-hint {
+  color: var(--warn-text);
+  font-size: 0.85rem;
+}
+
+.analysis-error {
+  border: 1px solid var(--error-card-border);
+  background: var(--error-card-bg);
+  color: var(--error-text);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.analysis-error p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.analysis-status-badge {
+  align-self: flex-start;
+}
+
+@media (max-width: 849px) {
+  .analysis-grid,
+  .analysis-grid.is-config-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-rail,
+  .analysis-config-rail {
+    position: static;
+    max-height: 320px;
+  }
+
+  .analysis-toolbar-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .analysis-toolbar-actions {
+    width: 100%;
+  }
+}
+
+.analysis-plot-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.analysis-legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.analysis-legend-swatch {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 2px;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  transition: box-shadow 0.15s ease;
+}
+
+.analysis-legend-swatch:hover {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
+}
+
+.analysis-legend-swatch.has-override {
+  box-shadow: 0 0 0 1.5px var(--text-muted);
+}
+
+.analysis-legend-axis,
+.analysis-legend-remove {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 0 0.15rem;
+  color: var(--text-muted);
+}
+
+.analysis-legend-axis:hover,
+.analysis-legend-remove:hover {
+  color: var(--text);
+}
+
+.analysis-new-plot-zone {
+  border: 2px dashed var(--border-strong);
+  border-radius: 8px;
+  padding: 0.75rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-subtle);
+}
+
+.analysis-plot-card.is-drop-target,
+.analysis-new-plot-zone.is-drop-target,
+.analysis-idle.is-drop-target {
+  border-color: var(--accent, #2563eb);
+  background: var(--surface-2);
+}
+
+/* ── Axis drag-and-drop overlay zones ── */
+.analysis-plot-body {
+  position: relative;
+}
+
+.analysis-axis-zones {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  z-index: 8;
+  pointer-events: auto;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.analysis-axis-zone {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, backdrop-filter 0.15s ease;
+  cursor: copy;
+}
+
+.analysis-axis-zone--left {
+  background: rgba(37, 99, 235, 0.08);
+  border-right: 1px dashed rgba(37, 99, 235, 0.25);
+}
+
+.analysis-axis-zone--right {
+  background: rgba(139, 92, 246, 0.08);
+  border-left: 1px dashed rgba(139, 92, 246, 0.25);
+}
+
+.analysis-axis-zone--left.is-active {
+  background: rgba(37, 99, 235, 0.18);
+  backdrop-filter: blur(2px);
+}
+
+.analysis-axis-zone--right.is-active {
+  background: rgba(139, 92, 246, 0.18);
+  backdrop-filter: blur(2px);
+}
+
+.analysis-axis-zone-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.analysis-axis-zone--left .analysis-axis-zone-label {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+}
+
+.analysis-axis-zone--right .analysis-axis-zone-label {
+  background: rgba(139, 92, 246, 0.12);
+  color: #8b5cf6;
+}
+
+.analysis-axis-zone--left.is-active .analysis-axis-zone-label {
+  background: rgba(37, 99, 235, 0.22);
+}
+
+.analysis-axis-zone--right.is-active .analysis-axis-zone-label {
+  background: rgba(139, 92, 246, 0.22);
+}
+
+[data-theme="dark"] .analysis-axis-zone--left .analysis-axis-zone-label {
+  color: #93c5fd;
+  background: rgba(96, 165, 250, 0.15);
+}
+
+[data-theme="dark"] .analysis-axis-zone--right .analysis-axis-zone-label {
+  color: #c4b5fd;
+  background: rgba(167, 139, 250, 0.15);
+}
+
+[data-theme="dark"] .analysis-axis-zone--left.is-active .analysis-axis-zone-label {
+  background: rgba(96, 165, 250, 0.28);
+}
+
+[data-theme="dark"] .analysis-axis-zone--right.is-active .analysis-axis-zone-label {
+  background: rgba(167, 139, 250, 0.28);
+}
+
+.analysis-plot-card.is-axis-drag {
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+/* ── Legend swatch color picker ── */
+.analysis-legend-chip {
+  position: relative;
+}
+
+.analysis-color-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.55rem;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-card);
+  white-space: nowrap;
+}
+
+.analysis-color-picker-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.analysis-color-input {
+  width: 1.4rem;
+  height: 1.4rem;
+  border: none;
+  border-radius: 4px;
+  padding: 0;
+  cursor: pointer;
+  background: transparent;
+}
+
+.analysis-color-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.analysis-color-input::-webkit-color-swatch {
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+}
+
+.analysis-color-reset {
+  border: none;
+  background: transparent;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.15rem 0.3rem;
+  border-radius: 4px;
+}
+
+.analysis-color-reset:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.analysis-signal-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  min-width: 0;
+}
+
+.analysis-plot-menu {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+}
+
+.analysis-plot-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.analysis-plot-menu-trigger:hover,
+.analysis-plot-menu-trigger[aria-expanded="true"] {
+  border-color: var(--accent, #2563eb);
+  background: var(--surface-2);
+}
+
+.analysis-plot-menu-caret {
+  font-size: 9px;
+  opacity: 0.65;
+}
+
+.analysis-plot-menu-list {
+  z-index: 60;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-card, 0 20px 25px -20px rgba(15, 23, 42, 0.25));
+}
+
+.analysis-plot-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.analysis-plot-menu-item.is-focused {
+  background: var(--accent-soft-bg, #eef2ff);
+  color: var(--accent-soft-text, #1e3a8a);
+}
+
+.analysis-plot-menu-item.is-selected {
+  font-weight: 600;
+}
+
+.analysis-plot-menu-tick {
+  width: 12px;
+  text-align: center;
+  color: var(--accent, #2563eb);
+}
+
+.analysis-timeline {
+  /* Horizontal padding mirrors .analysis-plot-card so the lane gutters can
+     line up with the plots' axis margins. */
+  padding: 8px 0.85rem 10px;
+}
+
+.analysis-timeline-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.analysis-timeline-chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.analysis-timeline-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.analysis-timeline-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.analysis-timeline-lane {
+  display: flex;
+  align-items: center;
+  height: 24px;
+}
+
+.analysis-timeline-label {
+  /* Width comes inline from PLOT_AREA_MARGIN.left; the label sits inside the
+     same gutter the plots reserve for their y-axis. */
+  flex: none;
+  box-sizing: border-box;
+  padding-right: 8px;
+  font-size: 11px;
+  text-align: right;
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-timeline-track {
+  position: relative;
+  flex: 1;
+  height: 14px;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.12);
+  overflow: hidden;
+}
+
+.analysis-timeline-segment {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.analysis-timeline-segment.severity-ok {
+  background: #34a853;
+}
+
+.analysis-timeline-segment.severity-transitional {
+  background: #f9ab00;
+}
+
+.analysis-timeline-segment.severity-fault {
+  background: #ea4335;
+}
+
+.analysis-timeline-segment.severity-unknown {
+  background: #9aa0a6;
+}
+
+.analysis-timeline-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.analysis-timeline-skeleton,
+.analysis-timeline-empty {
+  font-size: 13px;
+  opacity: 0.7;
+  padding: 2px 0;
+}
+
+.analysis-timeline-tooltip {
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  max-width: 280px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-card, 0 20px 25px -20px rgba(15, 23, 42, 0.25));
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  pointer-events: none;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.analysis-timeline-tooltip-hidden {
+  display: none;
+}
+
+.analysis-timeline-tooltip strong {
+  font-weight: 600;
+}
+
+.analysis-config-rail {
+  position: sticky;
+  top: 0.75rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+  padding: 0.85rem;
+}
+
+.analysis-config-rail.is-collapsed {
+  padding: 0;
+  overflow: hidden;
+  align-self: stretch;
+}
+
+.analysis-config-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.analysis-config-title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.analysis-config-collapse {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.analysis-config-collapse:hover {
+  background: var(--surface-hover, rgba(127, 127, 127, 0.12));
+  color: var(--text);
+}
+
+.analysis-config-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  height: 100%;
+  min-height: 8rem;
+  padding: 0.85rem 0.5rem;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  border-radius: 12px 0 0 12px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.analysis-config-tab span {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  white-space: nowrap;
+}
+
+.analysis-config-tab:hover {
+  background: var(--surface-hover, rgba(127, 127, 127, 0.08));
+}
+
+.analysis-config-panel-head,
+.analysis-config-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.analysis-config-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.35rem 0.6rem;
+  background: var(--surface-hover, rgba(127, 127, 127, 0.08));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+}
+
+.analysis-config-filter:focus-within {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.analysis-config-filter input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.analysis-config-filter input::placeholder {
+  color: var(--text-muted);
+}
+
+.analysis-config-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.analysis-config-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.analysis-config-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.analysis-config-name {
+  font-weight: 600;
+}
+
+.analysis-config-season.is-other {
+  background: var(--error-card-bg, #fee2e2);
+  color: var(--error-text, #b91c1c);
+}
+
+.analysis-config-author,
+.analysis-config-note,
+.analysis-config-window {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.analysis-config-plots {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--text-subtle, var(--text-muted));
+  overflow-wrap: anywhere;
+}
+
+.analysis-config-notice {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.analysis-config-row-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.analysis-config-empty,
+.analysis-config-more {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  list-style: none;
+}

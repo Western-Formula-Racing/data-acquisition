@@ -2,7 +2,7 @@ name: Base Station Installer CI
 
 on:
   push:
-    branches: [ main, deploy ]
+    branches: [ main, dev, deploy ]
     paths:
       - 'universal-telemetry-software/deploy/install.sh'
       - 'universal-telemetry-software/deploy/docker-compose.macbook-base.yml'
@@ -12,7 +12,7 @@ on:
       - 'universal-telemetry-software/deploy/wfr-hotspot.service'
       - '.github/workflows/macbook-installer-ci.yml'
   pull_request:
-    branches: [ main, deploy ]
+    branches: [ main, dev, deploy ]
     paths:
       - 'universal-telemetry-software/deploy/install.sh'
       - 'universal-telemetry-software/deploy/docker-compose.macbook-base.yml'

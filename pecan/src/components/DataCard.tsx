@@ -1,9 +1,9 @@
 import Dropdown from "./Dropdown";
-import React, { useState, useMemo, useEffect } from "react";
+import React, { memo, useState, useMemo, useEffect } from "react";
 import { determineCategory, getCategoryColor } from "../config/categories";
 import { useIntersectionObserver } from "../utils/useIntersectionObserver";
 import { dataStore, FREQUENCY_WINDOW_MS } from "../lib/DataStore";
-import { useTimeline } from "../context/TimelineContext";
+import { useTimelineCursor } from "../context/TimelineContext";
 
 interface InputProps {
   msgID: string;
@@ -44,18 +44,18 @@ const DataTextBox = ({
   </div>
 );
 
-function DataCard({ msgID, name, category, data, rawData, compact, onSignalClick, onTraceClick }: Readonly<InputProps>) {
-  const { mode, selectedTimeMs } = useTimeline();
+function DataCardComponent({ msgID, name, category, data, rawData, compact, onSignalClick, onTraceClick }: Readonly<InputProps>) {
+  const { mode, selectedTimeMs } = useTimelineCursor();
 
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [ref, isIntersecting] = useIntersectionObserver('200px');
 
   useEffect(() => {
-    if (!isIntersecting) return;
+    if (!isIntersecting || mode !== "live") return;
 
-    const interval = setInterval(() => setCurrentTime(Date.now()), 100);
+    const interval = setInterval(() => setCurrentTime(Date.now()), 500);
     return () => clearInterval(interval);
-  }, [isIntersecting]);
+  }, [isIntersecting, mode]);
 
   const hz = useMemo(() => {
     if (mode === "paused") {
@@ -243,5 +243,19 @@ function DataCard({ msgID, name, category, data, rawData, compact, onSignalClick
     </div>
   );
 }
+
+const DataCard = memo(DataCardComponent, (prev, next) => {
+  return (
+    prev.msgID === next.msgID &&
+    prev.lastUpdated === next.lastUpdated &&
+    prev.rawData === next.rawData &&
+    prev.name === next.name &&
+    prev.category === next.category &&
+    prev.compact === next.compact &&
+    prev.onSignalClick === next.onSignalClick &&
+    prev.onTraceClick === next.onTraceClick &&
+    (prev.lastUpdated !== undefined || prev.data === next.data)
+  );
+});
 
 export default DataCard;

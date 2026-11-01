@@ -286,3 +286,4 @@ server/docs/superpowers/
 wfr-data
 /.superpowers
 .worktrees/
+/pecan/.superpowers

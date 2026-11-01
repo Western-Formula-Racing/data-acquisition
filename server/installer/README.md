@@ -79,6 +79,22 @@ All secrets and tokens are defined in `.env`. The defaults provided in `.env.exa
 | `lap-detector` | `8050` | Dash-based lap analysis web application, tabled until GPS hardware is available. |
 | `startup-data-loader` | n/a | Seeds TimescaleDB with sample CAN frames on first boot. |
 
+## Deployment & updates
+
+Most services are deployed **manually**, one at a time: rebuild and recreate only the service you
+changed (`docker compose build <svc> && docker compose up -d <svc>`). A merge to `main` does **not**
+redeploy them — the running containers keep their old code until a human redeploys.
+
+The one exception is the **data-downloader** (`data-downloader-api/-frontend/-scanner`), which
+**auto-deploys**. A systemd timer on the production VPS (`dd-rebuild-cron`) polls `origin/main` every
+5 minutes and, on a fast-forward, rebuilds just those three services with `--no-deps` (so it never
+touches `timescaledb`), health-gated with automatic rollback. It does `git reset --hard origin/main`,
+so it also refreshes the on-disk source for the whole checkout — but it only rebuilds/restarts the
+data-downloader containers; every other service still needs a manual redeploy to pick up new code.
+
+See `data-downloader/README.md` → **Production deployment (VPS auto-deploy)** for install/operate
+commands, and the `deploy-service-changes` skill for the manual flow.
+
 ## Data and DBC files
 
 - `startup-data-loader/data/` ships with `2025-01-01-00-00-00.csv`, a csv file to exercise the import pipeline without exposing production telemetry.

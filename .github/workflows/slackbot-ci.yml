@@ -4,10 +4,12 @@ on:
   push:
     paths:
       - 'server/installer/slackbot/**'
+      - 'server/installer/sandbox/**'
       - '.github/workflows/slackbot-ci.yml'
   pull_request:
     paths:
       - 'server/installer/slackbot/**'
+      - 'server/installer/sandbox/**'
       - '.github/workflows/slackbot-ci.yml'
   workflow_dispatch:
 
@@ -31,7 +33,7 @@ jobs:
         run: pip install -r requirements.txt ruff
 
       - name: Lint
-        run: ruff check slack_bot.py
+        run: ruff check --select E4,E7,E9,F slack_bot.py
 
       - name: Import smoke-test (catches missing def, bad module-level code)
         env:
@@ -56,6 +58,14 @@ jobs:
               socket_mode_request_listeners = []
           sm_mod.SocketModeClient = _FakeSMC  # type: ignore[attr-defined]
 
+          # slack_bot.py also imports SocketModeRequest / SocketModeResponse at
+          # module level (the former is a process_events annotation), so the
+          # stub submodules must expose them too.
+          req_mod = sys.modules["slack_sdk.socket_mode.request"]
+          req_mod.SocketModeRequest = type("SocketModeRequest", (), {})  # type: ignore[attr-defined]
+          resp_mod = sys.modules["slack_sdk.socket_mode.response"]
+          resp_mod.SocketModeResponse = type("SocketModeResponse", (), {})  # type: ignore[attr-defined]
+
           import requests as _req
           _orig_get = _req.get
           def _no_net(*a, **kw): raise RuntimeError("network disabled in CI")
@@ -72,6 +82,12 @@ jobs:
               sys.exit(1)
           print("OK: all command handlers are defined and callable")
           EOF
+
+      - name: Run sandbox follow-up and session unit tests
+        working-directory: ${{ github.workspace }}/server/installer/sandbox
+        run: |
+          pip install pytest flask requests
+          python -m pytest test_followup.py -v
 
   docker-build:
     runs-on: ubuntu-latest

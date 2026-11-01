@@ -1,6 +1,8 @@
 # Flight Recorder Relay Worker
 
-Cloudflare Worker + Durable Object relay for optional live viewing from the phone-based Flight Recorder workflow.
+**Deprecated with Flight Recorder.** That recorder was a temporary experiment and was never used. Do not deploy this worker.
+
+Historical description: Cloudflare Worker + Durable Object relay for optional live viewing from the phone-based Flight Recorder workflow.
 
 This is not a separate VPS backend. It is a Wrangler-deployed Cloudflare Worker that creates per-session relay URLs and accepts:
 

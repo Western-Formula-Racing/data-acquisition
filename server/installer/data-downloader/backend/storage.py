@@ -6,6 +6,7 @@ from tempfile import NamedTemporaryFile
 from threading import Lock
 from typing import Dict, List, Optional
 from datetime import datetime, timezone
+from uuid import uuid4
 
 
 def now_iso() -> str:
@@ -221,3 +222,67 @@ class ScannerStatusRepository:
         payload["updated_at"] = now
         self.store.write(payload)
         return payload
+
+
+class AnalysisConfigsRepository:
+    """Shared, named Analysis workspace configs (plot layout + window + season)."""
+
+    def __init__(self, data_dir: Path):
+        default = {"updated_at": None, "configs": []}
+        self.store = JSONStore(data_dir / "analysis_configs.json", default)
+
+    def list_configs(self) -> dict:
+        return self.store.read()
+
+    def create_config(self, fields: dict) -> dict:
+        payload = self.store.read()
+        now = now_iso()
+        config = {
+            "id": uuid4().hex,
+            "name": fields["name"],
+            "note": fields.get("note", ""),
+            "author": fields.get("author", ""),
+            "season": fields["season"],
+            "start": fields["start"],
+            "end": fields["end"],
+            "plots": fields["plots"],
+            "created_at": now,
+            "updated_at": now,
+        }
+        if fields.get("colors"):
+            config["colors"] = fields["colors"]
+        # Newest first so the UI list needs no re-sort.
+        payload.setdefault("configs", []).insert(0, config)
+        payload["updated_at"] = now
+        self.store.write(payload)
+        return config
+
+    def update_config(
+        self, config_id: str, name: Optional[str], note: Optional[str]
+    ) -> Optional[dict]:
+        payload = self.store.read()
+        updated: Optional[dict] = None
+        for config in payload.get("configs", []):
+            if config["id"] == config_id:
+                if name is not None:
+                    config["name"] = name
+                if note is not None:
+                    config["note"] = note
+                config["updated_at"] = now_iso()
+                updated = config
+                break
+        if updated is not None:
+            payload["updated_at"] = now_iso()
+            self.store.write(payload)
+        return updated
+
+    def delete_config(self, config_id: str) -> bool:
+        payload = self.store.read()
+        configs = payload.get("configs", [])
+        remaining = [c for c in configs if c["id"] != config_id]
+        if len(remaining) == len(configs):
+            return False
+        payload["configs"] = remaining
+        payload["updated_at"] = now_iso()
+        self.store.write(payload)
+        return True

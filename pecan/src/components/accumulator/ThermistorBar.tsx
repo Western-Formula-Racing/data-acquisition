@@ -8,6 +8,8 @@
 
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { dataStore } from '../../lib/DataStore';
+import { readLatest } from '../../lib/cursorRead';
+import { useTimelineCursor } from '../../context/TimelineContext';
 import { useAccumulatorContext } from './AccumulatorContext';
 import {
     type ModuleId,
@@ -65,10 +67,24 @@ function useThermistorStats(moduleId: ModuleId): {
     readings: Map<number, number | null>;
     aggregate: AggregateStats;
 } {
+    const { mode, selectedTimeMs } = useTimelineCursor();
     const [readings, setReadings] = useState<Map<number, number | null>>(new Map());
     const statsAccumulator = useRef<Map<number, number[]>>(new Map());
 
     useEffect(() => {
+        // Paused/scrubbing: read each thermistor at the cursor time.
+        if (mode === "paused") {
+            const cursorReadings = new Map<number, number | null>();
+            for (let i = 1; i <= THERMISTORS_PER_MODULE; i++) {
+                const { msgId, signalName } = getThermistorSignalInfo(moduleId, i);
+                const latest = readLatest(msgId, mode, selectedTimeMs);
+                cursorReadings.set(i, latest?.data[signalName]?.sensorReading ?? null);
+            }
+            statsAccumulator.current.clear();
+            setReadings(cursorReadings);
+            return;
+        }
+
         // Update stats every 1 second
         const interval = setInterval(() => {
             const newReadings = new Map<number, number | null>();
@@ -113,7 +129,7 @@ function useThermistorStats(moduleId: ModuleId): {
             clearInterval(interval);
             unsubscribe();
         };
-    }, [moduleId]);
+    }, [moduleId, mode, selectedTimeMs]);
 
     const aggregate = useMemo(() => {
         const validReadings = Array.from(readings.values()).filter((r): r is number => r !== null);

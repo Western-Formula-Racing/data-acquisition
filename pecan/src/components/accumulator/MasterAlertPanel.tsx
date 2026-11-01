@@ -6,7 +6,8 @@
  */
 
 import { useState, useEffect } from 'react';
-import { dataStore } from '../../lib/DataStore';
+import { readLatest } from '../../lib/cursorRead';
+import { useTimelineCursor } from '../../context/TimelineContext';
 import { useAccumulatorContext } from './AccumulatorContext';
 import {
     MODULE_IDS,
@@ -75,6 +76,7 @@ function AlertIndicator({ label, state, onClick }: AlertIndicatorProps) {
 
 // Hook to collect all readings and compute alert states at 1Hz
 function useAlertStates() {
+    const { mode, selectedTimeMs } = useTimelineCursor();
     const [alertData, setAlertData] = useState<{
         voltageDiff: AlertState;
         overTemp: AlertState;
@@ -113,7 +115,7 @@ function useAlertStates() {
                 const moduleVoltages: number[] = [];
                 for (let i = 1; i <= CELLS_PER_MODULE; i++) {
                     const { msgId, signalName } = getCellSignalInfo(moduleId, i);
-                    const latest = dataStore.getLatest(msgId);
+                    const latest = readLatest(msgId, mode, selectedTimeMs);
                     const value = latest?.data[signalName]?.sensorReading ?? null;
                     allVoltages.push({ sensor: signalName, value, moduleId });
                     if (value !== null) moduleVoltages.push(value);
@@ -131,7 +133,7 @@ function useAlertStates() {
             for (const moduleId of MODULE_IDS) {
                 for (let i = 1; i <= THERMISTORS_PER_MODULE; i++) {
                     const { msgId, signalName } = getThermistorSignalInfo(moduleId, i);
-                    const latest = dataStore.getLatest(msgId);
+                    const latest = readLatest(msgId, mode, selectedTimeMs);
                     allTemps.push({ sensor: signalName, value: latest?.data[signalName]?.sensorReading ?? null, moduleId });
                 }
             }
@@ -308,7 +310,7 @@ function useAlertStates() {
         const interval = setInterval(computeAlerts, 1000);
 
         return () => clearInterval(interval);
-    }, []);
+    }, [mode, selectedTimeMs]);
 
     return alertData;
 }

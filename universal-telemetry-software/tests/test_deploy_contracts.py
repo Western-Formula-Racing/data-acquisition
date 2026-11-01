@@ -16,7 +16,7 @@ def test_car_runs_as_systemd_service_contract():
     docs = _read("deploy/CAR_DEPLOY.md")
 
     assert "Environment=ROLE=car" in service
-    assert "ExecStart=/home/pi/.local/bin/uv run python main.py" in service
+    assert "ExecStart=/home/car/.local/bin/uv run python main.py" in service
     assert "natively via systemd" in docs
     assert "no Docker" in docs
 

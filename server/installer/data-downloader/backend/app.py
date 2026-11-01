@@ -11,11 +11,18 @@ import psycopg2.extras
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from backend import series_queries, state_queries
 from backend.config import get_settings
-from backend.dbc_utils import group_sensors_by_message, load_dbc_db, refresh_dbc
+from backend.dbc_utils import (
+    group_sensors_by_message,
+    load_dbc_db,
+    refresh_dbc,
+    signal_choices,
+)
 from backend.services import DataDownloaderService
 
 
@@ -43,6 +50,41 @@ class CanFramesBatchPayload(BaseModel):
     frames: List[CanFramePayload] = []
 
 
+class SeriesPayload(BaseModel):
+    season: str
+    signals: List[str]
+    start: datetime
+    end: datetime
+    target_points: int = series_queries.DEFAULT_TARGET_POINTS
+
+
+class StatesPayload(BaseModel):
+    season: str
+    start: datetime
+    end: datetime
+
+
+class PlotGroupModel(BaseModel):
+    signals: List[str]
+    rightAxis: List[str] = []
+
+
+class AnalysisConfigCreate(BaseModel):
+    name: str
+    note: str = ""
+    author: str = ""
+    season: str
+    start: datetime
+    end: datetime
+    plots: List[PlotGroupModel]
+    colors: Dict[str, str] | None = None
+
+
+class AnalysisConfigPatch(BaseModel):
+    name: str | None = None
+    note: str | None = None
+
+
 settings = get_settings()
 service = DataDownloaderService(settings)
 logger = logging.getLogger(__name__)
@@ -55,6 +97,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @app.get("/api/health")
@@ -193,7 +236,142 @@ def query_signal(payload: DataQueryPayload, season: str | None = None) -> dict:
         raise HTTPException(status_code=503, detail=f"Database query failed: {exc}")
 
 
-# ── CAN frames batch ingest (for flight-recorder sync) ─────────────────────────
+@app.post("/api/series")
+def query_series(payload: SeriesPayload) -> dict:
+    try:
+        series_queries.validate_request(
+            payload.signals, payload.start, payload.end, payload.target_points
+        )
+        # Metadata seasons use uppercase names; request season is the lowercase table.
+        season_by_table = {item["table"]: item for item in service.get_seasons()}
+        season_meta = season_by_table.get(payload.season)
+        if season_meta is None:
+            raise ValueError(f"unknown season table: {payload.season}")
+        known_signals = set(
+            service.get_sensors(season=season_meta["name"]).get("sensors", [])
+        )
+        unknown = sorted(set(payload.signals) - known_signals)
+        if unknown:
+            raise ValueError(f"unknown signal(s): {', '.join(unknown)}")
+        result = series_queries.execute_series_query(
+            postgres_dsn=settings.postgres_dsn,
+            table=payload.season,
+            signals=payload.signals,
+            start=payload.start,
+            end=payload.end,
+            target_points=payload.target_points,
+        )
+        return {
+            "season": payload.season,
+            "start": series_queries.normalize_utc(payload.start).isoformat(),
+            "end": series_queries.normalize_utc(payload.end).isoformat(),
+            "series": result,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Series query failed for %s", payload.signals)
+        raise HTTPException(status_code=503, detail=f"Database query failed: {exc}")
+
+
+@app.post("/api/states")
+def query_states(payload: StatesPayload) -> dict:
+    try:
+        state_queries.validate_states_request(payload.start, payload.end)
+        if payload.season not in {item["table"] for item in service.get_seasons()}:
+            raise ValueError(f"unknown season table: {payload.season}")
+        db, _source = load_dbc_db(settings)
+        choices = {
+            lane["signal"]: signal_choices(db, lane["signal"])
+            for lane in state_queries.STATE_LANES
+        }
+        result = state_queries.execute_states_query(
+            postgres_dsn=settings.postgres_dsn,
+            table=payload.season,
+            start=payload.start,
+            end=payload.end,
+            choices_by_signal=choices,
+        )
+        return {
+            "season": payload.season,
+            "start": series_queries.normalize_utc(payload.start).isoformat(),
+            "end": series_queries.normalize_utc(payload.end).isoformat(),
+            **result,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("States query failed for %s", payload.season)
+        raise HTTPException(status_code=503, detail=f"Database query failed: {exc}")
+
+
+def _known_season_tables() -> Set[str]:
+    return {item["table"] for item in service.get_seasons()}
+
+
+@app.get("/api/analysis-configs")
+def list_analysis_configs() -> dict:
+    payload = service.list_analysis_configs()
+    return {"configs": payload.get("configs", [])}
+
+
+@app.post("/api/analysis-configs", status_code=201)
+def create_analysis_config(payload: AnalysisConfigCreate) -> dict:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name must not be empty")
+    if payload.season not in _known_season_tables():
+        raise HTTPException(status_code=400, detail=f"unknown season table: {payload.season}")
+    if not (payload.start < payload.end):
+        raise HTTPException(status_code=400, detail="start must be before end")
+    if not payload.plots:
+        raise HTTPException(status_code=400, detail="at least one plot is required")
+    normalized_plots = []
+    for group in payload.plots:
+        if not group.signals:
+            raise HTTPException(status_code=400, detail="each plot needs at least one signal")
+        if not set(group.rightAxis).issubset(set(group.signals)):
+            raise HTTPException(status_code=400, detail="rightAxis must be a subset of signals")
+        normalized_plots.append({"signals": group.signals, "rightAxis": group.rightAxis})
+    fields = {
+        "name": name,
+        "note": payload.note.strip(),
+        "author": payload.author.strip(),
+        "season": payload.season,
+        "start": series_queries.normalize_utc(payload.start).isoformat(),
+        "end": series_queries.normalize_utc(payload.end).isoformat(),
+        "plots": normalized_plots,
+    }
+    if payload.colors:
+        fields["colors"] = payload.colors
+    config = service.create_analysis_config(fields)
+    return config
+
+
+@app.patch("/api/analysis-configs/{config_id}")
+def patch_analysis_config(config_id: str, payload: AnalysisConfigPatch) -> dict:
+    name = None
+    if payload.name is not None:
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="name must not be empty")
+    note = payload.note.strip() if payload.note is not None else None
+    config = service.update_analysis_config(config_id, name, note)
+    if config is None:
+        raise HTTPException(status_code=404, detail=f"config {config_id} not found")
+    return config
+
+
+@app.delete("/api/analysis-configs/{config_id}", status_code=204, response_model=None)
+def delete_analysis_config(config_id: str) -> None:
+    if not service.delete_analysis_config(config_id):
+        raise HTTPException(status_code=404, detail=f"config {config_id} not found")
+    return None
+
+
+# ── CAN frames batch ingest ────────────────────────────────────────────────────
+# Added for Flight Recorder, a temporary experiment that was never used.
+# The route remains so old clients do not 404. Do not build on it.
 
 # Cache of known signal columns per table, thread-safe
 _table_known_signals: Dict[str, Set[str]] = {}
@@ -217,7 +395,9 @@ def _ensure_signal_columns(cur, table: str, signal_names: Set[str]) -> None:
 @app.post("/api/can-frames/batch")
 def ingest_can_frames(payload: CanFramesBatchPayload) -> dict:
     """
-    Batch ingest CAN frames from flight-recorder.
+    Batch ingest CAN frames.
+
+    Deprecated with Flight Recorder, which was never used.
 
     Writes to TimescaleDB using the same pattern as timescale_bridge:
     - Wide format: one row per CAN message, all signals as columns

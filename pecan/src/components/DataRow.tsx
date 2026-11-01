@@ -1,8 +1,8 @@
-import { useState, useMemo, useEffect } from "react";
+import { memo, useState, useMemo, useEffect } from "react";
 import { determineCategory, getCategoryColor } from "../config/categories";
 import { useIntersectionObserver } from "../utils/useIntersectionObserver";
 import { dataStore, FREQUENCY_WINDOW_MS } from "../lib/DataStore";
-import { useTimeline } from "../context/TimelineContext";
+import { useTimelineCursor } from "../context/TimelineContext";
 
 const CAN_STD_MAX = 0x7FF;
 
@@ -39,18 +39,18 @@ interface DataRowProps {
     onTraceClick?: (msgID: string) => void;
 }
 
-export default function DataRow({ msgID, name, category, data, rawData, index, initialOpen = false, isTourRow = false, isHighlighted = false, tourSignal, onSignalClick, onTraceClick }: Readonly<DataRowProps>) {
-    const { mode, selectedTimeMs } = useTimeline();
+function DataRowComponent({ msgID, name, category, data, rawData, index, initialOpen = false, isTourRow = false, isHighlighted = false, tourSignal, onSignalClick, onTraceClick }: Readonly<DataRowProps>) {
+    const { mode, selectedTimeMs } = useTimelineCursor();
 
     const [currentTime, setCurrentTime] = useState(Date.now());
     const [ref, isIntersecting] = useIntersectionObserver('200px'); // Pre-load slightly offscreen
 
     useEffect(() => {
-        if (!isIntersecting) return;
+        if (!isIntersecting || mode !== "live") return;
 
-        const interval = setInterval(() => setCurrentTime(Date.now()), 100);
+        const interval = setInterval(() => setCurrentTime(Date.now()), 500);
         return () => clearInterval(interval);
-    }, [isIntersecting]);
+    }, [isIntersecting, mode]);
 
     const hz = useMemo(() => {
         if (mode === "paused") {
@@ -217,3 +217,22 @@ export default function DataRow({ msgID, name, category, data, rawData, index, i
         </div>
     );
 }
+
+const DataRow = memo(DataRowComponent, (prev, next) => {
+    return (
+        prev.msgID === next.msgID &&
+        prev.lastUpdated === next.lastUpdated &&
+        prev.rawData === next.rawData &&
+        prev.name === next.name &&
+        prev.category === next.category &&
+        prev.index === next.index &&
+        prev.initialOpen === next.initialOpen &&
+        prev.isTourRow === next.isTourRow &&
+        prev.isHighlighted === next.isHighlighted &&
+        prev.tourSignal === next.tourSignal &&
+        prev.onSignalClick === next.onSignalClick &&
+        prev.onTraceClick === next.onTraceClick
+    );
+});
+
+export default DataRow;

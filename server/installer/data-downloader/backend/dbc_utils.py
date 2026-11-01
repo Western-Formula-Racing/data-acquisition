@@ -260,3 +260,14 @@ def group_sensors_by_message(sensor_names: list[str], db) -> dict:
         m["signals"].sort()
 
     return {"messages": messages, "ungrouped": sorted(ungrouped)}
+
+
+def signal_choices(db, signal_name: str) -> Optional[dict]:
+    """Return the DBC VAL_ label map for a signal as {int: str}, or None."""
+    if db is None:
+        return None
+    for message in db.messages:
+        for signal in message.signals:
+            if signal.name == signal_name and signal.choices:
+                return {int(k): str(v) for k, v in signal.choices.items()}
+    return None

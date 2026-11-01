@@ -1,9 +1,13 @@
 {
   "extends": "./tsconfig.node.json",
   "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "types": ["vite/client"],
-    "strict": true
+    "types": ["vite/client", "vitest/globals"],
+    "strict": true,
+    "noEmit": true,
+    "tsBuildInfoFile": "node_modules/.cache/tsconfig.tsbuildinfo"
   },
   "include": ["src"]
 }

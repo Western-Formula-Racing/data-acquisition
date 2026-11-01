@@ -84,8 +84,8 @@ const RETENTION_STORAGE_KEY = "pecan:retention-window-ms";
 const DATASTORE_SNAPSHOT_KEY = "pecan:datastore:snapshot:v2";
 const DATASTORE_SNAPSHOT_VERSION = 2;
 const DATASTORE_SNAPSHOT_TTL_MS = 30 * 60 * 1000; // 30 minutes
-const DATASTORE_SNAPSHOT_SAVE_DEBOUNCE_MS = 1000;
-const DATASTORE_SNAPSHOT_TARGET_TRACE_SAMPLES = 500000;
+const DATASTORE_SNAPSHOT_SAVE_DEBOUNCE_MS = 5000;
+const DATASTORE_SNAPSHOT_TARGET_TRACE_SAMPLES = 5000;
 const DATASTORE_SNAPSHOT_MIN_TRACE_SAMPLES = 1000;
 const LOCALSTORAGE_ASSUMED_BUDGET_BYTES = 5 * 1024 * 1024; // 5 MB typical per-origin budget
 const LOCALSTORAGE_SAFETY_RESERVE_BYTES = 128 * 1024; // Leave headroom for app settings writes
@@ -652,6 +652,7 @@ class DataStore {
     }
 
     let newestTimestampBySource: Partial<Record<TelemetrySource, number>> = {};
+    const updatedMsgIds = new Set<string>();
 
     // Wall-clock receipt time for this batch, captured before timestamp rewriting.
     const receivedAt = Date.now();
@@ -707,6 +708,7 @@ class DataStore {
       this.pruneOldSamples(sample.msgID, source);
 
       buffers.trace.push(sample);
+      updatedMsgIds.add(sample.msgID);
     }
 
     for (const source of Object.keys(newestTimestampBySource) as TelemetrySource[]) {
@@ -718,7 +720,13 @@ class DataStore {
     this.scheduleSnapshotSave();
     this.notifyTrace();
     this._version++;
-    this.notifyAll();
+    if (updatedMsgIds.size <= 16 && messages.length <= 64) {
+      for (const id of updatedMsgIds) {
+        this.notifyAll(id);
+      }
+    } else {
+      this.notifyAll();
+    }
   }
 
   /**

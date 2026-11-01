@@ -1,11 +1,17 @@
 import {
+  CreateConfigPayload,
   RunRecord,
   RunsResponse,
+  SavedConfig,
   ScannerStatus,
   Season,
   SensorDataResponse,
   SensorsGroupedResponse,
-  SensorsResponse
+  SensorsResponse,
+  SeriesRequest,
+  SeriesResponse,
+  StatesRequest,
+  StatesResponse
 } from "./types";
 
 const RAW_API_BASE = import.meta.env.VITE_API_BASE_URL?.trim() ?? "";
@@ -26,8 +32,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init
   });
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || `Request failed (${response.status})`);
+    const body = await response.text();
+    let message = body || `Request failed (${response.status})`;
+    try {
+      const parsed = JSON.parse(body) as { detail?: string };
+      if (parsed.detail) message = parsed.detail;
+    } catch {
+      // Preserve non-JSON server errors.
+    }
+    throw new Error(message);
   }
   if (response.status === 204) {
     return {} as T;
@@ -89,4 +102,46 @@ export function querySensorData(payload: DataQueryPayload, season?: string): Pro
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+export function querySeries(payload: SeriesRequest): Promise<SeriesResponse> {
+  return request("/api/series", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function queryStates(payload: StatesRequest, init?: RequestInit): Promise<StatesResponse> {
+  return request("/api/states", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    ...init,
+  });
+}
+
+export function fetchAnalysisConfigs(): Promise<SavedConfig[]> {
+  return request<{ configs: SavedConfig[] }>("/api/analysis-configs").then((r) => r.configs);
+}
+
+export function createAnalysisConfig(payload: CreateConfigPayload): Promise<SavedConfig> {
+  return request("/api/analysis-configs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAnalysisConfig(
+  id: string,
+  patch: { name?: string; note?: string },
+): Promise<SavedConfig> {
+  return request(`/api/analysis-configs/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function deleteAnalysisConfig(id: string): Promise<void> {
+  return request<Record<string, never>>(`/api/analysis-configs/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  }).then(() => undefined);
 }
