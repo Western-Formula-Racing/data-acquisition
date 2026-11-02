@@ -180,6 +180,7 @@ jobs:
           tests/test_status_mosaic.py \
           tests/test_websocket_client_count_health.py \
           tests/test_deploy_contracts.py \
+          tests/test_can_recorder.py \
           -v
 
   # ── Integration tests: full docker-compose stack ─────────────────────────
