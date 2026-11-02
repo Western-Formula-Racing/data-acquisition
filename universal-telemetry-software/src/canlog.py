@@ -293,16 +293,24 @@ def new_report(run_dir) -> RunReport:
     return RunReport(run_dir, int(match.group(1)) if match else -1)
 
 
-def read_acks(path) -> dict[int, int]:
-    """Parse `run=N frames=M` lines; returns the highest acknowledged M per run."""
+def read_acks(path) -> tuple[dict[int, int], set[int]]:
+    """Parse `run=N frames=M recorder=ID` lines from --ack-udp.
+
+    Returns the highest acknowledged M per run, and the runs acknowledged by more
+    than one recorder process. Run numbers come from what is on disk, so a number
+    is only reused if the earlier run's directory vanished.
+    """
     acked: dict[int, int] = {}
-    pattern = re.compile(r"run=(\d+) frames=(\d+)")
-    with open(path, encoding="ascii", errors="replace") as f:
-        for match in map(pattern.search, f):
-            if match:
-                run, frames = int(match.group(1)), int(match.group(2))
-                acked[run] = max(acked.get(run, 0), frames)
-    return acked
+    recorders: dict[int, set[str]] = {}
+    pattern = re.compile(r"run=(\d+) frames=(\d+)(?: recorder=(\w+))?")
+    # NULs are removed because a PowerShell redirect writes UTF-16.
+    text = Path(path).read_bytes().replace(b"\0", b"").decode("ascii", "replace")
+    for match in pattern.finditer(text):
+        run, frames = int(match.group(1)), int(match.group(2))
+        acked[run] = max(acked.get(run, 0), frames)
+        if match.group(3):
+            recorders.setdefault(run, set()).add(match.group(3))
+    return acked, {run for run, ids in recorders.items() if len(ids) > 1}
 
 
 def _ecu_clock_offset_ns(run_dir) -> int | None:
@@ -365,18 +373,29 @@ def export_run(run_dir, out_root) -> tuple[Path, str] | None:
 
 
 def _cmd_verify(args) -> int:
-    acked = read_acks(args.acks) if args.acks else {}
+    acked, reused_runs = read_acks(args.acks) if args.acks else ({}, set())
+    if args.acks and not acked:
+        # Passing here would report a clean test that checked nothing.
+        print(f"No acknowledgements found in {args.acks}")
+        return 1
     failed = False
     runs = list_runs(args.root)
     if not runs:
         print(f"No runs found in {args.root}")
         return 1
+    seen_runs = set()
     for run_dir in runs:
         report = new_report(run_dir)
         for _ in iter_run(run_dir, report):
             pass
         problems = report.problems
+        seen_runs.add(report.run_id)
         run_acked = acked.get(report.run_id)
+        if report.run_id in reused_runs:
+            problems.append(
+                "DURABILITY FAILURE: two recorders acknowledged this run number, "
+                "so the first one's directory was lost"
+            )
         if run_acked is not None and report.next_frame - report.lost_frames < run_acked:
             problems.append(
                 f"DURABILITY FAILURE: {run_acked} frames were reported committed, "
@@ -397,6 +416,11 @@ def _cmd_verify(args) -> int:
         for problem in problems:
             print(f"  PROBLEM: {problem}")
         failed = failed or bool(problems)
+    for run_id in sorted(set(acked) - seen_runs):
+        print(f"run-{run_id:06d}: missing")
+        print(f"  PROBLEM: DURABILITY FAILURE: {acked[run_id]} frames were reported committed, "
+              "but the run no longer exists")
+        failed = True
     return 1 if failed else 0
 
 

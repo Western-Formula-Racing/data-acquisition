@@ -2,7 +2,7 @@
 # setup-static-ip.sh — Assign a persistent static IP to eth0 for the radio link
 # Usage: sudo ./setup-static-ip.sh
 #
-# Sets eth0 to 192.168.1.10/24 (car) or 192.168.1.20/24 (base).
+# Sets eth0 to 10.71.1.10/24 (car) or 10.71.1.20/24 (base).
 # No gateway is set — the radio link is a direct point-to-point connection.
 #
 # Also writes deploy/.env with per-Pi settings (REMOTE_IP, SET_TIME_ENABLED)

@@ -232,6 +232,7 @@ class Recorder:
         if config.ack_addr:
             self._ack_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self._ack_sock.setblocking(False)
+        self._recorder_id = os.urandom(4).hex()
 
     def start(self) -> None:
         self._reader_thread = threading.Thread(target=self._reader_loop, name="can-reader", daemon=True)
@@ -365,7 +366,7 @@ class Recorder:
         if now - started > _COMMIT_WARN_S:
             logger.warning("Slow commit: %.0f ms", self._last_commit_ms)
         if self._ack_sock is not None:
-            message = f"run={self.writer.run_id} frames={end_frame}\n".encode()
+            message = f"run={self.writer.run_id} frames={end_frame} recorder={self._recorder_id}\n".encode()
             try:
                 self._ack_sock.sendto(message, self.config.ack_addr)
             except OSError:

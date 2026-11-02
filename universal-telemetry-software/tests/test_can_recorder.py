@@ -426,6 +426,51 @@ def test_verify_counts_a_lost_middle_block_against_the_acks(tmp_path, capsys):
     assert "DURABILITY FAILURE" in capsys.readouterr().out
 
 
+def test_verify_refuses_to_pass_with_no_acknowledgements(tmp_path, capsys):
+    root = tmp_path / "rec"
+    _write_run(root, blocks=1, frames_per_block=50)
+    acks = tmp_path / "acks.txt"
+    acks.write_text("")
+
+    assert canlog.main(["verify", str(root), "--acks", str(acks)]) == 1
+    assert "No acknowledgements" in capsys.readouterr().out
+
+
+def test_verify_fails_when_an_acknowledged_run_disappeared(tmp_path, capsys):
+    root = tmp_path / "rec"
+    _write_run(root, blocks=1, frames_per_block=50)
+    acks = tmp_path / "acks.txt"
+    acks.write_text("run=1 frames=50\nrun=2 frames=90\n")
+
+    assert canlog.main(["verify", str(root), "--acks", str(acks)]) == 1
+    output = capsys.readouterr().out
+    assert "run-000002: missing" in output
+    assert "DURABILITY FAILURE" in output
+
+
+def test_verify_fails_when_a_run_number_was_used_twice(tmp_path, capsys):
+    """The first run 1 was lost, then the next boot reused its number and outran it."""
+    root = tmp_path / "rec"
+    _write_run(root, blocks=3, frames_per_block=50)
+    acks = tmp_path / "acks.txt"
+    acks.write_text("run=1 frames=20 recorder=aaaa\nrun=1 frames=150 recorder=bbbb\n")
+
+    assert canlog.main(["verify", str(root), "--acks", str(acks)]) == 1
+    assert "two recorders" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("encoding, newline", [
+    ("utf-8", "\r\n"),  # StreamWriter or Add-Content on Windows
+    ("utf-16", "\r\n"),  # a PowerShell `>` redirect
+])
+def test_acks_written_on_windows_are_readable(tmp_path, encoding, newline):
+    acks = tmp_path / "acks.txt"
+    lines = ["run=1 frames=50 recorder=aaaa", "run=1 frames=150 recorder=aaaa", "run=2 frames=7 recorder=bbbb"]
+    acks.write_bytes(newline.join(lines).encode(encoding))
+
+    assert canlog.read_acks(acks) == ({1: 150, 2: 7}, set())
+
+
 # ── End to end against a virtual CAN interface ───────────────────────────────
 
 
@@ -483,7 +528,7 @@ def _last_ack(sock):
             message = sock.recv(128).decode()
         except BlockingIOError:
             return last
-        last = int(message.split("frames=")[1])
+        last = int(message.split("frames=")[1].split()[0])
 
 
 def _wait_for_first_commit(root, timeout=10.0):

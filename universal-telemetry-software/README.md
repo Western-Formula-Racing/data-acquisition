@@ -133,97 +133,43 @@ Recovered messages are re-published to the same `can_messages` Redis channel as 
 
 ---
 
-## Hardware Setup (Ubuntu)
+## Hardware Setup
 
-This section covers setting up a CAN HAT (e.g. MCP2515-based) on Ubuntu before running the software.
+The car uses a custom HAT. The controller is the Microchip **MCP2515T-I/ML** (CAN, SPI, 2.7–5.5 V, QFN), with a 12 MHz crystal and its interrupt on GPIO 17. The transceiver is the **MCP2562FDT-H/SN** (up to 8 Mbps, Normal/Standby, AEC-Q100, 8-pin SOIC). This is not an MCP2517FD board, so do not use the `mcp251xfd` overlay.
 
-### 1. Enable the CAN HAT kernel module
+On the car Pi, run:
 
-Install the SocketCAN tools:
 ```bash
-sudo apt update && sudo apt install -y can-utils
-```
-
-Load the CAN modules at boot:
-```bash
-echo "can" | sudo tee -a /etc/modules
-echo "can_raw" | sudo tee -a /etc/modules
-echo "mcp251x" | sudo tee -a /etc/modules
-```
-
-### 2. Configure the HAT overlay
-
-Edit `/boot/firmware/config.txt` (Ubuntu on RPi uses `/boot/firmware/`, not `/boot/`):
-```ini
-dtoverlay=mcp2515-can0,oscillator=<crystal-hz>,interrupt=<gpio>
-dtoverlay=spi-bcm2835
-```
-
-> The car uses a custom HAT. The controller is the Microchip **MCP2515T-I/ML** (CAN, SPI, 2.7–5.5 V, QFN). The transceiver is the **MCP2562FDT-H/SN** (up to 8 Mbps, Normal/Standby, AEC-Q100, 8-pin SOIC). Set `oscillator` and `interrupt` from that hat's schematic. The interface is brought up at 500 kbps below. This is not an MCP2517FD board, so do not use the `mcp251xfd` overlay.
-
-Reboot after editing:
-```bash
+sudo ./setup-socketcan.sh
 sudo reboot
 ```
 
-### 3. Bring up can0 automatically on boot
+The script is safe to re-run, and `setup.sh` calls it too. It:
 
-Create a systemd service to bring up the interface on boot:
+- Installs `can-utils` and loads the `can`, `can_raw` and `mcp251x` modules at boot.
+- Sets these lines in `/boot/firmware/config.txt`, replacing any older CAN lines after backing up the file:
+  ```ini
+  dtparam=spi=on
+  dtoverlay=mcp2515-can0,oscillator=12000000,interrupt=17,spimaxfrequency=4000000
+  ```
+- Installs `deploy/can0.service`, which brings `can0` up at 500 kbps with `restart-ms 100`. Without that setting, a single bus-off stops all CAN traffic and recording until someone intervenes.
+
+After the reboot, check the interface:
+
 ```bash
-sudo nano /etc/systemd/system/can0.service
+ip -d link show can0
+# Should show: can state ERROR-ACTIVE restart-ms 100, bitrate 500000
+candump can0    # needs a live CAN bus
 ```
 
-Paste:
-```ini
-[Unit]
-Description=CAN bus interface can0
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/sbin/ip link set can0 up type can bitrate 500000
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-```bash
-sudo systemctl enable can0
-sudo systemctl start can0
-```
-
-On the car, install `deploy/can0.service` instead. It adds `restart-ms 100`, without which a single bus-off stops all CAN traffic and recording until someone intervenes.
-
-### 4. Verify CAN is working
-
-Check the interface is up:
-```bash
-ip link show can0
-# Should show: can0: <NOARP,UP,LOWER_UP> ...
-```
-
-Listen for CAN frames (requires a live CAN bus):
-```bash
-candump can0
-```
-
-Send a test frame on a loopback setup:
-```bash
-sudo ip link set can0 type can loopback on
-cansend can0 123#DEADBEEF
-candump can0
-```
-
-Once `can0` is confirmed working, proceed to deployment.
+To test the HAT with no bus attached, see [Check the SPI link](deploy/CAN_RECORDER.md#check-the-spi-link).
 
 ---
 
 ## Quick Start
 
 ### Prerequisites
-- Raspberry Pi 4/5 with Ubuntu
+- Raspberry Pi 4/5 with Raspberry Pi OS
 - `uv` installed on the car Pi
 - Docker and Docker Compose installed on the base station
 - CAN HAT set up (see Hardware Setup above)
@@ -233,19 +179,21 @@ Once `can0` is confirmed working, proceed to deployment.
 
 Clone the repository:
 ```bash
-git clone https://github.com/Western-Formula-Racing/data-acquisition.git /home/car/data-acquisition
-cd /home/car/data-acquisition/universal-telemetry-software
+git clone https://github.com/Western-Formula-Racing/data-acquisition.git /home/base/data-acquisition
+cd /home/base/data-acquisition/universal-telemetry-software
 ```
 
 Install dependencies and the native systemd service:
 ```bash
 uv sync
-sed -i "s/GIT_HASH=unknown/GIT_HASH=$(git rev-parse --short HEAD)/" deploy/car-telemetry.service
 sudo cp deploy/car-telemetry.service /etc/systemd/system/
+sudo sed -i "s/GIT_HASH=.*/GIT_HASH=$(git rev-parse --short HEAD)/" /etc/systemd/system/car-telemetry.service
 sudo systemctl daemon-reload
 sudo systemctl enable car-telemetry
 sudo systemctl start car-telemetry
 ```
+
+Then install the CAN recorder, which is what keeps the permanent record: see [deploy/CAN_RECORDER.md](deploy/CAN_RECORDER.md). `sudo ./setup.sh --car` does all of this for you.
 
 The service file currently sets `REMOTE_IP=10.71.1.20` for the base station. Edit `deploy/car-telemetry.service` before installing it if the base station IP changes.
 
@@ -544,6 +492,7 @@ universal-telemetry-software/
 │   ├── car-telemetry.service           # Native car systemd service
 │   ├── can-recorder.service            # On-board CAN recorder service
 │   ├── can0.service                    # CAN interface with bus-off recovery
+│   ├── power-cut-test.sh               # Pull-the-plug test for the CAN recorder
 │   ├── CAN_RECORDER.md                 # Recorder design, install, power-cut test
 │   ├── CAR_DEPLOY.md                   # Car RPi systemd deployment
 │   ├── docker-compose.macbook-base.yml # MacBook base stack with optional profiles

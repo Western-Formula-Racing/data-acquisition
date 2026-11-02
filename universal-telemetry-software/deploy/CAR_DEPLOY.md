@@ -9,26 +9,31 @@ and runs a local WebSocket bridge on port 9080 for direct PECAN connections when
 
 ## First-time install
 
+`sudo ./setup.sh --car` does all of this, the CAN recorder install, and the rest of the Pi's setup (static IP, Tailscale, NoMachine). To install only the car services by hand:
+
 ```bash
 # 1. Clone the repo
-git clone https://github.com/western-formula-racing/data-acquisition.git /home/car/data-acquisition
-cd /home/car/data-acquisition/universal-telemetry-software
+git clone https://github.com/western-formula-racing/data-acquisition.git /home/base/data-acquisition
+cd /home/base/data-acquisition/universal-telemetry-software
 
-# 2. Install uv (if not already installed)
+# 2. Set up the CAN HAT (overlay and can0.service); reboot when it asks
+sudo ./setup-socketcan.sh
+
+# 3. Install uv (if not already installed)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 3. Sync Python dependencies (needs internet; only once per code change)
+# 4. Sync Python dependencies (needs internet; only once per code change)
 uv sync
 
-# 4. Stamp the current git hash into the service file
-sed -i "s/GIT_HASH=unknown/GIT_HASH=$(git rev-parse --short HEAD)/" deploy/car-telemetry.service
-
-# 5. Install and enable the systemd service
+# 5. Install the systemd service and stamp the current git hash into the installed copy
 sudo cp deploy/car-telemetry.service /etc/systemd/system/
+sudo sed -i "s/GIT_HASH=.*/GIT_HASH=$(git rev-parse --short HEAD)/" /etc/systemd/system/car-telemetry.service
 sudo systemctl daemon-reload
 sudo systemctl enable car-telemetry
 sudo systemctl start car-telemetry
 ```
+
+The unit assumes user `base` and `/home/base/data-acquisition`. `setup.sh` fills in the right values automatically. If you install by hand on a Pi that differs, change `User=`, `WorkingDirectory=` and `ExecStart=`.
 
 ---
 
@@ -58,7 +63,7 @@ systemctl status car-telemetry
 ## After a code update
 
 ```bash
-cd /home/car/data-acquisition
+cd /home/base/data-acquisition
 git pull
 cd universal-telemetry-software
 uv sync
@@ -68,6 +73,8 @@ sudo sed -i "s/GIT_HASH=.*/GIT_HASH=$(git rev-parse --short HEAD)/" /etc/systemd
 sudo systemctl daemon-reload
 sudo systemctl restart car-telemetry
 ```
+
+Telemetry restarts don't affect the recorder. If `src/can_recorder.py` or `src/canlog.py` changed, also run `sudo systemctl restart can-recorder` between sessions, which starts a new run.
 
 ---
 
@@ -88,7 +95,7 @@ The car sends UDP to `REMOTE_IP=10.71.1.20` (hardcoded in `car-telemetry.service
 |------|----------|---------|
 | 5005 | UDP | CAN data stream → base |
 | 5006 | TCP | Packet resend server (base pulls missing batches) |
-| 8080 | HTTP | Status page (`/`, `/version`, `/set-time`) |
+| 8080 | HTTP | Status page (`/`, `/version`, `/set-time`). **Base station only**: the car doesn't start this server, so the base's clock push and version check can't reach the car |
 | 8081 | HTTP | Video quality control — `POST /video/quality` (when `ENABLE_VIDEO=true`) |
 | 9080 | WS | PECAN WebSocket (direct connection when hotspotted) |
 
@@ -142,7 +149,7 @@ docker compose -f deploy/docker-compose.rpi-base.yml up -d
 - `can0` not up — run `sudo ip link set can0 up type can bitrate 500000 restart-ms 100` or check CAN hat wiring
 - `uv sync` not run after a code update — Python deps missing
 
-**Base shows version mismatch banner:** Git hash on car doesn't match base. Re-stamp and restart:
+**Git hash on the car is out of date:** The base's mismatch banner can't currently warn you, because the car doesn't serve `/version`. Re-stamp and restart after each update:
 ```bash
 sudo sed -i "s/GIT_HASH=.*/GIT_HASH=$(git rev-parse --short HEAD)/" /etc/systemd/system/car-telemetry.service
 sudo systemctl daemon-reload && sudo systemctl restart car-telemetry
