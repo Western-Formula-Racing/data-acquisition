@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# setup-socketcan.sh — SocketCAN setup for the car RPi's custom HAT
+# setup-socketcan.sh — SocketCAN and clock setup for the car RPi's custom HAT
 #
-# The HAT has an MCP2515 controller (12 MHz crystal, interrupt on GPIO 17) and an
-# MCP2562FD transceiver. Safe to re-run: it replaces older CAN settings rather
-# than adding to them, and backs up config.txt before changing it.
+# The HAT has an MCP2515 controller (12 MHz crystal, interrupt on GPIO 17), an
+# MCP2562FD transceiver and a PCF8563 clock on I2C bus 1. Safe to re-run: it
+# replaces older settings rather than adding to them, and backs up config.txt
+# before changing it.
 #
 # Usage: sudo ./setup-socketcan.sh
 #        ./setup-socketcan.sh --update-config FILE   # only edit FILE, for testing
@@ -12,23 +13,43 @@ set -euo pipefail
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
 CAN_OVERLAY="dtoverlay=mcp2515-can0,oscillator=12000000,interrupt=17,spimaxfrequency=4000000"
+RTC_OVERLAY="dtoverlay=i2c-rtc,pcf8563"
 
 # Prints the new contents of a config.txt. Any other overlay for this SPI device
 # has to go: it would fight over spi0.0, and the old mcp251xfd line also took
 # GPIO 25, which is the PoE read pin.
+#
+# The Pi 5's onboard clock has to go too. The kernel only reads and updates the
+# clock named rtc0, and the onboard one takes that name if it is enabled, which
+# would leave the HAT's clock unused. A Pi 4 has no onboard clock.
+#
+# usb_max_current_enable is for the same Pi 5: the HAT powers it through the GPIO
+# header, where it can't negotiate over USB-C, so it assumes a 3 A supply and limits
+# USB to 600 mA. The HAT's supply must really deliver 5 A. A Pi 4 has no such setting.
 render_boot_config() {
     local config=$1
     sed -E \
         -e "s/^dtoverlay=mcp2515-can0(,.*)?$/$CAN_OVERLAY/" \
+        -e "s/^dtoverlay=i2c-rtc(,.*)?$/$RTC_OVERLAY/" \
         -e 's/^dtoverlay=(mcp251xfd|mcp2515|mcp2515-can1|spi-bcm2835|spi-bcm2835-overlay)(,.*)?$/# Replaced by setup-socketcan.sh: &/' \
         "$config" || return 1
     local missing=()
     grep -qxF "dtparam=spi=on" "$config" || missing+=("dtparam=spi=on")
     grep -qE "^dtoverlay=mcp2515-can0(,.*)?$" "$config" || missing+=("$CAN_OVERLAY")
+    grep -qxF "dtparam=i2c_arm=on" "$config" || missing+=("dtparam=i2c_arm=on")
+    grep -qE "^dtoverlay=i2c-rtc(,.*)?$" "$config" || missing+=("$RTC_OVERLAY")
     if [[ ${#missing[@]} -gt 0 ]]; then
         # Lines after a conditional filter such as [cm5] only apply to that board.
-        printf '\n[all]\n# Car CAN HAT: see universal-telemetry-software/setup-socketcan.sh\n'
+        printf '\n[all]\n# Car HAT: see universal-telemetry-software/setup-socketcan.sh\n'
         printf '%s\n' "${missing[@]}"
+    fi
+    local pi5_missing=()
+    grep -qxF "dtparam=rtc=off" "$config" || pi5_missing+=("dtparam=rtc=off")
+    grep -qxF "usb_max_current_enable=1" "$config" || pi5_missing+=("usb_max_current_enable=1")
+    if [[ ${#pi5_missing[@]} -gt 0 ]]; then
+        printf '\n[pi5]\n'
+        printf '%s\n' "${pi5_missing[@]}"
+        printf '[all]\n'
     fi
 }
 
@@ -131,4 +152,5 @@ fi
 echo -e "  Verify CAN is up:  ip -d link show can0"
 echo -e "  Expect:            state ERROR-ACTIVE, restart-ms 100, bitrate 500000"
 echo -e "  Check the SPI link: see 'Check the SPI link' in deploy/CAN_RECORDER.md"
+echo -e "  Check the clock:   journalctl -b -k | grep -iE 'pcf8563|setting system clock'"
 echo -e "${GREEN}=========================================${NC}"

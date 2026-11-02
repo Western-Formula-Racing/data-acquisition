@@ -235,7 +235,7 @@
   \cmd{cd \textasciitilde/data-acquisition/universal-telemetry-software} \\
   \cmd{sudo ./setup-socketcan.sh} \\
   \cmd{sudo reboot} \\[1mm]
-  Sets up the MCP2515 overlay and \cmd{can0.service}. Safe to re-run. \\
+  Sets up the MCP2515 and PCF8563 clock overlays and \cmd{can0.service}. Safe to re-run. \\
   After reboot with HAT plugged in, \cmd{can0} comes up automatically at 500\,kbps. \\[1mm]
   \textbf{PASS:} \cmd{ip -d link show can0} shows \cmd{ERROR-ACTIVE} and \cmd{restart-ms 100} \\
   \textbf{FAIL:} HAT not detected -- check HAT seating + SPI enabled in \cmd{/boot/firmware/config.txt} \\

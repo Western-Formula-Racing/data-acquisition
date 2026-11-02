@@ -135,7 +135,7 @@ Recovered messages are re-published to the same `can_messages` Redis channel as 
 
 ## Hardware Setup
 
-The car uses a custom HAT. The controller is the Microchip **MCP2515T-I/ML** (CAN, SPI, 2.7–5.5 V, QFN), with a 12 MHz crystal and its interrupt on GPIO 17. The transceiver is the **MCP2562FDT-H/SN** (up to 8 Mbps, Normal/Standby, AEC-Q100, 8-pin SOIC). This is not an MCP2517FD board, so do not use the `mcp251xfd` overlay.
+The car uses a custom HAT. The controller is the Microchip **MCP2515T-I/ML** (CAN, SPI, 2.7–5.5 V, QFN), with a 12 MHz crystal and its interrupt on GPIO 17. The transceiver is the **MCP2562FDT-H/SN** (up to 8 Mbps, Normal/Standby, AEC-Q100, 8-pin SOIC). This is not an MCP2517FD board, so do not use the `mcp251xfd` overlay. The clock is an NXP **PCF8563T** on I2C bus 1 at address `0x51`, which needs its backup battery fitted to keep time through a power cut.
 
 On the car Pi, run:
 
@@ -151,6 +151,13 @@ The script is safe to re-run, and `setup.sh` calls it too. It:
   ```ini
   dtparam=spi=on
   dtoverlay=mcp2515-can0,oscillator=12000000,interrupt=17,spimaxfrequency=4000000
+  dtparam=i2c_arm=on
+  dtoverlay=i2c-rtc,pcf8563
+
+  [pi5]
+  dtparam=rtc=off
+  usb_max_current_enable=1
+  [all]
   ```
 - Installs `deploy/can0.service`, which brings `can0` up at 500 kbps with `restart-ms 100`. Without that setting, a single bus-off stops all CAN traffic and recording until someone intervenes.
 

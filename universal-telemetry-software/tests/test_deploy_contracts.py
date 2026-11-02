@@ -8,6 +8,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CAN_OVERLAY = "dtoverlay=mcp2515-can0,oscillator=12000000,interrupt=17,spimaxfrequency=4000000"
+RTC_LINES = ["dtparam=i2c_arm=on", "dtoverlay=i2c-rtc,pcf8563", "dtparam=rtc=off"]
 
 
 def _read(rel_path: str) -> str:
@@ -61,6 +62,8 @@ def _update_config(path):
 def test_car_hat_overlay_is_documented_where_it_is_set():
     assert f'CAN_OVERLAY="{CAN_OVERLAY}"' in _read("setup-socketcan.sh")
     assert CAN_OVERLAY in _read("deploy/CAN_RECORDER.md")
+    for line in RTC_LINES:
+        assert line in _read("deploy/CAN_RECORDER.md")
 
 
 @pytest.mark.parametrize("script", ["setup.sh", "setup-socketcan.sh"])
@@ -118,12 +121,39 @@ def test_existing_mcp2515_line_is_updated_in_place(tmp_path):
 
     _update_config(config)
 
-    assert config.read_text() == (
+    assert config.read_text().startswith(
         "#dtoverlay=mcp2515-can1,oscillator=16000000,interrupt=25\n"
         "dtparam=spi=on\n"
         f"{CAN_OVERLAY}\n"
         "enable_uart=1\n"
     )
+
+
+def test_pi5_only_settings_do_not_apply_to_a_pi4(tmp_path):
+    config = tmp_path / "config.txt"
+    config.write_text("dtparam=audio=on\n")
+
+    _update_config(config)
+
+    lines = config.read_text().splitlines()
+    section = lines.index("[pi5]")
+    end = lines.index("[all]", section)
+    assert "dtparam=rtc=off" in lines[section:end]
+    assert "usb_max_current_enable=1" in lines[section:end]
+    assert lines[-1] == "[all]"
+
+
+def test_hat_clock_replaces_the_onboard_one(tmp_path):
+    """The kernel only uses rtc0, which the onboard clock takes unless disabled."""
+    config = tmp_path / "config.txt"
+    config.write_text("#dtparam=i2c_arm=on\ndtoverlay=i2c-rtc,ds3231\n")
+
+    _update_config(config)
+
+    active = _active_lines(config.read_text())
+    for line in RTC_LINES:
+        assert active.count(line) == 1
+    assert "dtoverlay=i2c-rtc,ds3231" not in active
 
 
 def test_config_update_is_idempotent_and_keeps_a_backup_only_when_it_changes(tmp_path):

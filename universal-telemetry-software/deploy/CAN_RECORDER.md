@@ -49,11 +49,21 @@ Parquet would be the wrong format here: its footer is written last, so a power c
 sudo ./setup-socketcan.sh
 ```
 
-That script sets the overlay in `/boot/firmware/config.txt` and installs `deploy/can0.service`. If it says a reboot is needed, reboot before continuing. It replaces any older CAN lines and backs up the file first. This is the line it sets:
+That script sets the overlay in `/boot/firmware/config.txt` and installs `deploy/can0.service`. If it says a reboot is needed, reboot before continuing. It replaces any older CAN lines and backs up the file first. It also switches the Pi to the HAT's PCF8563 clock. These are the lines it sets:
 
 ```
+dtparam=spi=on
 dtoverlay=mcp2515-can0,oscillator=12000000,interrupt=17,spimaxfrequency=4000000
+dtparam=i2c_arm=on
+dtoverlay=i2c-rtc,pcf8563
+
+[pi5]
+dtparam=rtc=off
+usb_max_current_enable=1
+[all]
 ```
+
+The `[pi5]` lines don't apply to a Pi 4. The first turns off the Pi 5's onboard clock, because the kernel only uses the clock named `rtc0`, and the onboard one takes that name if it is enabled. The second is needed because the HAT powers the Pi through the GPIO header, where a Pi 5 assumes a 3 A supply and limits USB to 600 mA. It raises that limit to 1.6 A, so the HAT's supply must really deliver 5 A.
 
 Then install the recorder:
 
@@ -75,6 +85,16 @@ sudo systemctl mask --now apt-daily.timer apt-daily-upgrade.timer man-db.timer \
 Run `sudo fstrim -av` between events instead, because SD cards still benefit from it.
 
 The unit assumes user `base` and `/home/base/data-acquisition`. `setup.sh` fills in the right values automatically. If you install by hand on a Pi that differs, change `User=` and `WorkingDirectory=`.
+
+## Check the HAT's clock
+
+The PCF8563 only keeps time through a power cut with its battery fitted. After fitting it, run `sudo ./setup-socketcan.sh`, reboot, and leave the Pi on the internet for at least 15 minutes so the kernel can write the correct time to the clock. Then power it off for a minute, boot it without internet, and run:
+
+```bash
+journalctl -b -k | grep -iE 'pcf8563|setting system clock'
+```
+
+You should see `registered as rtc0` and `setting system clock to` the correct time, with no `low voltage detected`. That message means the clock has lost its time, so check the battery. The ECU's time still takes priority in exports when it is on the bus.
 
 ## Check the SPI link
 
@@ -117,13 +137,13 @@ python3 -m src.canlog export /var/lib/can-recorder ~/export --run 12
 
 `verify` exits 1 if frames were lost. A torn tail after a power cut is expected and is not counted as a problem.
 
-`export` writes a CSV for the server file uploader. It takes time from the ECU's `VCU_Timestamp` frames when they are present, because the Pi has no RTC battery and has been seen booting 8 days behind. Check the printed time source: `pi-clock` means the exported dates may be wrong. The uploader keeps one row per message per millisecond, so the raw recording remains the complete copy.
+`export` writes a CSV for the server file uploader. It takes time from the ECU's `VCU_Timestamp` frames when they are present, because the Pi's clock isn't reliable until the HAT's clock has a battery, and it has been seen booting 8 days behind. Check the printed time source: `pi-clock` means the exported dates may be wrong. The uploader keeps one row per message per millisecond, so the raw recording remains the complete copy.
 
 Before each session, check that `state` is `recording`, that `last_commit_age_s` is under 1, and that `free_bytes` is sufficient. `state` stays `waiting` until the first frame arrives, and `/var/lib/can-recorder` stays empty until then too. The recorder never deletes anything. It stops writing when only the ext4 root reserve is left (about 2.5 GB on this card), which keeps the OS running, and holds frames in RAM until the queue fills.
 
 ## Power-cut test
 
-This is the only test of whether the card keeps what it acknowledged. The recorder reports each completed commit to a laptop over the network, and `verify` later checks that every reported commit is still on disk. Someone has to be at the Pi to pull the power.
+This is the only test of whether the card keeps what it acknowledged, so run it on the car's own Pi and card. The recorder reports each completed commit to a laptop over the network, and `verify` later checks that every reported commit is still on disk. Someone has to be at the Pi to pull the power.
 
 Repeated power cuts can corrupt or kill an SD card, so push your work and back up anything that only exists on the card first. Test the same card model the car will use.
 
@@ -222,6 +242,7 @@ Remove-NetFirewallRule -DisplayName "CAN power-cut test"
 
 ## Known gaps
 
+- **The measurements above come from a Pi 5, and the car will likely use a Pi 4.** The Pi 4 has a slower CPU and a different SPI controller, and its card may differ. Repeat the SPI link check, the power-cut test and a bus flood on the car's Pi.
 - **The CAN controller can lose frames before Linux sees them.** The MCP2515 has only 2 receive buffers. At the 4 MHz SPI clock, a rough estimate is about 45 µs of SPI time per frame (about 350 µs at the previous 500 kHz), against about 222 µs per 8-byte frame on a full 500 kbps bus. SPI should no longer be the limit, which probably leaves interrupt latency. None of this has been measured. Flood the bus from a second node and watch `hw_overruns_since_boot` to find the real limit.
 - **Frames sent before the Pi boots are not recorded.** With `can0.service`, `can0` comes up about 3.4 s after the kernel starts and the recorder is listening at about 3.7 s, plus firmware time before that. Measure power-on to first frame with a stopwatch.
 - **A sustained competing writer still stalls commits for seconds.** A raw device flush alone took up to 3.2 s under a saturating load, so tuning has a floor. A read-only root filesystem with a separate recording partition would remove other writers, and a separate drive would remove the card from the equation. A loop-device test of a dedicated filesystem was inconclusive.

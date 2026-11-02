@@ -16,8 +16,8 @@ This is the Western Formula Racing data acquisition monorepo. Prefer this file a
 
 UTS is one shared Python codebase with role-specific runtime behavior.
 
-- Car RPi: runs natively through `universal-telemetry-software/deploy/car-telemetry.service` with `ROLE=car`.
-- Car RPi CAN HAT: MCP2515 controller, set up by `universal-telemetry-software/setup-socketcan.sh`. Not an MCP2517FD, so don't use `mcp251xfd`.
+- Car RPi (likely a Pi 4; the Pi 5 named `base` is the bench unit and likely future base station): runs natively through `universal-telemetry-software/deploy/car-telemetry.service` with `ROLE=car`.
+- Car RPi CAN HAT: MCP2515 controller and PCF8563 clock, set up by `universal-telemetry-software/setup-socketcan.sh`. Not an MCP2517FD, so don't use `mcp251xfd`.
 - Car RPi recording: `universal-telemetry-software/deploy/can-recorder.service` is the complete, permanent record of the CAN bus. Base-station logging stays for now but only holds what reached it over the link. The recorder runs separately from telemetry and must stay standard-library only.
 - Base station: runs through Docker Compose with `ROLE=base`.
 - MacBook base: `universal-telemetry-software/deploy/docker-compose.macbook-base.yml`.

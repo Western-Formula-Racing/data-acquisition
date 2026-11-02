@@ -329,7 +329,7 @@ def export_run(run_dir, out_root) -> tuple[Path, str] | None:
     """Write a run as a CSV the server file uploader accepts.
 
     Returns (csv path, time source), or None when the run has no data frames.
-    The Pi has no RTC battery and can boot with a stale clock, so ECU time is
+    The Pi can boot with a stale clock, so ECU time is
     preferred. Without it the last wall-clock offset of the run is used, since a
     clock that stepped during the run was most likely corrected.
     """
