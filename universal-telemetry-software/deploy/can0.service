@@ -1,0 +1,31 @@
+# Brings up can0 for the car's custom MCP2515 HAT.
+#
+# restart-ms is what matters here. Without it (`restart-ms 0`) a single bus-off,
+# such as a connector glitch during a run, leaves the controller off the bus until
+# someone intervenes by hand, and nothing is recorded for the rest of the session.
+#
+# Waits for the HAT driver rather than network.target, so recording starts earlier
+# in boot.
+#
+# Install:
+#   sudo cp deploy/can0.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable can0
+#   sudo systemctl restart can0
+
+[Unit]
+Description=CAN bus interface can0
+DefaultDependencies=no
+BindsTo=sys-subsystem-net-devices-can0.device
+After=sys-subsystem-net-devices-can0.device
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/sbin/ip link set can0 up type can bitrate 500000 restart-ms 100
+ExecStop=/sbin/ip link set can0 down
+
+[Install]
+WantedBy=multi-user.target

@@ -33,6 +33,8 @@ graph LR
   PECAN -. "quality change\nHTTP :8081" .-> CTRL
 ```
 
+On the car, a separate service records every CAN frame to disk, independently of the telemetry stack shown here. This recording is the permanent record of the bus: see [deploy/CAN_RECORDER.md](deploy/CAN_RECORDER.md).
+
 The deployed car service sets `ROLE=car` explicitly in `deploy/car-telemetry.service`. Base deployments run the same code with the base role inside Docker Compose. Auto-detection still exists for local development, but production deployment should use the role-specific wrappers: systemd on the car, Docker Compose on the base station.
 
 ---
@@ -78,7 +80,7 @@ sequenceDiagram
   | `count` | `uint16` big-endian (`!H`) | 2 | number of messages in this batch |
   | `messages` | `count × CANMessage` | 20 each | packed via `CANMessage.pack()` |
 
-- **Ring buffer** — after sending, the car also appends `(seq, batch, timestamp)` to an in-memory `deque` and evicts anything older than `BUFFER_DURATION` (**60 seconds**). This is the *only* copy available for retransmission. A gap that isn't requested within ~60s is gone for good on the live link (it may still be recovered later from the car's own CSV log, but not through this channel).
+- **Ring buffer** — after sending, the car also appends `(seq, batch, timestamp)` to an in-memory `deque` and evicts anything older than `BUFFER_DURATION` (**60 seconds**). This is the *only* copy available for retransmission. A gap that isn't requested within ~60s is gone for good on the live link. The permanent record is the on-board [CAN recorder](deploy/CAN_RECORDER.md), which does not depend on this channel.
 
 ### Receiver: gap detection state machine (base)
 
@@ -191,6 +193,8 @@ Enable and start:
 sudo systemctl enable can0
 sudo systemctl start can0
 ```
+
+On the car, install `deploy/can0.service` instead. It adds `restart-ms 100`, without which a single bus-off stops all CAN traffic and recording until someone intervenes.
 
 ### 4. Verify CAN is working
 
@@ -526,6 +530,8 @@ universal-telemetry-software/
 ├── main.py                     # Main orchestrator
 ├── src/
 │   ├── data.py                 # UDP/TCP + Redis (car & base)
+│   ├── can_recorder.py         # Durable on-board CAN recording (car)
+│   ├── canlog.py               # Recording format, verify and export tools
 │   ├── audio.py                # Audio streaming
 │   ├── video.py                # Video streaming
 │   ├── websocket_bridge.py     # Redis -> WebSocket for PECAN
@@ -536,6 +542,9 @@ universal-telemetry-software/
 ├── tests/
 ├── deploy/
 │   ├── car-telemetry.service           # Native car systemd service
+│   ├── can-recorder.service            # On-board CAN recorder service
+│   ├── can0.service                    # CAN interface with bus-off recovery
+│   ├── CAN_RECORDER.md                 # Recorder design, install, power-cut test
 │   ├── CAR_DEPLOY.md                   # Car RPi systemd deployment
 │   ├── docker-compose.macbook-base.yml # MacBook base stack with optional profiles
 │   ├── docker-compose.rpi-base.yml     # RPi lightweight base (ephemeral)

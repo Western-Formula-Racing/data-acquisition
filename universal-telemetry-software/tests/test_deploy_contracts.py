@@ -21,6 +21,28 @@ def test_car_runs_as_systemd_service_contract():
     assert "no Docker" in docs
 
 
+def test_can_recorder_is_independent_of_the_telemetry_stack():
+    """Nothing the telemetry stack needs may be able to stop recording."""
+    lines = _read("deploy/can-recorder.service").splitlines()
+    service = "\n".join(line for line in lines if not line.startswith("#"))
+
+    assert "ExecStart=/usr/bin/python3 -m src.can_recorder" in service
+    assert "uv run" not in service
+    assert "Restart=always" in service
+    assert "StartLimitIntervalSec=0" in service
+    assert "WatchdogSec=" in service
+    assert "car-telemetry" not in service
+    assert "network" not in service
+
+
+def test_can0_recovers_from_bus_off_by_itself():
+    """restart-ms 0 would end the recording at the first bus-off."""
+    lines = _read("deploy/can0.service").splitlines()
+    service = "\n".join(line for line in lines if not line.startswith("#"))
+
+    assert "bitrate 500000 restart-ms 100" in service
+
+
 def test_base_runs_in_docker_contract():
     """Base deployment must stay Docker-based."""
     rpi_base = _read("deploy/docker-compose.rpi-base.yml")
