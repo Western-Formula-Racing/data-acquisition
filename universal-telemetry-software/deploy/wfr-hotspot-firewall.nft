@@ -1,0 +1,49 @@
+#!/usr/sbin/nft -f
+# What devices on the base station's hotspot can reach: the dashboard, the live
+# telemetry feed, and what they need to join the network. setup-rpi-base.sh installs
+# this to /etc/wfr/hotspot-firewall.nft.
+#
+# Everything else on the Pi stays closed to them, including the status page's DBC and
+# token uploads (8080), the CAN transmit bridge (9078), and Remote Desktop (3389).
+#
+# It also applies while wlan0 is joined to a normal Wi-Fi network. Reach the Pi over
+# Tailscale then, because that arrives on tailscale0 instead of wlan0.
+
+define HOTSPOT_IF = "wlan0"
+
+# Declaring then deleting makes this safe to load whether or not it already exists.
+table inet wfr_hotspot
+delete table inet wfr_hotspot
+
+table inet wfr_hotspot {
+    chain input {
+        # Ahead of other firewalls. A drop in any table is final, so a later accept
+        # from Docker or Tailscale can't undo it.
+        type filter hook input priority filter - 10; policy accept;
+
+        iifname != $HOTSPOT_IF accept
+        ct state established,related accept
+        meta l4proto { icmp, ipv6-icmp } accept
+
+        udp dport { 53, 67, 68 } accept comment "DNS and DHCP"
+        tcp dport 53 accept comment "DNS"
+        tcp dport { 80, 3000 } accept comment "PECAN"
+        tcp dport 9080 accept comment "live telemetry"
+        tcp dport 22 accept comment "SSH, which only accepts keys"
+        udp dport 41641 accept comment "Tailscale, when joined to a normal Wi-Fi network"
+
+        counter drop
+    }
+
+    chain forward {
+        type filter hook forward priority filter - 10; policy accept;
+
+        # Replies only. When wlan0 is the Pi's internet connection, replies to Docker
+        # containers arrive on it, and builds and updates need them.
+        ct state established,related accept
+
+        # NetworkManager's shared mode turns on routing, which would otherwise let
+        # hotspot devices through this Pi to the car over the radio link.
+        iifname $HOTSPOT_IF counter drop
+    }
+}

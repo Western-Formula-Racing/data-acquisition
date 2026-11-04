@@ -20,8 +20,10 @@ UTS is one shared Python codebase with role-specific runtime behavior.
 - Car RPi CAN HAT: MCP2515 controller and PCF8563 clock, set up by `universal-telemetry-software/setup-socketcan.sh`. Not an MCP2517FD, so don't use `mcp251xfd`.
 - Car RPi recording: `universal-telemetry-software/deploy/can-recorder.service` is the complete, permanent record of the CAN bus. Base-station logging stays for now but only holds what reached it over the link. The recorder runs separately from telemetry and must stay standard-library only.
 - Base station: runs through Docker Compose with `ROLE=base`.
-- MacBook base: `universal-telemetry-software/deploy/docker-compose.macbook-base.yml`.
-- RPi base: `universal-telemetry-software/deploy/docker-compose.rpi-base.yml`.
+- RPi base: `universal-telemetry-software/deploy/docker-compose.rpi-base.yml`, set up by `deploy/setup-rpi-base.sh`. The direction for the track: no dedicated laptop, and any device joins the Pi's hotspot and views PECAN in a browser. Don't assume a laptop, a `localhost` origin, internet, or a trusted single user there.
+- RPi base radio: expected on 5.8 GHz, so the hotspot stays on 2.4 GHz. It gets passive 24 V from the PoE board on the HAT (`OFF_THE_SHELF=false`): Pi Ethernet port → HAT input port → board adds 24 V → HAT output port → radio.
+- RPi base hotspot devices are view-only. Keep `ENABLE_UPLINK` and `ENABLE_TX_WS` off in its compose file, and any new port closed in `deploy/wfr-hotspot-firewall.nft` unless viewers need it.
+- MacBook base: `universal-telemetry-software/deploy/docker-compose.macbook-base.yml`. Still the choice for TimescaleDB, remote viewers, and video.
 - Older generic base compose: `universal-telemetry-software/deploy/docker-compose.yml`; prefer the specific MacBook/RPi base files for new work.
 
 ## Docs To Read
@@ -31,6 +33,7 @@ UTS is one shared Python codebase with role-specific runtime behavior.
 - Car install/update: `universal-telemetry-software/deploy/CAR_DEPLOY.md`
 - On-board CAN recording: `universal-telemetry-software/deploy/CAN_RECORDER.md`
 - Base stack choice: `universal-telemetry-software/deploy/WHICH_ONE.md`
+- RPi base with hotspot: `universal-telemetry-software/deploy/RPI_BASE_DEPLOY.md`
 - MacBook base: `universal-telemetry-software/deploy/MACBOOK_DEPLOY.md`
 - WebSocket protocol: `WEBSOCKET_PROTOCOL.md`
 - UTS WebSocket runtime notes: `universal-telemetry-software/WEBSOCKET_RUNTIME_NOTES.md`

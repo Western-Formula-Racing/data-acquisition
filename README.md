@@ -10,7 +10,9 @@ Comprehensive telemetry and data acquisition system for real-time monitoring of 
 > ```bash
 > curl -fsSL https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.sh | bash
 > ```
-> **Linux with Wi-Fi hotspot for pit devices (RPi at track):**
+> **Raspberry Pi at the track, no laptop:** any device joins the Pi's hotspot and views PECAN in a browser. See [`RPI_BASE_DEPLOY.md`](./universal-telemetry-software/deploy/RPI_BASE_DEPLOY.md).
+>
+> **Linux laptop with Wi-Fi hotspot for pit devices:**
 > ```bash
 > curl -fsSL https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.sh | bash -s -- --hotspot
 > ```
@@ -154,6 +156,12 @@ Convenience deployment for the PECAN WebSocket broadcast server. The dashboard i
 - **Python** 3.11+
 - **Docker** and Docker Compose (for containerized deployment)
 - A cloned copy of this repository
+
+### Base Station (Raspberry Pi, no laptop)
+
+The Pi runs the telemetry stack and serves PECAN over its own Wi-Fi hotspot, so any
+device can view it in a browser with nothing installed. See
+[`deploy/RPI_BASE_DEPLOY.md`](./universal-telemetry-software/deploy/RPI_BASE_DEPLOY.md).
 
 ### Base Station (MacBook / Laptop)
 

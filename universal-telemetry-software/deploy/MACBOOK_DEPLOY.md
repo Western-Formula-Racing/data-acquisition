@@ -22,7 +22,7 @@ Car RPi on the same network, or use simulation mode.
 curl -fsSL https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.sh | bash
 ```
 
-**Linux with Wi-Fi hotspot for pit devices** (RPi 4B at track — ethernet to car radio, Wi-Fi AP for laptops/tablets):
+**Linux laptop with Wi-Fi hotspot for pit devices** (ethernet to car radio, Wi-Fi AP for laptops/tablets). For a Pi with no laptop, use [RPI_BASE_DEPLOY.md](RPI_BASE_DEPLOY.md) instead:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Western-Formula-Racing/data-acquisition/main/universal-telemetry-software/deploy/install.sh | bash -s -- --hotspot
@@ -34,7 +34,7 @@ That's it. The script:
 3. Clones the repo to `~/wfr-base-station/` (or updates if already present)
 4. Pulls the latest images
 5. Starts the stack (auto-restarts on reboot via `restart: unless-stopped`)
-6. **`--hotspot` (Linux):** Prompts before enabling — switches `wlan0` to AP mode (`WFR-Base`); pit crew opens Pecan at `http://10.42.0.1:3000`. **Warning:** disconnects Wi-Fi SSH/internet if no other adapter is present.
+6. **`--hotspot` (Linux):** Prompts before enabling — switches `wlan0` to AP mode (`WFR-BASE`); pit crew opens Pecan at `http://192.168.20.1:3000`. **Warning:** disconnects Wi-Fi SSH/internet if no other adapter is present.
 
 Subsequent updates: run the same command again.
 
@@ -172,7 +172,7 @@ sudo ip addr add 10.71.1.20/24 dev eth0
 ping -c 3 10.71.1.10
 ```
 
-With `--hotspot`, the installer **asks for confirmation** before switching `wlan0` to AP mode (`WFR-Base` / `wfr-racing`). This disconnects any Wi-Fi client connection (including SSH over Wi-Fi) and removes internet on Wi-Fi unless another adapter (e.g. ethernet) is connected. Pit devices connect and open `http://10.42.0.1:3000`. The ethernet car link at `10.71.1.20` is independent.
+With `--hotspot`, the installer **asks for confirmation** before switching `wlan0` to AP mode (`WFR-BASE`, with a generated password that the installer prints). This disconnects any Wi-Fi client connection (including SSH over Wi-Fi) and removes internet on Wi-Fi unless another adapter (e.g. ethernet) is connected. Pit devices connect and open `http://192.168.20.1:3000`. The ethernet car link at `10.71.1.20` is independent.
 
 ---
 

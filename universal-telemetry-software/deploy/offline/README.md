@@ -1,6 +1,8 @@
 # Offline Docker Images
 
-This folder contains a tarball of all Docker images needed to run the MacBook stack without internet.
+This folder contains a tarball of all Docker images needed to run a base station stack without internet.
+
+A Pi base uses the same three images and loads them the same way. `setup-rpi-base.sh` needs internet for its other steps, so run it before going to the field and use this tarball for later updates.
 
 ## Build the tarball (with internet, before going to the field)
 

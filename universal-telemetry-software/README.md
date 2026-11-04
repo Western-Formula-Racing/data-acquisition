@@ -249,7 +249,7 @@ docker compose -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.
 # Optional local TimescaleDB writes
 docker compose --profile timescale -f deploy/docker-compose.macbook-base.yml --env-file deploy/.env.macbook up -d
 
-# RPi base station (ephemeral, no DB persistence)
+# RPi base station with hotspot, no laptop (use deploy/setup-rpi-base.sh for a full setup)
 docker compose -f deploy/docker-compose.rpi-base.yml up -d
 ```
 

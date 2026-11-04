@@ -1,0 +1,280 @@
+#!/usr/bin/env bash
+# Manages the Pi's Wi-Fi, which is either a hotspot or joined to a network, never both.
+# Run wfr-net --help for the commands.
+set -euo pipefail
+
+CONFIG_FILE="${WFR_CONFIG_FILE:-/etc/wfr/hotspot.env}"
+DNSMASQ_DIR="${WFR_DNSMASQ_DIR:-/etc/NetworkManager/dnsmasq-shared.d}"
+CON_NAME="${WFR_CON_NAME:-wfr-hotspot}"
+SELF="$(readlink -f "$0")"
+SWITCH_DELAY_SECONDS=5
+AUTOCONNECT_PRIORITY=100
+
+HOTSPOT_IF="${WFR_HOTSPOT_IF:-wlan0}"
+HOTSPOT_SSID="WFR-BASE"
+HOTSPOT_PSK=""
+HOTSPOT_ADDRESS="192.168.20.1"
+HOTSPOT_NAME="pecan.wfr"
+HOTSPOT_BAND="bg"
+HOTSPOT_CHANNEL="1"
+
+die() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+cancel_pending_switches() {
+  systemctl stop wfr-net-hotspot.timer wfr-net-client.timer wfr-net-return.timer 2>/dev/null || true
+  systemctl reset-failed 'wfr-net-*' 2>/dev/null || true
+}
+
+usage() {
+  cat <<EOF
+Usage: wfr-net <command>
+
+  status                Show what the Wi-Fi is doing and how to reach the dashboard
+  setup [options]       Create or update the hotspot. Doesn't change the current connection.
+      --on-boot           Start the hotspot whenever the Pi boots
+      --manual            Only start it with 'wfr-net hotspot'
+      --ssid NAME         Default: WFR-BASE
+      --psk PASSWORD      8 to 63 characters. Default: generated on first setup
+      --address IP        Default: 192.168.20.1
+      --band bg|a         bg is 2.4 GHz and a is 5 GHz. Default: bg
+      --channel N         Default: 1. Change this if it clashes with the car's radios.
+  hotspot               Start the hotspot in ${SWITCH_DELAY_SECONDS} seconds
+  client [MINUTES]      Join a saved Wi-Fi network for updates, then return to the
+                        hotspot after MINUTES (default 30)
+  card [DIR]            Write a printable card with QR codes to DIR (default: .)
+EOF
+}
+
+require_root() {
+  [[ "$(id -u)" == "0" ]] || die "Run this with sudo."
+}
+
+load_config() {
+  if [[ -r "${CONFIG_FILE}" ]]; then
+    # shellcheck disable=SC1090
+    source "${CONFIG_FILE}"
+  fi
+}
+
+save_config() {
+  mkdir -p "$(dirname "${CONFIG_FILE}")"
+  local tmp
+  tmp="$(mktemp "${CONFIG_FILE}.XXXXXX")"
+  chmod 600 "${tmp}"
+  {
+    printf 'HOTSPOT_IF=%q\n' "${HOTSPOT_IF}"
+    printf 'HOTSPOT_SSID=%q\n' "${HOTSPOT_SSID}"
+    printf 'HOTSPOT_PSK=%q\n' "${HOTSPOT_PSK}"
+    printf 'HOTSPOT_ADDRESS=%q\n' "${HOTSPOT_ADDRESS}"
+    printf 'HOTSPOT_NAME=%q\n' "${HOTSPOT_NAME}"
+    printf 'HOTSPOT_BAND=%q\n' "${HOTSPOT_BAND}"
+    printf 'HOTSPOT_CHANNEL=%q\n' "${HOTSPOT_CHANNEL}"
+  } > "${tmp}"
+  mv "${tmp}" "${CONFIG_FILE}"
+}
+
+generate_psk() {
+  # Unambiguous characters, because people type this from a printed card.
+  LC_ALL=C tr -dc 'abcdefghjkmnpqrstuvwxyz23456789' < /dev/urandom | head -c 12 || true
+}
+
+connection_exists() {
+  # Not grep -q: it can exit early, and pipefail then reports nmcli's SIGPIPE as no match.
+  nmcli -t -f NAME con show | grep -xF "${CON_NAME}" >/dev/null
+}
+
+cmd_setup() {
+  require_root
+  load_config
+
+  local autoconnect=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --on-boot) autoconnect="yes"; shift ;;
+      --manual) autoconnect="no"; shift ;;
+      --ssid) HOTSPOT_SSID="${2:?--ssid needs a value}"; shift 2 ;;
+      --psk) HOTSPOT_PSK="${2:?--psk needs a value}"; shift 2 ;;
+      --address) HOTSPOT_ADDRESS="${2:?--address needs a value}"; shift 2 ;;
+      --band) HOTSPOT_BAND="${2:?--band needs a value}"; shift 2 ;;
+      --channel) HOTSPOT_CHANNEL="${2:?--channel needs a value}"; shift 2 ;;
+      *) die "Unknown option for setup: $1" ;;
+    esac
+  done
+
+  [[ -n "${HOTSPOT_PSK}" ]] || HOTSPOT_PSK="$(generate_psk)"
+  if (( ${#HOTSPOT_PSK} < 8 || ${#HOTSPOT_PSK} > 63 )); then
+    die "The hotspot password must be 8 to 63 characters, or WPA2 refuses it."
+  fi
+  [[ "${HOTSPOT_BAND}" == "bg" || "${HOTSPOT_BAND}" == "a" ]] || die "--band must be bg or a."
+
+  save_config
+
+  mkdir -p "${DNSMASQ_DIR}"
+  # Dedicated file: NetworkManager's dnsmasq reads every file in this directory.
+  printf 'address=/%s/%s\n' "${HOTSPOT_NAME}" "${HOTSPOT_ADDRESS}" > "${DNSMASQ_DIR}/wfr-base.conf"
+
+  if ! connection_exists; then
+    nmcli con add type wifi ifname "${HOTSPOT_IF}" con-name "${CON_NAME}" \
+      autoconnect no ssid "${HOTSPOT_SSID}" >/dev/null
+  fi
+
+  local -a properties=(
+    connection.interface-name "${HOTSPOT_IF}"
+    802-11-wireless.ssid "${HOTSPOT_SSID}"
+    802-11-wireless.mode ap
+    802-11-wireless.band "${HOTSPOT_BAND}"
+    802-11-wireless.channel "${HOTSPOT_CHANNEL}"
+    wifi-sec.key-mgmt wpa-psk
+    wifi-sec.proto rsn
+    wifi-sec.pairwise ccmp
+    wifi-sec.group ccmp
+    wifi-sec.psk "${HOTSPOT_PSK}"
+    ipv4.method shared
+    ipv4.addresses "${HOTSPOT_ADDRESS}/24"
+    ipv6.method disabled
+  )
+  if [[ -n "${autoconnect}" ]]; then
+    properties+=(connection.autoconnect "${autoconnect}"
+                 connection.autoconnect-priority "${AUTOCONNECT_PRIORITY}")
+  fi
+  nmcli con modify "${CON_NAME}" "${properties[@]}"
+
+  echo "Hotspot ${HOTSPOT_SSID} is ready. Start it with: sudo wfr-net hotspot"
+}
+
+cmd_hotspot() {
+  require_root
+  connection_exists || die "No hotspot yet. Run: sudo wfr-net setup"
+
+  cancel_pending_switches
+  # Delayed and run by systemd, so it still happens after this session is cut off.
+  systemd-run --quiet --unit=wfr-net-hotspot --on-active="${SWITCH_DELAY_SECONDS}s" \
+    /usr/bin/nmcli con up "${CON_NAME}"
+  echo "Starting the hotspot in ${SWITCH_DELAY_SECONDS} seconds. This drops anything using wlan0."
+}
+
+# Runs from a systemd timer, because the session that asked may be on the hotspot.
+cmd_join_client() {
+  load_config
+  local name type
+  while IFS=: read -r name type; do
+    [[ "${type}" == "802-11-wireless" && "${name}" != "${CON_NAME}" ]] || continue
+    if nmcli --wait 30 con up "${name}"; then
+      echo "Joined ${name}"
+      return 0
+    fi
+  done < <(nmcli -t -f NAME,TYPE con show)
+
+  echo "Could not join a saved Wi-Fi network. Returning to the hotspot." >&2
+  nmcli con up "${CON_NAME}"
+}
+
+cmd_client() {
+  require_root
+  local minutes="${1:-30}"
+  [[ "${minutes}" =~ ^[1-9][0-9]*$ ]] || die "MINUTES must be a whole number."
+  connection_exists || die "No hotspot yet. Run: sudo wfr-net setup"
+
+  cancel_pending_switches
+  # The way back is armed first, so a failed join can't strand the Pi off the hotspot.
+  systemd-run --quiet --unit=wfr-net-return --on-active="${minutes}min" \
+    /usr/bin/nmcli con up "${CON_NAME}"
+  systemd-run --quiet --unit=wfr-net-client --on-active="${SWITCH_DELAY_SECONDS}s" \
+    "${SELF}" _join-client
+
+  echo "Leaving the hotspot in ${SWITCH_DELAY_SECONDS} seconds and returning in ${minutes} minutes."
+  echo "To return sooner: sudo wfr-net hotspot"
+}
+
+cmd_status() {
+  load_config
+  local active
+  active="$(nmcli -t -f NAME,DEVICE con show --active | grep -F ":${HOTSPOT_IF}" | cut -d: -f1 || true)"
+
+  if [[ "${active}" == "${CON_NAME}" ]]; then
+    echo "Wi-Fi:     hotspot ${HOTSPOT_SSID} is on"
+    echo "Dashboard: http://${HOTSPOT_ADDRESS} or http://${HOTSPOT_NAME}"
+  else
+    echo "Wi-Fi:     ${active:-not connected} (hotspot is off)"
+  fi
+  echo "On boot:   $(nmcli -g connection.autoconnect con show "${CON_NAME}" 2>/dev/null || echo 'hotspot not set up')"
+  echo "Firewall:  $(systemctl is-active wfr-hotspot-firewall 2>/dev/null || true)"
+  if [[ -r "${CONFIG_FILE}" ]]; then
+    echo "Password:  ${HOTSPOT_PSK}"
+  else
+    echo "Password:  run with sudo to show it"
+  fi
+}
+
+# Backslash-escapes what the Wi-Fi QR format reserves.
+wifi_qr_escape() {
+  sed -e 's/[\\;,:"]/\\&/g' <<<"$1"
+}
+
+html_escape() {
+  sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' <<<"$1"
+}
+
+cmd_card() {
+  require_root
+  load_config
+  [[ -n "${HOTSPOT_PSK}" ]] || die "No hotspot yet. Run: sudo wfr-net setup"
+  command -v qrencode >/dev/null || die "Install qrencode first: sudo apt-get install qrencode"
+
+  local out_dir="${1:-.}"
+  local card="${out_dir}/wfr-hotspot-card.html"
+  # The QR code uses the address, not the name. A phone can route DNS over mobile
+  # data or a private DNS service, neither of which knows this name.
+  local url="http://${HOTSPOT_ADDRESS}"
+  local wifi="WIFI:T:WPA;S:$(wifi_qr_escape "${HOTSPOT_SSID}");P:$(wifi_qr_escape "${HOTSPOT_PSK}");;"
+
+  mkdir -p "${out_dir}"
+  (
+    umask 077
+    cat > "${card}" <<EOF
+<!doctype html>
+<meta charset="utf-8">
+<title>WFR base station</title>
+<style>
+  body { font-family: sans-serif; text-align: center; color: #000; background: #fff; }
+  main { display: flex; flex-wrap: wrap; justify-content: center; gap: 2em; }
+  section { width: 18em; }
+  svg { width: 100%; height: auto; }
+  code { font-size: 1.2em; }
+</style>
+<h1>See live telemetry</h1>
+<main>
+  <section>
+    <h2>1. Join the Wi-Fi</h2>
+    $(qrencode -t SVG --inline -o - "${wifi}")
+    <p>Network: <code>$(html_escape "${HOTSPOT_SSID}")</code></p>
+    <p>Password: <code>$(html_escape "${HOTSPOT_PSK}")</code></p>
+    <p>If your phone warns there's no internet, stay connected.</p>
+  </section>
+  <section>
+    <h2>2. Open the dashboard</h2>
+    $(qrencode -t SVG --inline -o - "${url}")
+    <p><code>$(html_escape "${url}")</code></p>
+    <p>Type <code>http://</code> or your browser may not find it.</p>
+  </section>
+</main>
+EOF
+  )
+  echo "Wrote ${card}. It contains the Wi-Fi password."
+}
+
+command="${1:-}"
+[[ $# -gt 0 ]] && shift
+case "${command}" in
+  status) cmd_status ;;
+  setup) cmd_setup "$@" ;;
+  hotspot) cmd_hotspot ;;
+  client) cmd_client "$@" ;;
+  card) cmd_card "$@" ;;
+  _join-client) cmd_join_client ;;
+  -h|--help|help|"") usage ;;
+  *) usage >&2; exit 1 ;;
+esac

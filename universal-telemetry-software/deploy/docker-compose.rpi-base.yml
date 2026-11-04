@@ -1,12 +1,15 @@
-# Raspberry Pi base station — lightweight ephemeral receiver
-# Run this on a Pi at the track for quick diagnostics without full stack.
-# Data is NOT persisted — use macbook-base for permanent TimescaleDB recording.
+# Raspberry Pi base station — no laptop needed.
+# Any device on the Pi's Wi-Fi hotspot opens PECAN in a browser, view-only.
+# Set this up with setup-rpi-base.sh; see RPI_BASE_DEPLOY.md.
+#
+# Keeps a raw CSV of what reached it over the radio. The car's recorder is the
+# complete record, and TimescaleDB is only on the laptop stacks.
 #
 # Usage:
 #   docker compose -f deploy/docker-compose.rpi-base.yml up -d
 #
 # Access points:
-#   Pecan dashboard: http://<pi-ip>:3000
+#   Pecan dashboard: http://192.168.20.1 or http://pecan.wfr (from the hotspot)
 
 services:
   telemetry:
@@ -17,7 +20,7 @@ services:
     restart: unless-stopped
     environment:
       - ROLE=base
-      - REMOTE_IP=${REMOTE_IP}
+      - REMOTE_IP=${REMOTE_IP:-10.71.1.10}
       - UDP_PORT=5005
       - TCP_PORT=5006
       - REDIS_URL=redis://127.0.0.1:6379/0
@@ -27,11 +30,22 @@ services:
       - ENABLE_VIDEO=false
       - ENABLE_AUDIO=false
       - SET_TIME_ENABLED=false
-      # No TimescaleDB logging — this is ephemeral
+      - CAR_TIME_PUSH_REQUIRES_SYNC=true
+      # The radio's passive 24 V comes from our PoE board, which this enables.
+      # On a Pi without the board, set OFF_THE_SHELF=true in deploy/.env.
+      - OFF_THE_SHELF=${OFF_THE_SHELF:-false}
       - ENABLE_TIMESCALE_LOGGING=false
-      - DBC_FILE_PATH=/app/example.dbc
+      # CAN writes stay off: anyone on the hotspot can reach this telemetry server.
+      - ENABLE_UPLINK=false
+      - ENABLE_TX_WS=false
+      - DBC_FILE_PATH=/app/dbc_uploads/active.dbc
+      - DBC_UPLOAD_PATH=/app/dbc_uploads/active.dbc
     volumes:
       - /lib/modules:/lib/modules
+      - ${WFR_DBC_DIR:-./dbc}:/app/dbc_uploads
+      - raw_can_data:/app/raw_can_logs
+    # No fallback copy into dbc_uploads: PECAN warns viewers when active.dbc is missing.
+    command: sh -c '[ -s /app/dbc_uploads/active.dbc ] || export DBC_FILE_PATH=/app/example.dbc; exec python main.py'
     logging:
       driver: "json-file"
       options:
@@ -46,14 +60,31 @@ services:
     container_name: daq-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      # Has no password, so it must not be reachable from the hotspot.
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
 
-  # TLS terminator — exposes wss://<pi-ip>:9443 → ws://localhost:9080
+  pecan:
+    image: ghcr.io/western-formula-racing/data-acquisition/pecan:latest
+    container_name: daq-pecan
+    # Host networking keeps every service behind one firewall. Docker's published
+    # ports would skip the INPUT rules in wfr-hotspot-firewall.nft.
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./base-station.json:/usr/share/nginx/html/base-station.json:ro
+      - ${WFR_DBC_DIR:-./dbc}:/usr/share/nginx/html/dbc:ro
+    depends_on:
+      - telemetry
+
+  # Optional TLS terminator for HTTPS pages: wss://<pi-ip>:9443 → ws://localhost:9080.
+  # The hotspot firewall blocks 9443, so this is only for other networks.
   caddy:
     image: caddy:alpine
     container_name: daq-caddy
+    profiles:
+      - tls
     network_mode: host
     restart: unless-stopped
     volumes:
@@ -65,15 +96,7 @@ services:
         max-size: "5m"
         max-file: "2"
 
-  pecan:
-    image: ghcr.io/western-formula-racing/data-acquisition/pecan:latest
-    container_name: daq-pecan
-    restart: unless-stopped
-    ports:
-      - "3000:80"
-    depends_on:
-      - telemetry
-
 volumes:
+  raw_can_data:
   redis_data:
   caddy_data:
