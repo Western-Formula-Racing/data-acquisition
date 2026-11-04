@@ -8,6 +8,8 @@ import json
 import time
 import ipaddress
 
+from websockets.exceptions import ConnectionClosed
+
 from src.config import (
     REDIS_URL,
     REDIS_CAN_CHANNEL as REDIS_CHANNEL,
@@ -25,10 +27,18 @@ logger = logging.getLogger("WebSocketBridge")
 
 WS_PORT = int(os.getenv("WS_PORT", 9080))
 UPLINK_RATE_LIMIT = int(os.getenv("UPLINK_RATE_LIMIT", 10))  # messages per second per client
+CLIENT_QUEUE_SIZE = int(os.getenv("WS_CLIENT_QUEUE_SIZE", 256))  # messages waiting per client
+CLIENT_SEND_TIMEOUT = float(os.getenv("WS_CLIENT_SEND_TIMEOUT", 30))  # seconds before giving up on a client
 ROLE = os.getenv("ROLE", "base")  # "car" = direct CAN write, "base" = Redis relay
 
 connected_clients = set()
 shutdown_event = asyncio.Event()
+
+# websocket -> telemetry waiting to be sent to that client
+_client_queues: dict[object, asyncio.Queue] = {}
+
+# websocket -> telemetry messages dropped because that client fell behind
+_client_drops: dict[object, int] = {}
 
 # Per-client rate limiting state: websocket -> list of timestamps
 _client_send_times: dict = {}
@@ -265,6 +275,45 @@ def _release_client_locks(websocket):
         logger.info(f"Page lock auto-released: {page} (client disconnected)")
 
 
+async def _broadcast(data) -> None:
+    """Queue telemetry for every client without waiting on any of them.
+
+    A device that leaves Wi-Fi stops draining its socket. Waiting on it here would
+    stall the feed for every other viewer, so it loses its own oldest messages
+    instead, until _client_writer gives up on it.
+    """
+    for client, queue in _client_queues.items():
+        if queue.full():
+            queue.get_nowait()
+            _client_drops[client] += 1
+        queue.put_nowait(data)
+    # A source that always has data ready may never suspend, which would starve
+    # the writers.
+    await asyncio.sleep(0)
+
+
+async def _client_writer(websocket, queue: asyncio.Queue) -> None:
+    """Send one client's queued telemetry, at whatever speed it can take.
+
+    The keepalive can't remove a client that has gone while telemetry is flowing:
+    its ping waits on the same full buffer as this send, so the connection lasts
+    until TCP gives up, about 15 minutes later. So a stuck send ends the connection.
+    The client reconnects when it comes back.
+    """
+    while True:
+        data = await queue.get()
+        try:
+            await asyncio.wait_for(websocket.send(data), CLIENT_SEND_TIMEOUT)
+        except ConnectionClosed:
+            return
+        except TimeoutError:
+            logger.warning(f"Client {_client_ids.get(websocket)} stopped reading. Closing its connection.")
+            websocket.transport.abort()
+            return
+        except Exception as e:
+            logger.warning(f"Could not send telemetry to client: {e}")
+
+
 async def direct_queue_listener(queue: asyncio.Queue):
     """Broadcast messages from an in-process queue to all WS clients (car mode, no Redis)."""
     while not shutdown_event.is_set():
@@ -272,11 +321,7 @@ async def direct_queue_listener(queue: asyncio.Queue):
             data = await asyncio.wait_for(queue.get(), timeout=1.0)
         except asyncio.TimeoutError:
             continue
-        if connected_clients:
-            await asyncio.gather(
-                *[client.send(data) for client in connected_clients],
-                return_exceptions=True,
-            )
+        await _broadcast(data)
 
 
 async def redis_listener():
@@ -307,15 +352,7 @@ async def redis_listener():
             async def _handler(msg):
                 if msg['type'] != 'message':
                     return
-                data = redis_utils.decode_message(msg['data'])
-
-                # Broadcast to all connected clients
-                if connected_clients:
-                    # Create tasks for sending to each client to avoid blocking
-                    await asyncio.gather(
-                        *[client.send(data) for client in connected_clients],
-                        return_exceptions=True
-                    )
+                await _broadcast(redis_utils.decode_message(msg['data']))
 
             await pump_pubsub_with_heartbeat(pubsub, _handler,
                                              should_stop=shutdown_event.is_set, log=logger)
@@ -514,6 +551,10 @@ async def ws_handler(websocket):
     client_id = f"client_{_next_client_id}"
     _next_client_id += 1
     _client_ids[websocket] = client_id
+    queue = asyncio.Queue(maxsize=CLIENT_QUEUE_SIZE)
+    _client_queues[websocket] = queue
+    _client_drops[websocket] = 0
+    writer = asyncio.create_task(_client_writer(websocket, queue))
     logger.info(f"Client connected: {client_info} ({client_id}). Total: {len(connected_clients)}")
     await _publish_client_count()
 
@@ -533,11 +574,18 @@ async def ws_handler(websocket):
                 await _handle_client_message(websocket, raw_message, redis_client)
             except Exception as e:
                 logger.error(f"Error handling message from {client_info}: {e}")
-    except websockets.exceptions.ConnectionClosed:
+    except ConnectionClosed:
         pass
     except Exception as e:
         logger.error(f"Error in ws_handler for {client_info}: {e}")
     finally:
+        writer.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await writer
+        _client_queues.pop(websocket, None)
+        dropped = _client_drops.pop(websocket, 0)
+        if dropped:
+            logger.warning(f"Client {client_id} fell behind and missed {dropped} telemetry messages")
         connected_clients.discard(websocket)
         _client_send_times.pop(websocket, None)
         had_locks = any(info["ws"] is websocket for info in _page_locks.values())

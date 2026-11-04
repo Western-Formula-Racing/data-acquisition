@@ -102,6 +102,7 @@ graph TB
 - **Frame type:** Text frames (JSON)
 - **Encoding:** UTF-8
 - **Max message size:** 64 KB
+- **Delivery:** Telemetry is best-effort per client. A client that can't keep up loses its oldest queued telemetry messages rather than delaying other clients, so clients must not assume they receive every message. The server closes a connection when a send to that client stays blocked for 30 seconds, and the client should reconnect.
 
 ### 2.1 Connection URL
 
