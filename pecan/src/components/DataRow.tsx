@@ -112,7 +112,8 @@ function DataRowComponent({ msgID, name, category, data, rawData, index, initial
             >
 
                 {/* Msg ID column */}
-                <div className="col-span-2 md:col-span-1 flex justify-left items-center ps-3 text-xs font-mono">
+                {/* min-w-0 and wrapping: IDs like __car_link would otherwise run into the name. */}
+                <div className="col-span-2 md:col-span-1 flex justify-left items-center ps-3 text-xs font-mono min-w-0 [overflow-wrap:anywhere]">
                     {formatMsgId(msgID)}
                 </div>
 

@@ -1,11 +1,15 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import {
     parseCanLogLine,
     decodeCanMessage,
     createCanProcessor,
     getDbcMessages,
     loadDBCFromCache,
+    loadDbcFromBaseStation,
     setActiveDbcText,
+    getActiveDbcText,
+    usingCachedDBC,
+    forceCache,
 } from './canProcessor';
 import { Dbc, Can } from 'candied';
 import exampleDbc from '../assets/example.dbc?raw';
@@ -498,6 +502,50 @@ describe('CAN Processor Unit Tests', () => {
             expect(result?.canId).toBe(0x9806E5F4); // Should return the DBC ID
         });
     });
+});
+
+describe('loadDbcFromBaseStation', () => {
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubResponse(ok: boolean, body: string) {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok, text: async () => body }));
+  }
+
+  it('uses the DBC the Pi serves', async () => {
+    const before = getActiveDbcText();
+    stubResponse(true, 'VERSION ""\n\nBO_ 512 BMS: 8 Vector__XXX\n');
+
+    expect(await loadDbcFromBaseStation('/dbc/active.dbc')).toBe(true);
+    expect(getActiveDbcText()).toContain('BO_ 512 BMS');
+    expect(usingCachedDBC()).toBe(false);
+
+    setActiveDbcText(before);
+    forceCache(false);
+  });
+
+  it('reports a Pi with no DBC and keeps the current one', async () => {
+    const before = getActiveDbcText();
+    stubResponse(false, 'not found');
+
+    expect(await loadDbcFromBaseStation('/dbc/active.dbc')).toBe(false);
+    expect(getActiveDbcText()).toBe(before);
+  });
+
+  it('rejects an HTML page returned in place of a DBC', async () => {
+    const before = getActiveDbcText();
+    stubResponse(true, '<!doctype html><html></html>');
+
+    expect(await loadDbcFromBaseStation('/dbc/active.dbc')).toBe(false);
+    expect(getActiveDbcText()).toBe(before);
+  });
+
+  it('survives a failed request', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    expect(await loadDbcFromBaseStation('/dbc/active.dbc')).toBe(false);
+  });
 });
 
 describe('setActiveDbcText', () => {

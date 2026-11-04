@@ -63,7 +63,9 @@ export class SerialService {
     async connect(): Promise<boolean> {
         if (!('serial' in navigator)) {
             console.error('Web Serial API is not supported in this browser. Use Chrome/Edge/Opera.');
-            alert('Your browser does not support the Web Serial API. Please use Google Chrome or Microsoft Edge.');
+            alert(window.isSecureContext
+                ? 'Your browser does not support the Web Serial API. Please use Google Chrome or Microsoft Edge.'
+                : 'USB CAN adapters only work on HTTPS or localhost, and this page was loaded over plain HTTP.');
             return false;
         }
 

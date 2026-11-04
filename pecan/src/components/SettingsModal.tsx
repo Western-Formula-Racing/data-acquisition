@@ -4,6 +4,7 @@ import {
     DEFAULT_WS_FAILOVER_URLS,
 } from "../services/WebSocketService";
 import { forceCache, clearDbcCache } from "../utils/canProcessor";
+import { isViewerOnly } from "../lib/baseStation";
 import { useState, useEffect } from "react";
 import { Button } from "./Button";
 import { useAllSignals } from "../lib/useDataStore";
@@ -285,6 +286,9 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                             {/* Team DBC — internal build only */}
                             {import.meta.env.VITE_INTERNAL && <DbcSelector />}
 
+                            {/* The Pi supplies the DBC and connection to viewers; only their display settings apply. */}
+                            {!isViewerOnly() && (
+                            <>
                             {/* DBC Upload Section - compact single row */}
                             <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
                                 <span className="text-sm font-medium">Custom DBC File</span>
@@ -408,6 +412,9 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                 </div>
                             </div>
 
+                            </>
+                            )}
+
                             {/* Performance Overlay Toggle */}
                             <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
                                 <div className="flex flex-col">
@@ -501,6 +508,8 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                 </div>
                             </div>
 
+                            {!isViewerOnly() && (
+                            <>
                             {/* Local USB CAN Adapter Toggle */}
                             <div className="flex flex-col md:flex-row w-full rounded-lg text-white bg-option gap-2 md:justify-between md:items-center px-4 py-3">
                                 <div className="flex flex-col">
@@ -598,6 +607,9 @@ function SettingsModal({ isOpen, onClose, bannerApi }: Readonly<SettingsModalPro
                                     </p>
                                 </div>
                             </div>
+
+                            </>
+                            )}
 
                             {/* Category Configuration Area */}
                             <div className="w-full rounded-lg text-white bg-option p-4">

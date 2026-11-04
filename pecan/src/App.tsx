@@ -6,19 +6,21 @@ import SettingsModal from "./components/SettingsModal";
 import { AuthModal } from "./components/AuthModal";
 import {
   loadDBCFromCache,
+  loadDbcFromBaseStation,
   usingCachedDBC,
 } from "./utils/canProcessor";
 import { dataStore } from "./lib/DataStore";
 import { coldStore } from "./lib/ColdStore";
-import { Outlet, useLocation } from "react-router";
+import { Navigate, Outlet, useLocation } from "react-router";
 import { webSocketService } from "./services/WebSocketService";
 import { telemetryHandler } from "./services/TelemetryHandler";
 import { serialService } from "./services/SerialService";
-import { DefaultBanner, CacheBanner, RecoveredSessionBanner } from "./components/AppBanners";
+import { DefaultBanner, CacheBanner, RecoveredSessionBanner, BaseStationDbcBanner } from "./components/AppBanners";
 import FloatingTools from "./components/FloatingTools";
 import { useRemoteConfig } from "./lib/useRemoteConfig";
 import { updateCategories } from "./config/categories";
 import { useTimeline } from "./context/TimelineContext";
+import { getBaseStationConfig, isHiddenFromViewers, isViewerOnly } from "./lib/baseStation";
 
 function App() {
   const location = useLocation();
@@ -32,6 +34,8 @@ function App() {
     useState<boolean>(true);
   const [displayRecoveredSessionBanner, setDisplayRecoveredSessionBanner] =
     useState<boolean>(() => dataStore.consumeRecoveredSnapshotNotice());
+  const [displayBaseStationDbcBanner, setDisplayBaseStationDbcBanner] =
+    useState<boolean>(false);
 
   const bannerApi = {
     showDefault: () => setDisplayDefaultBanner(true),
@@ -77,21 +81,35 @@ function App() {
 
   useEffect(() => {
     (async () => {
-      console.log("[App] Loading DBC from cache...");
-      await loadDBCFromCache();
-      const isUsingCache = usingCachedDBC();
-      console.log("[App] Using cached DBC:", isUsingCache);
+      const baseStation = getBaseStationConfig();
+      const hasBaseStationDbc = baseStation?.dbcUrl
+        ? await loadDbcFromBaseStation(baseStation.dbcUrl)
+        : false;
 
-      if (isUsingCache) {
+      if (hasBaseStationDbc) {
         setDisplayDefaultBanner(false);
-        setDisplayCacheBanner(true);
-        localStorage.setItem('dbc-cache-active', 'true');
       } else {
-        const wasCacheActive = localStorage.getItem('dbc-cache-active') === 'true';
-        if (wasCacheActive) {
-          console.log("[App] Cache was previously active but not found now");
+        console.log("[App] Loading DBC from cache...");
+        await loadDBCFromCache();
+        const isUsingCache = usingCachedDBC();
+        console.log("[App] Using cached DBC:", isUsingCache);
+
+        if (isUsingCache) {
+          setDisplayDefaultBanner(false);
+          setDisplayCacheBanner(true);
+          localStorage.setItem('dbc-cache-active', 'true');
+        } else {
+          const wasCacheActive = localStorage.getItem('dbc-cache-active') === 'true';
+          if (wasCacheActive) {
+            console.log("[App] Cache was previously active but not found now");
+          }
+          localStorage.removeItem('dbc-cache-active');
         }
-        localStorage.removeItem('dbc-cache-active');
+
+        if (baseStation) {
+          setDisplayDefaultBanner(false);
+          setDisplayBaseStationDbcBanner(true);
+        }
       }
 
       // Initialize WebSocket only after DBC is loaded so the CAN processor
@@ -129,15 +147,20 @@ function App() {
     return () => window.removeEventListener("keydown", handleSettingsShortcut);
   }, []);
 
+  if (isViewerOnly() && isHiddenFromViewers(location.pathname)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   return (
     <div className="h-screen flex flex-row overflow-y-auto">
-      <div className={`h-screen transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'lg:w-2/9 md:w-2/5 sm:w-3/5 w-full' : 'w-[60px]'}`}>
+      <div className={`h-screen transition-all duration-300 ease-in-out flex-shrink-0 ${isSidebarOpen ? 'lg:w-2/9 md:w-2/5 sm:w-3/5 w-full' : 'w-0 sm:w-[60px]'}`}>
         {!isSidebarOpen && <Hamburger trigger={() => setIsSidebarOpen(true)} />}
         <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} onOpenSettings={openSettings} onOpenAuth={openAuth} />
       </div>
 
       {/* Main content area, Outlet element is needed to display the rendered child pages received from the routes */}
-      <main id="main-content" className="flex-1 h-full min-w-0">
+      {/* On a phone the menu button sits above the page rather than in a column beside it. */}
+      <main id="main-content" className="flex-1 h-full min-w-0 pt-10 sm:pt-0">
         {showAppBanners && (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 w-full pointer-events-none">
             <div className="pointer-events-auto w-full flex justify-center">
@@ -151,6 +174,12 @@ function App() {
               <CacheBanner
                 open={displayCacheBanner}
                 onClose={() => setDisplayCacheBanner(false)}
+              />
+            </div>
+            <div className="pointer-events-auto w-full flex justify-center">
+              <BaseStationDbcBanner
+                open={displayBaseStationDbcBanner}
+                onClose={() => setDisplayBaseStationDbcBanner(false)}
               />
             </div>
             <div className="pointer-events-auto w-full flex justify-center">

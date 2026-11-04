@@ -247,6 +247,30 @@ export async function loadDBCFromCache() {
   }
 }
 
+/**
+ * Use the DBC the base station serves, so every device on the hotspot decodes the
+ * same way with nothing to upload. Returns false if the Pi doesn't have one.
+ */
+export async function loadDbcFromBaseStation(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return false;
+
+    const text = await res.text();
+    if (!/^\s*BO_\s/m.test(text)) {
+      console.warn("[loadDbcFromBaseStation] Response has no CAN messages:", url);
+      return false;
+    }
+
+    dbcFile = text;
+    usingCache = false;
+    return true;
+  } catch (error) {
+    console.warn("[loadDbcFromBaseStation] Could not load", url, error);
+    return false;
+  }
+}
+
 //Banner Helper Methods for accessing state
 
 export function usingCachedDBC() {

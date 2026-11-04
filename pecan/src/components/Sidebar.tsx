@@ -7,6 +7,7 @@ import { NavLink } from "react-router";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
+import { isViewerOnly } from "../lib/baseStation";
 
 function useThemeLogo() {
   const { theme, resolvedTheme } = useTheme();
@@ -26,6 +27,7 @@ interface InputProps {
 
 function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<InputProps>) {
   const logoSrc = useThemeLogo();
+  const viewerOnly = isViewerOnly();
 
   // Define the paths that belong to the Vehicle Control group
   const controlPaths = ["/throttle-mapper", "/sensor-validator", "/can-transmitter", "/tx"];
@@ -93,23 +95,28 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                 path="/accumulator"
                 onClose={onClose}
               />
-              <SidebarOption
-                option="CHARGECART"
-                path="/chargecart"
-                onClose={onClose}
-                isPending={true}
-              />
+              {!viewerOnly && (
+                <SidebarOption
+                  option="CHARGECART"
+                  path="/chargecart"
+                  onClose={onClose}
+                  isPending={true}
+                />
+              )}
               <SidebarOption
                 option="CUSTOM MONITOR"
                 path="/monitor-builder"
                 onClose={onClose}
               />
-              <SidebarOption
-                option="COMMS INTERFACE"
-                path="/comms"
-                onClose={onClose}
-                isPending={true}
-              />
+              {!viewerOnly && (
+                <SidebarOption
+                  option="COMMS INTERFACE"
+                  path="/comms"
+                  onClose={onClose}
+                  isPending={true}
+                />
+              )}
+              {!viewerOnly && (
               <li>
                 <button
                   onClick={() => setIsControlOpen(!isControlOpen)}
@@ -151,19 +158,22 @@ function Sidebar({ onClose, isOpen, onOpenSettings, onOpenAuth }: Readonly<Input
                   </ul>
                 </div>
               </li>
+              )}
 
             </ul>
           </div>
 
           <footer className="flex flex-col items-start pl-[10%] gap-10 mb-10">
             {/* Should go to /account*/}
-            <button
-              onClick={handleAuthClick}
-              className="!no-underline text-md flex flex-row items-center gap-6 bg-transparent border-none cursor-pointer"
-            >
-              <img src={avatar} alt="avatar" width={30} height={30} />
-              <span className="sidebar-footer-label">Account</span>
-            </button>
+            {!viewerOnly && (
+              <button
+                onClick={handleAuthClick}
+                className="!no-underline text-md flex flex-row items-center gap-6 bg-transparent border-none cursor-pointer"
+              >
+                <img src={avatar} alt="avatar" width={30} height={30} />
+                <span className="sidebar-footer-label">Account</span>
+              </button>
+            )}
             {/* Settings - opens modal */}
             <button
               onClick={handleSettingsClick}

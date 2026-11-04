@@ -129,7 +129,7 @@ flowchart TD
 
     DETECT -->|"GitHub Pages /<br/>Cloud IP"| PROD["wss://ws-demo.westernformularacing.org"]
     DETECT -->|"localhost /<br/>127.0.0.1"| LOCAL["ws://localhost:9080"]
-    DETECT -->|"192.168.x.x<br/>(Car Hotspot)"| CAR["ws://192.168.x.x:9080"]
+    DETECT -->|"Private LAN address<br/>(Car Hotspot)"| CAR["ws://own-host:9080<br/>first in the failover list"]
 
     USE_CUSTOM --> OPEN["new WebSocket(url)"]
     USE_ENV --> OPEN
@@ -151,7 +151,8 @@ flowchart TD
 
 **Connection features:**
 - **Auto-protocol detection**: `ws://` on HTTP, `wss://` on HTTPS
-- **Deployment modes**: Production cloud, localhost dev, car hotspot (192.168.x.x)
+- **Deployment modes**: Production cloud, localhost dev, LAN or car hotspot (private addresses try their own host first), base station hotspot (see below)
+- **Base station hotspot**: A Pi base serves `/base-station.json`, which puts PECAN in view-only mode: it connects only to that Pi and never falls back to the demo feed, loads the DBC from the Pi, keeps retrying if the connection drops, and hides pages that send to the car or need the internet. The same image behaves normally anywhere that file doesn't exist. See [`RPI_BASE_DEPLOY.md`](../universal-telemetry-software/deploy/RPI_BASE_DEPLOY.md)
 - **Default backend**: On cloud/non-local hosts PECAN connects to the hosted backend at `wss://ws-demo.westernformularacing.org`, while localhost defaults to `ws://localhost:9080`, unless overridden
 - **Configurable override**: Users can set a custom WebSocket URL via Settings or `VITE_WS_URL`
 - **Reconnection**: Up to 5 attempts with linear backoff (2s increments)

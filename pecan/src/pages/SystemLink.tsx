@@ -256,6 +256,11 @@ export default function TelemetryDebug() {
 
   const startTalking = async () => {
     if (isTalking) return;
+    if (!navigator.mediaDevices) {
+      // Browsers only offer the microphone on HTTPS or localhost.
+      setAudioStatus("Mic needs HTTPS");
+      return;
+    }
     await initAudio();
     
     try {

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createCanProcessor, formatCanId } from "../utils/canProcessor";
+import { copyText, createId } from "../utils/insecureContext";
 import { useSignal, useMessageHistory } from "../lib/useDataStore";
 import {
     Activity,
@@ -165,7 +166,7 @@ const SensorValidator: React.FC = () => {
         }
 
         const point: CapturedPoint = {
-            id: crypto.randomUUID(),
+            id: createId(),
             canValue: finalValue,
             refValue: val,
             timestamp: Date.now(),
@@ -260,8 +261,9 @@ const SensorValidator: React.FC = () => {
         code += `};\n\n`;
         code += `#define ${tableName}_SIZE ${capturedPoints.length}\n`;
         
-        navigator.clipboard.writeText(code);
-        alert("C code copied to clipboard!");
+        void copyText(code).then((copied) => {
+            alert(copied ? "C code copied to clipboard!" : "Could not copy to the clipboard.");
+        });
     };
 
     // --- Rendering ---

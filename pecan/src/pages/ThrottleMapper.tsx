@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createCanProcessor } from "../utils/canProcessor";
+import { copyText } from "../utils/insecureContext";
 import { packMessage } from "../utils/packMessage";
 import { dataStore } from "../lib/DataStore";
 import { usePageLock } from "../lib/usePageLock";
@@ -725,7 +726,7 @@ uint16_t map_throttle(float input_volts, float min_v, float max_v) {
                                     )}
 
                                     <button
-                                        onClick={() => navigator.clipboard.writeText(currentCode)}
+                                        onClick={() => void copyText(currentCode)}
                                         className="text-xs flex items-center space-x-1 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded transition-colors"
                                     >
                                         <Save className="w-3 h-3" />
