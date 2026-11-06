@@ -123,21 +123,16 @@
   No gateway is set -- the radio link is a direct point-to-point connection. \\[1mm]
   \textbf{Option A -- Script (recommended):} \\
   \cmd{cd \textasciitilde/data-acquisition/universal-telemetry-software} \\
-  \cmd{sudo ./setup-static-ip.sh} \quad (prompts: 1 = car, 2 = base) \\[1mm]
-  \textbf{Option B -- Netplan (manual):} \\
-  Create \cmd{/etc/netplan/10-eth0-static.yaml}: \\
-  \cmd{\ \ network:} \\
-  \cmd{\ \ \ \ version: 2} \\
-  \cmd{\ \ \ \ ethernets:} \\
-  \cmd{\ \ \ \ \ \ eth0:} \\
-  \cmd{\ \ \ \ \ \ \ \ addresses: [10.71.1.20/24]} \quad \textit{(or .10 on car)} \\
-  \cmd{sudo chmod 600 /etc/netplan/10-eth0-static.yaml} \\
-  \cmd{sudo netplan apply} \\[1mm]
-  \textit{Note: \cmd{netplan apply} briefly resets the network -- Tailscale may drop for a few seconds.} \\[1mm]
+  \cmd{sudo ./setup-static-ip.sh} \quad (prompts: 1 = car, 2 = base; or pass \cmd{--car} / \cmd{--base}) \\[1mm]
+  \textbf{Option B -- NetworkManager (manual):} \\
+  \cmd{sudo nmcli con add type ethernet ifname eth0 con-name wfr-radio autoconnect yes \textbackslash} \\
+  \cmd{\ \ connection.autoconnect-priority 100 ipv4.method manual ipv4.addresses 10.71.1.20/24 \textbackslash} \\
+  \cmd{\ \ ipv4.never-default yes ipv6.method disabled} \quad \textit{(10.71.1.10 on car)} \\
+  \textit{Don't hand-write a netplan file for eth0: NetworkManager writes its own, and they clash.} \\[1mm]
   \textbf{Option C -- NetworkManager GUI:} IPv4 Settings $\rightarrow$ Method: Manual $\rightarrow$ Add address. \\
   \textit{The Gateway field cannot be left blank in the GUI -- enter \cmd{0.0.0.0} as a dummy value.} \\[1mm]
   \textbf{PASS:} \cmd{ip addr show eth0} shows \cmd{10.71.1.10} or \cmd{10.71.1.20} \\
-  \textbf{FAIL:} no IP after reboot -- another netplan file may be overriding; check \cmd{/etc/netplan/} \\
+  \textbf{FAIL:} no IP, or two addresses -- check \cmd{nmcli con show} and \cmd{/etc/netplan/} for another eth0 profile \\
 \end{tabular}
 
 \vspace{1mm}

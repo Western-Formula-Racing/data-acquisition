@@ -182,6 +182,7 @@ jobs:
           tests/test_websocket_slow_client.py \
           tests/test_base_clock.py \
           tests/test_wfr_net.py \
+          tests/test_setup_scripts.py \
           tests/test_deploy_contracts.py \
           tests/test_can_recorder.py \
           -v
