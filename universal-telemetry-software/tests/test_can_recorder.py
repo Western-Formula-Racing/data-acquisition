@@ -17,11 +17,13 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from unittest.mock import Mock
 
 import pytest
 
@@ -608,15 +610,33 @@ def test_sigterm_commits_everything_received(tmp_path):
     assert counters == list(range(counters[0], total))
 
 
-def test_recorder_waits_for_a_missing_interface_instead_of_exiting(tmp_path):
-    recorder = subprocess.Popen(
-        [sys.executable, "-m", "src.can_recorder", "--iface", "nosuchcan0", "--dir", str(tmp_path)],
-        cwd=UTS_ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+def test_open_can_socket_without_python_error_filter_constant(monkeypatch):
+    monkeypatch.delattr(socket, "CAN_RAW_ERR_FILTER", raising=False)
+    sock = Mock()
+    monkeypatch.setattr(socket, "socket", lambda *args: sock)
+
+    assert can_recorder.open_can_socket("can0") is sock
+
+    sock.setsockopt.assert_any_call(
+        socket.SOL_CAN_RAW, 2, struct.pack("@I", socket.CAN_ERR_MASK),
     )
-    try:
-        time.sleep(1.0)
-        assert recorder.poll() is None, "must keep retrying until the HAT driver registers can0"
-        assert not list(tmp_path.iterdir()), "must not create empty runs before any frame arrives"
-    finally:
-        recorder.terminate()
-        recorder.wait(timeout=5)
+    sock.bind.assert_called_once_with(("can0",))
+    sock.close.assert_not_called()
+
+
+def test_recorder_waits_for_a_missing_interface_instead_of_exiting(tmp_path):
+    with tempfile.TemporaryFile(mode="w+") as stderr:
+        recorder = subprocess.Popen(
+            [sys.executable, "-m", "src.can_recorder", "--iface", "nosuchcan0", "--dir", str(tmp_path)],
+            cwd=UTS_ROOT, stdout=subprocess.DEVNULL, stderr=stderr,
+        )
+        try:
+            time.sleep(1.0)
+            stderr.seek(0)
+            assert recorder.poll() is None, (
+                "must keep retrying until the HAT driver registers can0\n" + stderr.read()
+            )
+            assert not list(tmp_path.iterdir()), "must not create empty runs before any frame arrives"
+        finally:
+            recorder.terminate()
+            recorder.wait(timeout=5)
