@@ -43,6 +43,9 @@ logger = logging.getLogger("can_recorder")
 SO_TIMESTAMPNS = 35
 SO_RXQ_OVFL = 40
 
+# From linux/can/raw.h; some Python builds do not expose this socket option.
+_CAN_RAW_ERR_FILTER = getattr(socket, "CAN_RAW_ERR_FILTER", 2)
+
 _CAN_FRAME_SIZE = 16
 _TIMESPEC = struct.Struct("@ll")
 _U32 = struct.Struct("@I")
@@ -85,7 +88,7 @@ def open_can_socket(iface: str) -> socket.socket:
         sock.setsockopt(socket.SOL_SOCKET, SO_TIMESTAMPNS, 1)
         sock.setsockopt(socket.SOL_SOCKET, SO_RXQ_OVFL, 1)
         # Record error frames too: they timestamp bus-off and controller overflow.
-        sock.setsockopt(socket.SOL_CAN_RAW, socket.CAN_RAW_ERR_FILTER, struct.pack("@I", socket.CAN_ERR_MASK))
+        sock.setsockopt(socket.SOL_CAN_RAW, _CAN_RAW_ERR_FILTER, struct.pack("@I", socket.CAN_ERR_MASK))
         sock.settimeout(_SOCKET_POLL_S)
         sock.bind((iface,))
     except OSError:
