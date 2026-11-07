@@ -9,7 +9,7 @@ on:
       - 'universal-telemetry-software/deploy/.env.macbook'
       - 'universal-telemetry-software/deploy/MACBOOK_DEPLOY.md'
       - 'universal-telemetry-software/deploy/ci-validate-compose.py'
-      - 'universal-telemetry-software/deploy/wfr-hotspot.service'
+      - 'universal-telemetry-software/deploy/wfr-net'
       - '.github/workflows/macbook-installer-ci.yml'
   pull_request:
     branches: [ main, dev, deploy ]
@@ -19,7 +19,7 @@ on:
       - 'universal-telemetry-software/deploy/.env.macbook'
       - 'universal-telemetry-software/deploy/MACBOOK_DEPLOY.md'
       - 'universal-telemetry-software/deploy/ci-validate-compose.py'
-      - 'universal-telemetry-software/deploy/wfr-hotspot.service'
+      - 'universal-telemetry-software/deploy/wfr-net'
       - '.github/workflows/macbook-installer-ci.yml'
   workflow_dispatch:
 

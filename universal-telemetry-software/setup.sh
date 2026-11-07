@@ -5,10 +5,12 @@
 # uv install, Python venv, car-telemetry and CAN recorder systemd services (car only),
 # static IP on eth0, WiFi routing priority, Tailscale, NoMachine.
 #
-# Usage: sudo ./setup.sh [--car | --base]
-#   --car   non-interactive car setup  (10.71.1.10, remote 10.71.1.20)
-#   --base  non-interactive base setup (10.71.1.20, remote 10.71.1.10)
-#   (omit flag for interactive role prompt)
+# Usage: sudo ./setup.sh [--car | --base] [--wayland]
+#   --car      non-interactive car setup  (10.71.1.10, remote 10.71.1.20)
+#   --base     non-interactive base setup (10.71.1.20, remote 10.71.1.10)
+#   --wayland  switch the desktop to Wayland (Labwc), for NoMachine on a headless Pi.
+#              Remote Desktop (xrdp) sessions crashed on login after this on the car Pi.
+#   (omit --car/--base for an interactive role prompt)
 
 set -euo pipefail
 
@@ -27,10 +29,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Role selection ────────────────────────────────────────────────────────────
 ROLE=""
+WAYLAND=false
 for arg in "$@"; do
     case "$arg" in
-        --car)  ROLE=car  ;;
-        --base) ROLE=base ;;
+        --car)     ROLE=car  ;;
+        --base)    ROLE=base ;;
+        --wayland) WAYLAND=true ;;
     esac
 done
 
@@ -94,13 +98,19 @@ else
     ok "uv installed at $UV"
 fi
 
-# ── 4. Enable Wayland compositor (required for NoMachine on headless Pi) ─────
-hdr "Wayland compositor"
-if raspi-config nonint get_wayland 2>/dev/null | grep -q "W2"; then
-    ok "Wayland already enabled"
-else
-    raspi-config nonint do_wayland W2
-    ok "Wayland enabled (Wayfire) — takes effect after reboot"
+# ── 4. Desktop session ───────────────────────────────────────────────────────
+# Left as it is unless asked: on the car Pi, Remote Desktop (xrdp) sessions crashed on
+# login after this switched to Wayland.
+if [[ "$WAYLAND" == true ]]; then
+    hdr "Wayland compositor"
+    if raspi-config nonint get_wayland 2>/dev/null | grep -q "W2"; then
+        ok "Wayland already enabled"
+    else
+        # W2 is Labwc in current raspi-config. W1 (X11) undoes it.
+        raspi-config nonint do_wayland W2
+        ok "Wayland enabled (Labwc) — takes effect after reboot"
+        warn "If Remote Desktop sessions close on login, undo with: sudo raspi-config nonint do_wayland W1"
+    fi
 fi
 
 # ── 5. Python venv + dependencies ────────────────────────────────────────────
@@ -157,42 +167,10 @@ if [[ "$ROLE" == "car" ]]; then
 fi
 
 # ── 8. Static IP on eth0 + WiFi routing priority ─────────────────────────────
-# eth0 gets a high metric (low priority for default route) so WiFi remains the
-# default gateway for internet traffic even when the radio link is connected.
-# eth0 is still reachable at 10.71.1.x for the telemetry link.
-hdr "Static IP — eth0 (metric 200, WiFi stays default route)"
-NETPLAN_FILE=/etc/netplan/10-eth0-static.yaml
-cat > "$NETPLAN_FILE" <<EOF
-network:
-  version: 2
-  ethernets:
-    eth0:
-      addresses:
-        - ${LOCAL_IP}/24
-      routes:
-        - to: 10.71.1.0/24
-          via: 0.0.0.0
-          metric: 200
-          on-link: true
-      dhcp4: false
-      dhcp6: false
-EOF
-chmod 600 "$NETPLAN_FILE"
-ok "Written $NETPLAN_FILE"
-
-# WiFi remains the default route automatically — eth0's netplan has no gateway,
-# so it only adds a host route to 10.71.1.0/24 and never competes for default.
-
-echo -e "${YELLOW}Applying netplan...${NC}"
-netplan apply
-ok "netplan applied"
-
-ASSIGNED=$(ip addr show eth0 2>/dev/null | grep -oP "inet \K[0-9.]+" || echo "")
-if [[ "$ASSIGNED" == "$LOCAL_IP" ]]; then
-    ok "eth0 is now ${LOCAL_IP}/24"
-else
-    warn "eth0 shows '${ASSIGNED:-none}' — expected '${LOCAL_IP}' (cable may not be plugged in yet)"
-fi
+# eth0 gets no gateway, so WiFi remains the default route for internet traffic while
+# the radio link carries 10.71.1.x. Also writes deploy/.env with REMOTE_IP.
+hdr "Static IP — eth0"
+"$SCRIPT_DIR/setup-static-ip.sh" "--$ROLE"
 
 # ── 9. Tailscale ─────────────────────────────────────────────────────────────
 hdr "Tailscale"

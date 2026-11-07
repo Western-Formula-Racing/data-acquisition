@@ -2,7 +2,7 @@ import { clearDbcCache } from "../utils/canProcessor";
 import { useState, useEffect, useRef } from "react";
 import { Banner, BannerButton } from "./Banner";
 
-export { DefaultBanner, CacheBanner, RecoveredSessionBanner };
+export { DefaultBanner, CacheBanner, RecoveredSessionBanner, BaseStationDbcBanner };
 
 interface InputProps {
   open: boolean;
@@ -58,11 +58,11 @@ function DefaultBanner({ open, onClose, onOpenSettings }: Readonly<InputProps>) 
   return (
     <Banner open={open} className="z-30">
       <div className="flex items-center gap-2">
-        <span className="text-white text-[14pt] font-semibold text-center whitespace-nowrap overflow-hidden text-ellipsis">
+        <span className="text-white text-[14pt] font-semibold text-center">
           Using preconfigured DBC file.
         </span>
       </div>
-      <div className="flex flex-row items-center gap-4 shrink-0">
+      <div className="flex flex-row flex-wrap justify-center items-center gap-4 md:shrink-0">
         <BannerButton onClick={handleOpenSettings}>
           Open Settings
         </BannerButton>
@@ -97,6 +97,20 @@ function CacheBanner({ open, onClose }: Readonly<InputProps>) {
   );
 }
 
+// Stays until dismissed: wrong signal names matter more than the other notices.
+function BaseStationDbcBanner({ open, onClose }: Readonly<InputProps>) {
+  if (!open) return null;
+
+  return (
+    <Banner open={open} className="z-50">
+      <span className="text-white text-[14pt] font-semibold text-center">
+        This base station has no DBC file, so signal names and values may be wrong.
+      </span>
+      <BannerButton onClick={onClose}>Dismiss</BannerButton>
+    </Banner>
+  );
+}
+
 interface RecoveredSessionBannerProps extends InputProps {
   onClearRecovered: () => void;
 }
@@ -113,11 +127,11 @@ function RecoveredSessionBanner({ open, onClose, onClearRecovered }: Readonly<Re
   return (
     <Banner open={open} className="z-40">
       <div className="flex items-center gap-2">
-        <span className="text-white text-[14pt] font-semibold text-center whitespace-nowrap overflow-hidden text-ellipsis">
+        <span className="text-white text-[14pt] font-semibold text-center">
           Recovered previous telemetry session.
         </span>
       </div>
-      <div className="flex flex-row items-center gap-4 shrink-0">
+      <div className="flex flex-row flex-wrap justify-center items-center gap-4 md:shrink-0">
         <BannerButton onClick={handleClear}>
           Clear Recovered Data
         </BannerButton>

@@ -54,6 +54,15 @@ ECU_TIMESTAMP_ID = 1999  # VCU_Timestamp — ECU broadcasts RTC epoch ms at 1 Hz
 # NOTE: 2026-03-22 is today's date at time of writing.
 _SYSTEM_CLOCK_TRUST_EPOCH = 1742601600.0  # 2026-03-22 00:00:00 UTC
 
+# Only a base with no laptop and no internet needs this: laptop clocks are trusted.
+_CAR_TIME_PUSH_REQUIRES_SYNC = os.getenv("CAR_TIME_PUSH_REQUIRES_SYNC", "false").lower() == "true"
+
+
+def base_clock_may_set_car(requires_sync: bool) -> bool:
+    """A stale base clock must not overwrite a good clock on the car."""
+    return not requires_sync or utils.clock_is_ntp_synced() is True
+
+
 class TelemetryNode:
     def __init__(self, can_event=None, telemetry_event=None):
         self.buffer = deque()
@@ -935,6 +944,7 @@ class TelemetryNode:
         async def car_time_injector():
             import urllib.request
             await asyncio.sleep(5.0)  # Let base clock settle first
+            unsynced_logged = False
             while True:
                 now = time.time()
                 if now < _BASE_CLOCK_TRUST_EPOCH:
@@ -944,7 +954,14 @@ class TelemetryNode:
                         f"Base clock is before 2026-04-01 ({now:.0f}). "
                         "Car time injection BLOCKED until base clock is corrected."
                     )
+                elif not base_clock_may_set_car(_CAR_TIME_PUSH_REQUIRES_SYNC):
+                    self._base_clock_bad = False
+                    self._car_time_synced = False
+                    if not unsynced_logged:
+                        logger.info("Base clock has no NTP sync. Not setting the car's clock.")
+                        unsynced_logged = True
                 else:
+                    unsynced_logged = False
                     self._base_clock_bad = False
                     time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(now))
                     url = f"http://{REMOTE_IP}:{_CAR_STATUS_PORT}/set-time"

@@ -1,5 +1,7 @@
 """Deployment contract tests for car/base separation."""
 
+import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -221,3 +223,174 @@ def test_windows_base_relay_contract():
     # The relay is pure PowerShell — the installer must not require Python.
     assert "python.org" not in installer
     assert "Resolve-Python" not in installer
+
+
+def _active_compose(path):
+    return "\n".join(
+        line for line in _read(path).splitlines() if not line.lstrip().startswith("#")
+    )
+
+
+def _hotspot_allowed_tcp_ports():
+    ports = set()
+    for ports_text in re.findall(r"tcp dport (\{[^}]*\}|\d+) accept", _read("deploy/wfr-hotspot-firewall.nft")):
+        ports.update(int(port) for port in re.findall(r"\d+", ports_text))
+    return ports
+
+
+def test_rpi_base_keeps_can_writes_off():
+    """Anyone with the hotspot password can reach this telemetry server."""
+    compose = _active_compose("deploy/docker-compose.rpi-base.yml")
+
+    assert "- ENABLE_UPLINK=false" in compose
+    assert "- ENABLE_TX_WS=false" in compose
+
+
+def test_rpi_base_redis_is_not_reachable_from_the_hotspot():
+    compose = _active_compose("deploy/docker-compose.rpi-base.yml")
+
+    assert '"127.0.0.1:6379:6379"' in compose
+    assert '"6379:6379"' not in compose
+
+
+def test_rpi_base_publishes_no_other_ports():
+    """Docker's published ports skip the firewall's INPUT rules."""
+    compose = _active_compose("deploy/docker-compose.rpi-base.yml")
+
+    assert re.findall(r'^\s*- "([^"]*:\d+[^"]*)"', compose, re.M) == ["127.0.0.1:6379:6379"]
+
+
+def test_hotspot_firewall_allows_only_what_viewers_need():
+    assert _hotspot_allowed_tcp_ports() == {22, 53, 80, 3000, 9080}
+
+
+def test_hotspot_firewall_blocks_routing_to_the_car():
+    rules = _read("deploy/wfr-hotspot-firewall.nft")
+    forward = rules[rules.index("chain forward"):]
+
+    assert "hook forward" in forward
+    assert "iifname $HOTSPOT_IF counter drop" in forward
+
+
+def test_hotspot_firewall_lets_docker_use_wlan0_as_its_internet_connection():
+    """Without this, replies to containers are dropped and image builds can't download."""
+    rules = _read("deploy/wfr-hotspot-firewall.nft")
+    forward = rules[rules.index("chain forward"):]
+
+    assert forward.index("ct state established,related accept") < forward.index("counter drop")
+
+
+def test_hotspot_firewall_ends_in_a_drop():
+    rules = _read("deploy/wfr-hotspot-firewall.nft")
+    input_chain = rules[rules.index("chain input"):rules.index("chain forward")]
+
+    assert input_chain.rstrip().rstrip("}").rstrip().endswith("counter drop")
+
+
+def test_base_station_config_matches_what_the_pi_serves():
+    config = json.loads(_read("deploy/base-station.json"))
+    compose = _active_compose("deploy/docker-compose.rpi-base.yml")
+
+    assert config["mode"] == "base-station"
+    assert config["viewerOnly"] is True
+    assert f"- WS_PORT={config['wsPort']}" in compose
+    assert config["wsPort"] in _hotspot_allowed_tcp_ports()
+    assert config["dbcUrl"] == "/dbc/active.dbc"
+    assert "./dbc}:/usr/share/nginx/html/dbc:ro" in compose
+    assert "./base-station.json:/usr/share/nginx/html/base-station.json:ro" in compose
+
+
+def test_rpi_base_warns_rather_than_serving_a_placeholder_dbc():
+    """The telemetry service must not copy example.dbc into the folder PECAN reads."""
+    compose = _active_compose("deploy/docker-compose.rpi-base.yml")
+    command = next(line for line in compose.splitlines() if "command:" in line and "telemetry" not in line)
+
+    assert "export DBC_FILE_PATH=/app/example.dbc" in command
+    assert "cp " not in command
+
+
+def test_rpi_base_powers_its_radio_from_the_poe_board():
+    """main.py skips PoE unless told otherwise, which would leave the radio unpowered."""
+    compose = _active_compose("deploy/docker-compose.rpi-base.yml")
+
+    assert "- OFF_THE_SHELF=${OFF_THE_SHELF:-false}" in compose
+    assert "privileged: true" in compose
+
+
+def test_base_image_can_drive_the_poe_board():
+    """Without this library, src/poe.py silently falls back to its stub."""
+    requirements = _read("requirements.txt")
+
+    assert 'rpi-lgpio>=0.6; platform_machine == "aarch64"' in requirements
+
+
+def test_docs_warn_about_passive_poe():
+    assert "can damage a device" in _read("deploy/RPI_BASE_DEPLOY.md")
+
+
+def test_rpi_base_clock_cannot_overwrite_the_car_without_ntp():
+    assert "- CAR_TIME_PUSH_REQUIRES_SYNC=true" in _active_compose("deploy/docker-compose.rpi-base.yml")
+
+
+def test_pecan_server_does_not_answer_base_station_paths_with_the_app():
+    """A fallback to index.html would look like a config or DBC to PECAN."""
+    nginx = (REPO_ROOT.parent / "pecan" / "nginx.conf").read_text(encoding="utf-8")
+
+    for location in ("location = /base-station.json", "location /dbc/"):
+        block = nginx[nginx.index(location):]
+        block = block[:block.index("}")]
+        assert "try_files $uri =404;" in block
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["deploy/install.sh", "checklist/SETUP_CARD.tex", "deploy/MACBOOK_DEPLOY.md", "deploy/RPI_BASE_DEPLOY.md"],
+)
+def test_hotspot_docs_have_no_shared_or_invalid_password(path):
+    text = _read(path)
+
+    assert "wfr-racing" not in text
+    assert "wfr2025" not in text
+    assert "10.42.0.1" not in text
+
+
+def test_dbc_folder_cannot_be_committed():
+    assert _read("deploy/dbc/.gitignore").splitlines()[-2:] == ["*", "!.gitignore"]
+
+
+@pytest.mark.parametrize("script", ["deploy/wfr-net", "deploy/setup-rpi-base.sh", "deploy/install.sh"])
+def test_deploy_scripts_parse(script):
+    subprocess.run(["bash", "-n", str(REPO_ROOT / script)], check=True)
+
+
+def test_setup_refuses_to_replace_car_telemetry_unless_asked():
+    script = _read("deploy/setup-rpi-base.sh")
+
+    guard = script.index("systemctl is-active --quiet car-telemetry")
+    assert guard < script.index("apt-get")
+    assert "--replace-car-telemetry" in script[guard:script.index("apt-get")]
+
+
+def test_setup_keeps_car_telemetry_running_until_the_base_stack_is_ready():
+    """A failed install or image build must leave the Pi's telemetry running."""
+    script = _read("deploy/setup-rpi-base.sh")
+    disable = script.index("systemctl disable --now car-telemetry")
+
+    for earlier in ("get.docker.com", "docker build", "compose -f \"${COMPOSE_FILE}\" pull"):
+        assert script.index(earlier) < disable
+    assert disable < script.index('compose -f "${COMPOSE_FILE}" up -d')
+
+
+def test_setup_replaces_a_car_remote_ip_left_in_the_env_file():
+    """Compose reads deploy/.env, and a former car Pi has its base's address there."""
+    script = _read("deploy/setup-rpi-base.sh")
+
+    assert "sed -i '/^REMOTE_IP=/d' \"${ENV_FILE}\"" in script
+    assert 'echo "REMOTE_IP=${CAR_ADDRESS}" >> "${ENV_FILE}"' in script
+    assert script.index('REMOTE_IP=${CAR_ADDRESS}') < script.index('compose -f "${COMPOSE_FILE}" up -d')
+
+
+def test_setup_does_not_let_the_radio_profile_activate_half_configured():
+    script = _read("deploy/setup-rpi-base.sh")
+
+    assert 'con-name "${RADIO_CON_NAME}" autoconnect no' in script

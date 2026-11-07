@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isViewerOnly } from "../lib/baseStation";
 import { useTimeline } from "../context/TimelineContext";
 import { dataStore, type TelemetrySample } from "../lib/DataStore";
 import { coldStore } from "../lib/ColdStore";
@@ -133,7 +134,9 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
   } = useTimeline();
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(TIMELINE_COLLAPSED_KEY) === "true";
+      const saved = localStorage.getItem(TIMELINE_COLLAPSED_KEY);
+      // Expanded, this fills a phone's screen before any signals. Viewers came for those.
+      return saved === null ? isViewerOnly() : saved === "true";
     } catch {
       return false;
     }
@@ -638,7 +641,8 @@ function TimelineBar({ plotLayouts = [] }: TimelineBarProps) {
           </button>
         </div>
       )}
-      {showColdStoreSupportHint && (
+      {/* It suggests changing browser, but plain HTTP is the cause on a base station. */}
+      {showColdStoreSupportHint && !isViewerOnly() && (
         <div className="mb-1.5 rounded border border-sky-400/35 bg-sky-500/10 px-2.5 py-1 text-[11px] text-sky-200">
           Cold-store persistence is unavailable in this browser/session. Timeline history and replay import features may be limited.
           For best long-session history, use a Chromium-based browser.

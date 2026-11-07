@@ -19,9 +19,9 @@ Use these first:
 | Target | File / doc | Notes |
 |--------|------------|-------|
 | Car RPi | `CAR_DEPLOY.md` + `car-telemetry.service` | Native systemd, no Docker/Redis on the car |
-| MacBook / Linux / RPi 4B base | `docker-compose.macbook-base.yml` + `install.sh` | One-command curl install; optional `--profile timescale`, `--hotspot` on Linux |
+| RPi base, no laptop | `docker-compose.rpi-base.yml` + `setup-rpi-base.sh` | Default for the track. Any device joins the Pi's hotspot and views PECAN in a browser. See [RPI_BASE_DEPLOY.md](RPI_BASE_DEPLOY.md) |
+| MacBook / Linux laptop base | `docker-compose.macbook-base.yml` + `install.sh` | One-command curl install; optional `--profile timescale`, `--hotspot` on Linux. Use this for TimescaleDB, remote viewers, or video |
 | Windows base | `docker-compose.windows-base.yml` + `install.ps1` | One-command PowerShell install (Docker Desktop + Git, no Python); also runs `windows-udp-relay.ps1` since Docker Desktop won't forward LAN UDP into containers |
-| RPi base (manual, deprecating) | `docker-compose.rpi-base.yml` | Lightweight ephemeral base, host networking; no one-click installer |
 
 ---
 
@@ -82,16 +82,17 @@ powershell -ExecutionPolicy Bypass -File deploy\windows-udp-relay.ps1
 
 ---
 
-## docker-compose.rpi-base.yml — Raspberry Pi lightweight base
+## docker-compose.rpi-base.yml — Raspberry Pi base, no laptop
 
-Lightweight ephemeral base station for a Pi at the track. No TimescaleDB persistence —
-data is NOT recorded. Useful for quick diagnostics via Pecan without the full stack.
+Base station for a Pi at the track. Devices join the Pi's hotspot and view PECAN, with
+nothing to install and no way to send to the car. Set it up with `setup-rpi-base.sh`,
+which also configures the hotspot, firewall, and radio link. See
+**[RPI_BASE_DEPLOY.md](RPI_BASE_DEPLOY.md)**.
 
-```bash
-docker compose -f deploy/docker-compose.rpi-base.yml up -d
-```
+No TimescaleDB. It keeps a raw CSV of what reached it over the radio, and the car's
+recorder stays the complete record.
 
-**Access point:** Pecan dashboard at http://\<pi-ip\>:3000
+**Access point:** Pecan dashboard at http://192.168.20.1 from the hotspot
 
 ---
 

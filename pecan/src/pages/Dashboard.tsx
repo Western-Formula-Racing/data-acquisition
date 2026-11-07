@@ -9,6 +9,7 @@ import TracePanel from "../components/TracePanel";
 import { dataStore } from "../lib/DataStore";
 import { useAllLatestMessages, useDataStoreStats } from "../lib/useDataStore";
 import TourGuide from "../components/TourGuide";
+import { isViewerOnly } from "../lib/baseStation";
 import type { TourStep } from "../components/TourGuide";
 import { useRemoteConfig } from "../lib/useRemoteConfig";
 import { HelpCircle, ArrowDownAZ, ArrowUpZA, Tag, ArrowDown01, ArrowUp10, LayoutList, LayoutGrid } from "lucide-react";
@@ -83,7 +84,8 @@ function Dashboard() {
 
   const [tourOpen, setTourOpen] = useState(false);
   const [currentTourStep, setCurrentTourStep] = useState(0);
-  const [plotPanelOpen, setPlotPanelOpen] = useState(true);
+  // On a phone an open panel takes half the screen, even with nothing to plot yet.
+  const [plotPanelOpen, setPlotPanelOpen] = useState(() => !isViewerOnly());
   const setPplotPanelOpen = setPlotPanelOpen;
   const [desktopPanelOpen, setDesktopPanelOpen] = useState(() =>
     localStorage.getItem("dash:desktopPanelOpen") !== "false"
@@ -454,7 +456,8 @@ function Dashboard() {
       setViewMode(savedView);
     }
 
-    const hasSeenTutorial = localStorage.getItem("dash:tutorialSeen");
+    // Every device on a base station hotspot is a first visit, often just for a glance.
+    const hasSeenTutorial = isViewerOnly() || localStorage.getItem("dash:tutorialSeen");
     if (!hasSeenTutorial) {
       // Small delay to let UI settle
       setTimeout(() => {
@@ -518,6 +521,8 @@ function Dashboard() {
         signals: [signalInfo],
       },
     ]);
+    // On a phone the panel may be closed, which would leave the new plot out of sight.
+    setPlotPanelOpen(true);
 
     // Advance tour if waiting for new plot creation
     if (tourOpen && currentTourStep === 3) {

@@ -9,9 +9,7 @@ set -e
 REPO="Western-Formula-Racing/data-acquisition"
 BRANCH="main"
 INSTALL_DIR="${HOME}/wfr-base-station"
-HOTSPOT_SSID="WFR-Base"
-HOTSPOT_PSK="wfr-racing"
-HOTSPOT_CON_NAME="wfr-hotspot"
+HOTSPOT_SSID="WFR-BASE"
 HOTSPOT_WLAN_IF="${WFR_HOTSPOT_IF:-wlan0}"
 
 ENABLE_HOTSPOT=false
@@ -305,49 +303,21 @@ setup_hotspot() {
     exit 1
   fi
 
-  if ! nmcli -t -f NAME con show | grep -qx "${HOTSPOT_CON_NAME}"; then
-    sudo nmcli con add type wifi ifname "${HOTSPOT_WLAN_IF}" con-name "${HOTSPOT_CON_NAME}" \
-      autoconnect yes ssid "${HOTSPOT_SSID}" \
-      802-11-wireless.mode ap \
-      wifi-sec.key-mgmt wpa-psk wifi-sec.psk "${HOTSPOT_PSK}" \
-      ipv4.method shared
-  fi
-
-  sudo nmcli con up "${HOTSPOT_CON_NAME}" || {
-    echo "ERROR: Failed to bring up hotspot '${HOTSPOT_CON_NAME}'."
-    exit 1
-  }
-
-  sudo tee /etc/systemd/system/wfr-hotspot.service >/dev/null <<EOF
-[Unit]
-Description=WFR Base Station Wi-Fi Hotspot
-After=NetworkManager.service
-Wants=NetworkManager.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/nmcli con up ${HOTSPOT_CON_NAME}
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  sudo systemctl daemon-reload
-  sudo systemctl enable wfr-hotspot >/dev/null 2>&1 || true
-  sudo systemctl start wfr-hotspot >/dev/null 2>&1 || true
+  local wfr_net="${INSTALL_DIR}/universal-telemetry-software/deploy/wfr-net"
+  sudo WFR_HOTSPOT_IF="${HOTSPOT_WLAN_IF}" "${wfr_net}" setup --on-boot
 
   echo ""
   echo "═══════════════════════════════════════"
-  echo " Wi-Fi Hotspot active"
+  echo " Wi-Fi Hotspot"
   echo "═══════════════════════════════════════"
   echo ""
-  echo "  SSID:     ${HOTSPOT_SSID}"
-  echo "  Password: ${HOTSPOT_PSK}"
-  echo "  Pecan:    http://10.42.0.1:3000  (open on any connected device)"
+  sudo "${wfr_net}" status
+  echo ""
+  echo "  Pecan:    http://192.168.20.1:3000  (open on any connected device)"
   echo ""
   echo "  Ethernet car link is unaffected — still configure 10.71.1.20 on eth."
   echo ""
+  sudo "${wfr_net}" hotspot
 }
 
 print_success() {

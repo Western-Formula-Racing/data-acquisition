@@ -1,5 +1,6 @@
 import { createCanProcessor, setActiveDbcText } from '../utils/canProcessor';
 import { listDBCFiles, fetchAndApplyDBC } from './DbcService';
+import { getBaseStationConfig, isViewerOnly } from '../lib/baseStation';
 
 export type MessageHandler = (data: any) => void;
 
@@ -27,6 +28,11 @@ export const DEFAULT_WS_FAILOVER_URLS: readonly string[] = [
 
 const WS_LAST_OK_KEY = 'pecan-ws-last-ok';
 const CANDIDATE_TIMEOUT_MS = 2500;
+const MAX_RECONNECT_DELAY_MS = 10000;
+/** A socket this quiet when the page wakes may be left over from a lost connection. */
+const WAKE_STALE_AFTER_MS = 5000;
+
+const PRIVATE_LAN_HOST = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)|\.(local|wfr)$/;
 
 /** Server response after a successful `can_send` / `can_send_batch`. */
 export type UplinkAckMessage = {
@@ -58,6 +64,9 @@ export class WebSocketService {
   private messageCount = 0;
   private messageListeners = new Map<string, Set<MessageHandler>>();
   private suppressIngestion = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastMessageAt = 0;
+  private wakeHandler: (() => void) | null = null;
 
   async initialize() {
     this.disconnect();
@@ -156,9 +165,27 @@ export class WebSocketService {
     return out;
   }
 
+  /** The telemetry server on the Pi that served this page, if a Pi served it. */
+  private baseStationWsUrl(): string | null {
+    const baseStation = getBaseStationConfig();
+    if (!baseStation) return null;
+
+    const isSecure = window.location.protocol === 'https:';
+    const protocol = isSecure ? 'wss' : 'ws';
+    const port = isSecure ? 9443 : baseStation.wsPort;
+    return `${protocol}://${window.location.hostname}:${port}`;
+  }
+
   private resolveCandidateUrls(): string[] {
     const isSecure = window.location.protocol === 'https:';
     const protocol = isSecure ? 'wss' : 'ws';
+    const baseStationUrl = this.baseStationWsUrl();
+
+    // Viewers can't reach Settings, so a saved URL could never be corrected. Using
+    // only this Pi also rules out showing the public demo feed as if it were the car.
+    if (baseStationUrl && isViewerOnly()) {
+      return [baseStationUrl];
+    }
 
     const raw = localStorage.getItem(PECAN_WS_CANDIDATES_KEY);
     if (raw?.trim()) {
@@ -175,13 +202,18 @@ export class WebSocketService {
       return [this.getPrimaryWsUrl()];
     }
 
+    if (baseStationUrl) {
+      return [baseStationUrl];
+    }
+
     if (import.meta.env.VITE_WS_URL) {
       return [this.getPrimaryWsUrl()];
     }
 
     const hostname = window.location.hostname;
     const defaultUrls = [...DEFAULT_WS_FAILOVER_URLS];
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+    if (isLocalhost || (!isSecure && PRIVATE_LAN_HOST.test(hostname))) {
       defaultUrls.unshift(`${protocol}://${hostname}:9080`);
     }
 
@@ -235,6 +267,10 @@ export class WebSocketService {
   }
 
   private async connect() {
+    if (getBaseStationConfig()) {
+      this.installWakeListeners();
+    }
+
     const urls = this.resolveCandidateUrls();
     if (urls.length >= 2) {
       await this.connectWithFailover(urls);
@@ -298,6 +334,7 @@ export class WebSocketService {
     };
 
     socket.onmessage = async (event) => {
+      this.lastMessageAt = Date.now();
       try {
         if (this.messageCount < 3) {
           console.log(`[WebSocket] Message #${this.messageCount + 1}:`, event.data);
@@ -343,17 +380,64 @@ export class WebSocketService {
     };
 
     socket.onclose = (event) => {
+      // A socket replaced by reconnect() can close late and must not report over,
+      // or start a second connection alongside, the one that replaced it.
+      const isReplaced = this.ws !== null && this.ws !== socket;
+      if (isReplaced) return;
+
       this.notify('status', {
         connected: false,
         url: wsUrl,
         error: `Socket closed (code: ${event.code})`,
       });
 
-      if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.reconnectAttempts++;
-        setTimeout(() => void this.connect(), this.reconnectDelay * this.reconnectAttempts);
+      if (event.code !== 1000) {
+        this.scheduleReconnect();
       }
     };
+  }
+
+  private scheduleReconnect() {
+    if (this.reconnectTimer !== null) return;
+
+    // A phone that leaves the hotspot should recover whenever it comes back.
+    const limit = getBaseStationConfig() ? Infinity : this.maxReconnectAttempts;
+    if (this.reconnectAttempts >= limit) return;
+
+    this.reconnectAttempts++;
+    const delay = Math.min(this.reconnectDelay * this.reconnectAttempts, MAX_RECONNECT_DELAY_MS);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.connect();
+    }, delay);
+  }
+
+  private clearReconnectTimer() {
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  private installWakeListeners() {
+    if (this.wakeHandler) return;
+
+    this.wakeHandler = () => {
+      if (document.visibilityState !== 'visible') return;
+      const isFresh = Date.now() - this.lastMessageAt < WAKE_STALE_AFTER_MS;
+      if (this.isConnected() && isFresh) return;
+      this.reconnect();
+    };
+    window.addEventListener('online', this.wakeHandler);
+    document.addEventListener('visibilitychange', this.wakeHandler);
+  }
+
+  private removeWakeListeners() {
+    if (!this.wakeHandler) return;
+
+    window.removeEventListener('online', this.wakeHandler);
+    document.removeEventListener('visibilitychange', this.wakeHandler);
+    this.wakeHandler = null;
   }
 
   send(data: Record<string, unknown>) {
@@ -393,6 +477,8 @@ export class WebSocketService {
   }
 
   disconnect() {
+    this.clearReconnectTimer();
+    this.removeWakeListeners();
     if (this.ws) {
       this.ws.close(1000, 'Manual disconnect');
       this.ws = null;

@@ -1,0 +1,16 @@
+# Limits what devices on the base station's hotspot can reach.
+# Installed by setup-rpi-base.sh. The rules are in wfr-hotspot-firewall.nft.
+
+[Unit]
+Description=WFR base station hotspot firewall
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/wfr/hotspot-firewall.nft
+ExecStop=/usr/sbin/nft delete table inet wfr_hotspot
+
+[Install]
+WantedBy=multi-user.target

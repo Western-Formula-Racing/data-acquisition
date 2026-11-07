@@ -1,0 +1,6 @@
+{
+  "mode": "base-station",
+  "viewerOnly": true,
+  "wsPort": 9080,
+  "dbcUrl": "/dbc/active.dbc"
+}

@@ -179,6 +179,10 @@ jobs:
           tests/test_retransmission_starvation.py \
           tests/test_status_mosaic.py \
           tests/test_websocket_client_count_health.py \
+          tests/test_websocket_slow_client.py \
+          tests/test_base_clock.py \
+          tests/test_wfr_net.py \
+          tests/test_setup_scripts.py \
           tests/test_deploy_contracts.py \
           tests/test_can_recorder.py \
           -v

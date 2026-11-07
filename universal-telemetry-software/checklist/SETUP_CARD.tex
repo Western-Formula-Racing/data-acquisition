@@ -68,6 +68,7 @@
   RPi IP       & \cmd{10.71.1.10} & \cmd{10.71.1.20} \\
   Radio IP     & \cmd{10.71.1.11} & \cmd{10.71.1.21} \\
   Hotspot IP   & \cmd{192.168.10.1} & \cmd{192.168.20.1} \\
+  Radio power  & Passive 24\,V, HAT output port & Passive 24\,V, HAT output port \\
   \cmd{REMOTE\_IP} & \cmd{10.71.1.20} (base RPi) & \cmd{10.71.1.10} (car RPi) \\
   CAN HAT      & Required (\cmd{can0}) & Not needed \\
   Serves       & WebSocket :9080, TCP resend :5006 & PECAN :3000, WSS :9443 \\
@@ -122,21 +123,16 @@
   No gateway is set -- the radio link is a direct point-to-point connection. \\[1mm]
   \textbf{Option A -- Script (recommended):} \\
   \cmd{cd \textasciitilde/data-acquisition/universal-telemetry-software} \\
-  \cmd{sudo ./setup-static-ip.sh} \quad (prompts: 1 = car, 2 = base) \\[1mm]
-  \textbf{Option B -- Netplan (manual):} \\
-  Create \cmd{/etc/netplan/10-eth0-static.yaml}: \\
-  \cmd{\ \ network:} \\
-  \cmd{\ \ \ \ version: 2} \\
-  \cmd{\ \ \ \ ethernets:} \\
-  \cmd{\ \ \ \ \ \ eth0:} \\
-  \cmd{\ \ \ \ \ \ \ \ addresses: [10.71.1.20/24]} \quad \textit{(or .10 on car)} \\
-  \cmd{sudo chmod 600 /etc/netplan/10-eth0-static.yaml} \\
-  \cmd{sudo netplan apply} \\[1mm]
-  \textit{Note: \cmd{netplan apply} briefly resets the network -- Tailscale may drop for a few seconds.} \\[1mm]
+  \cmd{sudo ./setup-static-ip.sh} \quad (prompts: 1 = car, 2 = base; or pass \cmd{--car} / \cmd{--base}) \\[1mm]
+  \textbf{Option B -- NetworkManager (manual):} \\
+  \cmd{sudo nmcli con add type ethernet ifname eth0 con-name wfr-radio autoconnect yes \textbackslash} \\
+  \cmd{\ \ connection.autoconnect-priority 100 ipv4.method manual ipv4.addresses 10.71.1.20/24 \textbackslash} \\
+  \cmd{\ \ ipv4.never-default yes ipv6.method disabled} \quad \textit{(10.71.1.10 on car)} \\
+  \textit{Don't hand-write a netplan file for eth0: NetworkManager writes its own, and they clash.} \\[1mm]
   \textbf{Option C -- NetworkManager GUI:} IPv4 Settings $\rightarrow$ Method: Manual $\rightarrow$ Add address. \\
   \textit{The Gateway field cannot be left blank in the GUI -- enter \cmd{0.0.0.0} as a dummy value.} \\[1mm]
   \textbf{PASS:} \cmd{ip addr show eth0} shows \cmd{10.71.1.10} or \cmd{10.71.1.20} \\
-  \textbf{FAIL:} no IP after reboot -- another netplan file may be overriding; check \cmd{/etc/netplan/} \\
+  \textbf{FAIL:} no IP, or two addresses -- check \cmd{nmcli con show} and \cmd{/etc/netplan/} for another eth0 profile \\
 \end{tabular}
 
 \vspace{1mm}
@@ -169,22 +165,23 @@
 \noindent
 \begin{tabular}{p{126mm}}
   Each RPi acts as a WiFi AP so pit crew can connect laptops/phones on test days. \\
-  The hotspot uses a \textbf{separate subnet} from the radio link to avoid routing conflicts: \\[1mm]
+  The base needs no laptop: any device on its hotspot views PECAN in a browser. \\
+  The hotspot uses 2.4\,GHz to stay clear of the 5.8\,GHz radios, and a \textbf{separate subnet} \\
+  from the radio link to avoid routing conflicts: \\[1mm]
   \begin{tabular}{p{28mm}p{36mm}p{36mm}}
     \rowcolor{tblhd}
     & \textbf{Car RPi} & \textbf{Base RPi} \\
     Hotspot gateway & \cmd{192.168.10.1} & \cmd{192.168.20.1} \\
     SSID & \cmd{WFR-CAR} & \cmd{WFR-BASE} \\
   \end{tabular} \\[1mm]
-  \cmd{sudo nmcli connection add type wifi ifname wlan0 con-name "daq-hotspot" \textbackslash} \\
-  \cmd{\ \ autoconnect yes ssid "WFR-BASE" wifi.mode ap \textbackslash} \\
-  \cmd{\ \ wifi-sec.key-mgmt wpa-psk wifi-sec.psk "wfr2025" \textbackslash} \\
-  \cmd{\ \ ipv4.method shared ipv4.addresses 192.168.20.1/24} \\[1mm]
-  Use \cmd{192.168.10.1/24} and \cmd{ssid "WFR-CAR"} on the car RPi instead. \\[1mm]
-  \cmd{sudo nmcli connection up daq-hotspot} \\[1mm]
+  \textbf{Base RPi:} \cmd{sudo deploy/setup-rpi-base.sh --dbc <file>} \\
+  \quad Also sets up the firewall, radio link, and stack. See \cmd{deploy/RPI\_BASE\_DEPLOY.md}. \\[1mm]
+  \textbf{Car RPi:} \cmd{sudo deploy/wfr-net setup --on-boot --ssid WFR-CAR --address 192.168.10.1} \\[1mm]
+  Applies on the next boot, or now with \cmd{sudo deploy/wfr-net hotspot}. \\[1mm]
   \textbf{PASS:} \cmd{ip addr show wlan0} shows \cmd{192.168.10.1} or \cmd{192.168.20.1} \\
-  \textit{Note:} \cmd{autoconnect yes} means hotspot restarts on reboot -- no re-run needed. \\
-  \textit{Change later:} \cmd{sudo nmcli connection modify daq-hotspot wifi-sec.psk "newpass"} \\
+  \textit{Password:} generated on first setup. Show it with \cmd{sudo deploy/wfr-net status}. \\
+  \textit{Change later:} \cmd{sudo deploy/wfr-net setup --psk "newpass"} (at least 8 characters) \\
+  \textit{Printable QR card:} \cmd{sudo deploy/wfr-net card} \\
 \end{tabular}
 
 \vspace{1mm}
@@ -470,7 +467,7 @@ The WebSocket also runs on car -- useful if crew connect directly to the car hot
 and point their own Pecan instance at the car's WSS endpoint.
 
 \vspace{1mm}
-\textbf{Base dashboard:} \cmd{http://10.71.1.20:3000} \quad (or \cmd{http://192.168.20.1:3000} via hotspot)
+\textbf{Base dashboard:} \cmd{http://192.168.20.1} via hotspot, or \cmd{http://10.71.1.20} on the radio subnet
 
 \noindent
 \begin{tabular}{p{126mm}}
@@ -728,7 +725,7 @@ and point their own Pecan instance at the car's WSS endpoint.
   9078 & WebSocket & PECAN TX CAN write (car only) \\
   9089 & WebSocket & WS relay downlink (optional, laptop fan-out) \\
   9443 & WSS/HTTPS & Caddy TLS proxy $\rightarrow$ :9080 (both RPis) \\
-  3000 & HTTP & PECAN dashboard UI (base only) \\
+  80, 3000 & HTTP & PECAN dashboard UI (base only) \\
   \bottomrule
 \end{tabularx}
 \vspace{2mm}
