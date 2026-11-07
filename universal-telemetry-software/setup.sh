@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # setup.sh — Full first-time setup for the car/base RPi
 #
-# Covers: system packages, GStreamer/gi bindings, CAN kernel modules,
-# MCP2517FD device tree overlay (20 MHz crystal), can0 boot service,
-# uv install, Python venv, car-telemetry systemd service,
+# Covers: system packages, GStreamer/gi bindings, CAN HAT setup (setup-socketcan.sh),
+# uv install, Python venv, car-telemetry and CAN recorder systemd services (car only),
 # static IP on eth0, WiFi routing priority, Tailscale, NoMachine.
 #
 # Usage: sudo ./setup.sh [--car | --base]
@@ -57,7 +56,7 @@ else
 fi
 
 # Derive the real user who will run the service (the one who called sudo)
-SERVICE_USER="${SUDO_USER:-$(logname 2>/dev/null || echo car)}"
+SERVICE_USER="${SUDO_USER:-$(logname 2>/dev/null || echo base)}"
 SERVICE_HOME="$(getent passwd "$SERVICE_USER" | cut -d: -f6)"
 UV="$SERVICE_HOME/.local/bin/uv"
 
@@ -81,57 +80,11 @@ apt-get install -y \
     curl
 ok "System packages installed"
 
-# ── 2. CAN kernel modules ─────────────────────────────────────────────────────
-hdr "CAN kernel modules"
-for mod in can can_raw mcp251xfd; do
-    modprobe "$mod"
-    if ! grep -qx "$mod" /etc/modules 2>/dev/null; then
-        echo "$mod" >> /etc/modules
-    fi
-done
-ok "Modules loaded and persisted in /etc/modules"
+# ── 2. CAN HAT ────────────────────────────────────────────────────────────────
+hdr "CAN HAT"
+"$SCRIPT_DIR/setup-socketcan.sh"
 
-# ── 3. MCP2517FD device tree overlay (20 MHz crystal) ────────────────────────
-hdr "Boot config — MCP2517FD overlay"
-CONFIG=/boot/firmware/config.txt
-for line in \
-    "dtoverlay=mcp251xfd,oscillator=20000000,interrupt=25" \
-    "dtoverlay=spi-bcm2835"
-do
-    if grep -qF "$line" "$CONFIG" 2>/dev/null; then
-        warn "Already present: $line"
-    else
-        echo "$line" >> "$CONFIG"
-        ok "Added: $line"
-    fi
-done
-
-# ── 4. can0 boot service ──────────────────────────────────────────────────────
-hdr "can0 systemd service"
-cat > /etc/systemd/system/can0.service <<'EOF'
-[Unit]
-Description=CAN bus interface can0
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/sbin/ip link set can0 up type can bitrate 500000
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl daemon-reload
-systemctl enable can0
-ok "can0.service installed and enabled"
-
-if ip link set can0 up type can bitrate 500000 2>/dev/null; then
-    ok "can0 is UP at 500 kbps"
-else
-    warn "can0 not yet available — overlay activates after reboot"
-fi
-
-# ── 5. Install uv ─────────────────────────────────────────────────────────────
+# ── 3. Install uv ─────────────────────────────────────────────────────────────
 hdr "uv"
 if [[ -x "$UV" ]]; then
     ok "uv already installed at $UV"
@@ -141,7 +94,7 @@ else
     ok "uv installed at $UV"
 fi
 
-# ── 6. Enable Wayland compositor (required for NoMachine on headless Pi) ─────
+# ── 4. Enable Wayland compositor (required for NoMachine on headless Pi) ─────
 hdr "Wayland compositor"
 if raspi-config nonint get_wayland 2>/dev/null | grep -q "W2"; then
     ok "Wayland already enabled"
@@ -150,7 +103,7 @@ else
     ok "Wayland enabled (Wayfire) — takes effect after reboot"
 fi
 
-# ── 8. Python venv + dependencies ────────────────────────────────────────────
+# ── 5. Python venv + dependencies ────────────────────────────────────────────
 hdr "Python venv (system-site-packages for gi/GStreamer)"
 cd "$SCRIPT_DIR"
 sudo -u "$SERVICE_USER" env HOME="$SERVICE_HOME" \
@@ -159,7 +112,7 @@ sudo -u "$SERVICE_USER" env HOME="$SERVICE_HOME" \
     "$UV" sync
 ok "venv ready at $SCRIPT_DIR/.venv"
 
-# ── 7. car-telemetry systemd service ─────────────────────────────────────────
+# ── 6. car-telemetry systemd service ─────────────────────────────────────────
 hdr "car-telemetry systemd service"
 SERVICE_SRC="$SCRIPT_DIR/deploy/car-telemetry.service"
 GIT_HASH=$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -173,14 +126,34 @@ sed \
     "$SERVICE_SRC" > /etc/systemd/system/car-telemetry.service
 
 systemctl daemon-reload
-systemctl enable car-telemetry
-ok "car-telemetry.service installed and enabled (hash=$GIT_HASH, remote=$REMOTE_IP)"
+ok "car-telemetry.service installed (hash=$GIT_HASH, remote=$REMOTE_IP)"
 
+# A base station runs through Docker, so it must not start this at boot.
 if [[ "$ROLE" == "car" ]]; then
+    systemctl enable car-telemetry
     systemctl restart car-telemetry
-    ok "car-telemetry started"
+    ok "car-telemetry enabled and started"
 else
-    warn "Base role — skipping car-telemetry start"
+    warn "Base role — car-telemetry left disabled"
+fi
+
+# ── 7. CAN recorder (car only) ───────────────────────────────────────────────
+if [[ "$ROLE" == "car" ]]; then
+    hdr "CAN recorder"
+    sed \
+        -e "s|^User=.*|User=$SERVICE_USER|" \
+        -e "s|^WorkingDirectory=.*|WorkingDirectory=$SCRIPT_DIR|" \
+        "$SCRIPT_DIR/deploy/can-recorder.service" > /etc/systemd/system/can-recorder.service
+    install -m 644 "$SCRIPT_DIR/deploy/99-can-recorder.conf" /etc/sysctl.d/99-can-recorder.conf
+    sysctl --system >/dev/null
+    systemctl daemon-reload
+    systemctl enable can-recorder
+    systemctl restart --no-block can-recorder
+    # These write to the card, and they catch up soon after boot, which on a car
+    # is the start of a session. See deploy/CAN_RECORDER.md.
+    systemctl mask --now apt-daily.timer apt-daily-upgrade.timer man-db.timer \
+        fstrim.timer dpkg-db-backup.timer e2scrub_all.timer
+    ok "can-recorder enabled, background disk timers masked"
 fi
 
 # ── 8. Static IP on eth0 + WiFi routing priority ─────────────────────────────
@@ -239,7 +212,7 @@ if command -v nxserver &>/dev/null || dpkg -l nomachine &>/dev/null 2>&1; then
 else
     NX_URL="https://web9001.nomachine.com/download/9.4/Raspberry/nomachine_9.4.14_1_arm64.deb"
     NX_DEB="/tmp/nomachine.deb"
-    echo "  Downloading NoMachine for $ARCH..."
+    echo "  Downloading NoMachine..."
     curl -L "$NX_URL" -o "$NX_DEB"
     dpkg -i "$NX_DEB"
     rm -f "$NX_DEB"
@@ -259,10 +232,14 @@ echo -e "  Git hash:      $GIT_HASH"
 echo ""
 echo -e "  ${YELLOW}Next steps:${NC}"
 echo -e "    sudo tailscale up          # authenticate Tailscale"
-echo -e "    sudo reboot                # activates MCP2517FD overlay"
+echo -e "    sudo reboot                # activates the CAN HAT overlay"
 echo ""
 echo -e "  After reboot:"
-echo -e "    ip link show can0"
-echo -e "    systemctl status car-telemetry"
-echo -e "    journalctl -u car-telemetry -f"
+echo -e "    ip -d link show can0"
+if [[ "$ROLE" == "car" ]]; then
+    echo -e "    systemctl status car-telemetry can-recorder"
+fi
+if [[ "$ROLE" == "car" ]]; then
+    echo -e "    journalctl -u car-telemetry -f"
+fi
 echo -e "${GREEN}${BOLD}=========================================${NC}"

@@ -70,9 +70,9 @@
   Hotspot IP   & \cmd{192.168.10.1} & \cmd{192.168.20.1} \\
   \cmd{REMOTE\_IP} & \cmd{10.71.1.20} (base RPi) & \cmd{10.71.1.10} (car RPi) \\
   CAN HAT      & Required (\cmd{can0}) & Not needed \\
-  Serves       & TX WebSocket :9078, WSS :9443 & PECAN :3000, WSS :9443 \\
-  Role trigger & \cmd{can0} present & \cmd{can0} absent \\
-  LED          & Blue on \cmd{gpio26} & No blue LED \\
+  Serves       & WebSocket :9080, TCP resend :5006 & PECAN :3000, WSS :9443 \\
+  Role set by  & \cmd{ROLE=car} in systemd unit & \cmd{ROLE=base} in compose file \\
+  LED          & Blue on \cmd{gpio27} & No blue LED \\
   \hline
 \end{tabular}
 \vspace{2mm}
@@ -235,8 +235,9 @@
   \cmd{cd \textasciitilde/data-acquisition/universal-telemetry-software} \\
   \cmd{sudo ./setup-socketcan.sh} \\
   \cmd{sudo reboot} \\[1mm]
+  Sets up the MCP2515 and PCF8563 clock overlays and \cmd{can0.service}. Safe to re-run. \\
   After reboot with HAT plugged in, \cmd{can0} comes up automatically at 500\,kbps. \\[1mm]
-  \textbf{PASS:} \cmd{ip link show can0} shows \cmd{<NOARP,UP,LOWER\_UP>} \\
+  \textbf{PASS:} \cmd{ip -d link show can0} shows \cmd{ERROR-ACTIVE} and \cmd{restart-ms 100} \\
   \textbf{FAIL:} HAT not detected -- check HAT seating + SPI enabled in \cmd{/boot/firmware/config.txt} \\
 \end{tabular}
 
@@ -379,13 +380,24 @@ No Redis needed -- the core CAN $\to$ UDP path runs entirely in-process.}
   Install \cmd{uv}: \cmd{curl -LsSf https://astral.sh/uv/install.sh | sh} \\[1mm]
   Pre-build the Python venv (needs internet -- do this in the pits, not on the grid): \\
   \cmd{cd \textasciitilde/data-acquisition/universal-telemetry-software \&\& uv sync} \\[1mm]
-  Install the service (stamps current git hash into unit file): \\
-  \cmd{sed -i "s/GIT\_HASH=unknown/GIT\_HASH=\$(git rev-parse --short HEAD)/" deploy/car-telemetry.service} \\
+  Install the service (stamps current git hash into the installed copy): \\
   \cmd{sudo cp deploy/car-telemetry.service /etc/systemd/system/} \\
+  \cmd{sudo sed -i "s/GIT\_HASH=.*/GIT\_HASH=\$(git rev-parse --short HEAD)/" /etc/systemd/system/car-telemetry.service} \\
   \cmd{sudo systemctl daemon-reload} \\
   \cmd{sudo systemctl enable car-telemetry} \\
   \cmd{sudo systemctl start car-telemetry} \\[1mm]
   \textbf{PASS:} \cmd{systemctl status car-telemetry} shows \cmd{active (running)} \\
+\end{tabular}
+
+\vspace{1mm}
+\gobox{CAN recorder -- the permanent record}
+
+\noindent
+\begin{tabular}{p{126mm}}
+  Install once: see \cmd{deploy/CAN\_RECORDER.md}. \\
+  Before each session, with the bus live: \cmd{cat /run/can-recorder/status.json} \\[1mm]
+  \textbf{PASS:} \cmd{state} is \cmd{recording}, \cmd{last\_commit\_age\_s} under 1, \cmd{free\_bytes} sufficient \\
+  \textbf{FAIL:} \cmd{state} is \cmd{waiting} (no frames yet) or \cmd{error} \\
 \end{tabular}
 
 \vspace{1mm}
@@ -659,11 +671,11 @@ and point their own Pecan instance at the car's WSS endpoint.
   \toprule
   \textbf{LED} & \textbf{Color} & \textbf{GPIO} & \textbf{Meaning} \\
   \midrule
-  CAN activity & Blue & 26 & Car: solid = CAN flowing, double-flash = no CAN >1s \\
-  CAN telemetry & Yellow & 6 & Base+Car: solid = process alive \\
-  WebSocket & Green & 23 & Connected to PECAN \\
-  Audio & White & 22 & Audio streaming active \\
-  Video & Red & 24 & Video streaming active \\
+  CAN activity & Blue & 27 & Car: solid = CAN flowing, double-flash = no CAN >1s \\
+  CAN telemetry & Yellow & 5 & Base+Car: solid = process alive \\
+  WebSocket & Green & 6 & Connected to PECAN \\
+  Audio & Yellow & 19 & Audio streaming active \\
+  Video & Green & 13 & Video streaming active \\
   \bottomrule
 \end{tabularx}
 \vspace{2mm}
@@ -681,7 +693,7 @@ and point their own Pecan instance at the car's WSS endpoint.
   No data on PECAN & Base REMOTE\_IP correct? & Set to \cmd{10.71.1.10} \\
   Car not sending UDP & Car REMOTE\_IP correct? & Set to \cmd{10.71.1.20} \\
   Ping fails across radio & Radio link up? & Check \S 1 radio status \\
-  can0 ERROR & CAN HAT driver loaded? & \cmd{sudo modprobe mcp251xfd} \\
+  can0 ERROR & CAN HAT driver loaded? & \cmd{sudo modprobe mcp251x} \\
   TX\_DISABLED & ENABLE\_TX\_WS=true? & Edit docker-compose.rpi-base.yml \\
   Wrong role on base & can0 on base RPi? & Base should NOT have CAN HAT \\
   Timescale not logging & MacBook: \cmd{ENABLE\_TIMESCALE\_LOGGING=true}? & RPi has no DB (ephemeral) \\

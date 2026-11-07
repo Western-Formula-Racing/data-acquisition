@@ -175,10 +175,10 @@ See [`deploy/MACBOOK_DEPLOY.md`](./universal-telemetry-software/deploy/MACBOOK_D
 The car runs the telemetry stack natively through systemd, without Docker or Redis:
 
 ```bash
-cd /home/car/data-acquisition/universal-telemetry-software
+cd /home/base/data-acquisition/universal-telemetry-software
 uv sync
-sed -i "s/GIT_HASH=unknown/GIT_HASH=$(git rev-parse --short HEAD)/" deploy/car-telemetry.service
 sudo cp deploy/car-telemetry.service /etc/systemd/system/
+sudo sed -i "s/GIT_HASH=.*/GIT_HASH=$(git rev-parse --short HEAD)/" /etc/systemd/system/car-telemetry.service
 sudo systemctl daemon-reload
 sudo systemctl enable car-telemetry
 sudo systemctl start car-telemetry

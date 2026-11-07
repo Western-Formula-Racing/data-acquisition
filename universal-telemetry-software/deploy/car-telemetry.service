@@ -19,8 +19,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=car
-WorkingDirectory=/home/car/data-acquisition/universal-telemetry-software
+User=base
+WorkingDirectory=/home/base/data-acquisition/universal-telemetry-software
 
 # Hardcoded car environment — edit here if IPs change
 Environment=ROLE=car
@@ -38,14 +38,14 @@ Environment=SHUTDOWN_ENABLED=true
 Environment=ENABLE_TIMESCALE_LOGGING=false
 # OFF_THE_SHELF=false is for our custom PoE injection board + status LEDs; set it to true for off-the-shelf hardware
 Environment=OFF_THE_SHELF=false
-# Set at install time: sed -i "s/GIT_HASH=unknown/GIT_HASH=$(git rev-parse --short HEAD)/" car-telemetry.service
-Environment=GIT_HASH=c2827a4
+# Stamped into the installed copy at install time: see CAR_DEPLOY.md
+Environment=GIT_HASH=unknown
 # REDIS_URL points to localhost — Redis is optional on the car.
 # Without it the WS bridge uses the direct in-process queue instead.
 
 # uv run handles virtualenv creation and dependency sync automatically.
 # Run `uv sync` once during setup (requires internet) to pre-build the venv.
-ExecStart=/home/car/.local/bin/uv run python main.py
+ExecStart=/home/base/.local/bin/uv run python main.py
 
 # Always restart — handles CAN bus glitches, Redis not ready yet, etc.
 Restart=always

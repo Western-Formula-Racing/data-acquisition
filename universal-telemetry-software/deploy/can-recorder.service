@@ -1,0 +1,50 @@
+# WFR CAN recorder: the car's complete, permanent record of the CAN bus.
+#
+# Deliberately independent of car-telemetry.service, so restarting or crashing
+# telemetry never interrupts recording. Runs under the system Python because
+# `uv run` can fail offline at the track and the recorder has no dependencies.
+#
+# Not tied to network.target: starts as soon as the disk is ready and waits for
+# can0 by itself. See deploy/CAN_RECORDER.md for install and verification steps.
+#
+# Install:
+#   sudo cp deploy/can-recorder.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now can-recorder
+
+[Unit]
+Description=WFR CAN recorder
+DefaultDependencies=no
+After=local-fs.target
+Wants=can0.service
+Conflicts=shutdown.target
+Before=shutdown.target
+# Never give up restarting: a recorder that has stopped loses everything after it.
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=base
+WorkingDirectory=/home/base/data-acquisition/universal-telemetry-software
+StateDirectory=can-recorder
+RuntimeDirectory=can-recorder
+ExecStart=/usr/bin/python3 -m src.can_recorder --iface can0 --dir /var/lib/can-recorder --commit-ms 100 --status-file /run/can-recorder/status.json
+
+Restart=always
+RestartSec=1
+# Long enough to ride out an SD card stall, which only grows the in-memory queue.
+WatchdogSec=30
+TimeoutStopSec=15
+
+Nice=-15
+IOSchedulingClass=realtime
+IOSchedulingPriority=0
+OOMScoreAdjust=-900
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=can-recorder
+
+[Install]
+WantedBy=multi-user.target

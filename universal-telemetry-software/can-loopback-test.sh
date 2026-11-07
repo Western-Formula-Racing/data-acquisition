@@ -4,7 +4,8 @@
 # Sends a rotating set of DBC-valid CAN frames on can1 → received by can0.
 # Use this to populate the Pecan dashboard (:3000) and status page (:8080)
 # without a real ECU. Requires can0 and can1 to be wired together on the
-# Waveshare 2-CH CAN HAT.
+# Waveshare 2-CH CAN HAT. It can't run on the car's custom HAT, which has one
+# controller. To test that HAT, see "Check the SPI link" in deploy/CAN_RECORDER.md.
 #
 # Usage: ./can-loopback-test.sh [interval_ms]
 #   interval_ms  Sleep between frames in milliseconds (default: 100)
